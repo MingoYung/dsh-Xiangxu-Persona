@@ -63,7 +63,7 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
       const [frameHeight,setFrameHeight]=React.useState(420);
       const nonce=React.useMemo(()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,'0')).join(''),[]);
       React.useEffect(()=>{
-        const element=frame.current;let channel=null,disposed=false;
+        const element=frame.current;let channel=null,disposed=false,downloadInProgress=false;
         function hostTheme(){
           const base=getComputedStyle(element.parentElement||document.documentElement);
           const value=function(names,fallback){for(const name of names){const result=base.getPropertyValue(name).trim();if(result)return result}return fallback};
@@ -89,6 +89,29 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
             if(disposed||!message||typeof message.id!=='string'||message.id.length>100||typeof message.action!=='string'||!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(message.action))return;
             const current=channel;
             try{
+              if(message.action==='ui.asset.download'){
+                if(downloadInProgress)throw new Error('已有资产正在下载');downloadInProgress=true;try{
+                const args=message.args??{};
+                if(typeof args.assetId!=='string'||!/^asset-[a-f0-9]{32}$/.test(args.assetId)||Object.keys(args).some(key=>!['assetId','instanceId'].includes(key))||args.instanceId!==undefined&&(typeof args.instanceId!=='string'||args.instanceId.length>128))throw new Error('无效的资产下载请求');
+                if(!crypto.subtle)throw new Error('当前宿主无法校验下载内容');
+                let offset=0,total=null,sha=null,mime=null,filename=null;const chunks=[];
+                for(let index=0;index<2049;index++){
+                  if(disposed)throw new Error('页面已经关闭');
+                  const value=await ctx.connection.rpc.call('/api','persona-memory.manage',{action:'media.readAssetChunk',args:{assetId:args.assetId,instanceId:args.instanceId,offset,...(sha?{sha256:sha}:{})}});
+                  if(!value?.ok)throw new Error(value?.error?.message||'资产读取失败');const part=value.value;
+                  if(!Number.isSafeInteger(part.totalBytes)||part.totalBytes<1||part.totalBytes>67108864||typeof part.sha256!=='string'||!/^[a-f0-9]{64}$/.test(part.sha256)||typeof part.dataBase64!=='string'||part.dataBase64.length>43692)throw new Error('资产下载超过容量或缺少校验');
+                  if(total!==null&&(total!==part.totalBytes||sha!==part.sha256))throw new Error('资产已经变化，请重新读取');
+                  total=part.totalBytes;sha=part.sha256;mime=part.mime;filename=part.filename;
+                  const raw=atob(part.dataBase64),bytes=Uint8Array.from(raw,char=>char.charCodeAt(0));if(!bytes.length||bytes.length>32768||offset+bytes.length>total)throw new Error('资产分块长度无效');chunks.push(bytes);offset+=bytes.length;
+                  if(part.complete===true){if(offset!==total||part.nextOffset!==null)throw new Error('资产未完整读取');break}
+                  if(part.nextOffset!==offset)throw new Error('资产读取位置不连续');
+                }
+                if(offset!==total)throw new Error('资产未完整读取');const bytes=new Uint8Array(total);let at=0;for(const chunk of chunks){bytes.set(chunk,at);at+=chunk.length}
+                const actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');if(actual!==sha)throw new Error('资产校验不一致，未下载');
+                const url=URL.createObjectURL(new Blob([bytes],{type:mime||'application/octet-stream'})),link=document.createElement('a');link.href=url;link.download=/^[a-zA-Z0-9_.-]{1,160}$/.test(filename||'')?filename:'xiangxu-asset';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+                if(!disposed&&current===channel)channel.port1.postMessage({id:message.id,ok:true,value:{status:'download_started',assetId:args.assetId,filename:link.download,bytes:total,sha256:sha}});return;
+                }finally{downloadInProgress=false}
+              }
               const result=await ctx.connection.rpc.call('/api','persona-memory.manage',{action:message.action,args:message.args??{}});
               if(!disposed&&current===channel)channel.port1.postMessage(result?.ok?{id:message.id,ok:true,value:result.value}:{id:message.id,ok:false,error:result?.error??{code:'UI_TRANSPORT_RESPONSE',message:'宿主返回了无效结果'}});
             }catch(error){if(!disposed&&current===channel)channel.port1.postMessage({id:message.id,ok:false,error:{code:error?.code??'UI_TRANSPORT_FAILED',message:String(error?.message??'连接失败')}})}

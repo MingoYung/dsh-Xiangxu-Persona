@@ -8,9 +8,10 @@ const pages = {
   evolution: ['进化与变更', 'EVOLUTION', '跟踪已选整理作业、未完成进度和已保留的变更历史。'],
   settings: ['设置与加载', 'SETTINGS', '管理实例、加载状态和技术资源；保存配置不会要求人格必须改变。'],
   chat: ['聊天渠道与语音', 'CHANNELS & VOICE', '在熟悉的聊天软件里继续交流，让同一个人格走进私聊和群聊。'],
+  media: ['形象与创作', 'IDENTITY & MEDIA', '保存同一个形象，选择性接入图片和视频创作服务。'],
   maintenance: ['维护与诊断', 'MAINTENANCE', '查看可用诊断、校验和备份恢复结果。写入操作都作用于明确选择的实例。'],
 };
-const labels = { awake: '清醒', sleeping: '休息中', queued: '待执行', running: '执行中', paused: '已暂停', committed: '已提交', completed: '已完成', prepared: '已准备', failed: '失败', invalidated: '已失效', no_work: '无工作', delivered: '已交付', pending: '待处理', cancelled: '已取消', unknown: '结果未知', deferred: '已暂缓' };
+const labels = { awake: '清醒', sleeping: '休息中', queued: '待执行', running: '执行中', paused: '已暂停', committed: '已提交', completed: '已完成', prepared: '已准备', failed: '失败', invalidated: '已失效', no_work: '无工作', delivered: '已交付', pending: '待处理', cancelled: '已取消', unknown: '结果未知', deferred: '已暂缓', submitted: '已提交到服务', revoked: '来源已撤销' };
 const pretty = value => typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 const number = value => typeof value === 'number' && Number.isFinite(value) ? new Intl.NumberFormat('zh-CN').format(value) : '—';
 const date = value => typeof value === 'number' && Number.isFinite(value) ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '未选择时间';
@@ -147,6 +148,7 @@ function updateInstanceBar() {
 }
 async function navigate(page) { state.page = pages[page] ? page : 'overview'; await renderPage(); }
 async function renderPage() {
+  for (const cleanup of [...pageCleanups]) cleanup();
   const [title, , description] = pages[state.page];
   $('page-title').textContent = title; $('page-description').textContent = description;
   document.querySelectorAll('[data-page]').forEach(node => { node.classList.toggle('active', node.dataset.page === state.page); if (node.dataset.page === state.page) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current'); });
@@ -157,7 +159,7 @@ async function renderPage() {
     state.status = await request('status'); updateInstanceBar();
     let content;
     if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('前往设置与加载', () => navigate('settings'), 'primary'));
-    else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage })[state.page]();
+    else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage })[state.page]();
     if (generation !== state.generation) return;
     replace($('page-content'), content); $('last-updated').textContent = '上次读取 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
   } catch (error) { if (generation === state.generation) { showError(error); replace($('page-content'), card('暂时无法读取', '', notice(errorText(error), 'error'), button('重新读取', renderPage, 'secondary'))); } }
@@ -379,12 +381,103 @@ async function settingsPage() {
   form.append(element('div', { class: 'form-footer' }, element('p', {}, '设置作用于当前选定实例。请求预算估算不等于供应商精确 token 计费。'), button('保存设置', saveSettings, 'primary', { dataset: { action: 'save-settings' } })));
   container.append(element('details', { class: 'advanced-section' }, element('summary', {}, '高级：容量与模型预算'), element('div', { class: 'advanced-body' }, card('技术设置', '资源边界有明确上限，改变配置不等于改变人格观点。', form)))); return container;
 }
+
+const pageCleanups = new Set();
+function pageLifetime(generation = state.generation) {
+  let disposed = generation !== state.generation;
+  const timers = new Set(), cleanup = () => { disposed = true; for (const timer of timers) clearTimeout(timer); timers.clear(); pageCleanups.delete(cleanup); };
+  if (!disposed) pageCleanups.add(cleanup);
+  return { alive: () => !disposed && generation === state.generation,
+    later: (fn, delay = 2500) => { if (disposed || generation !== state.generation) return; for (const existing of timers) clearTimeout(existing); timers.clear(); const timer = setTimeout(() => { timers.delete(timer); if (!disposed && generation === state.generation) fn(); }, Math.max(1000, Math.min(30000, delay))); timers.add(timer); }, stop: cleanup };
+}
+function operationId(prefix) { const bytes = new Uint8Array(16); crypto.getRandomValues(bytes); return prefix + '_' + Array.from(bytes, value => value.toString(16).padStart(2, '0')).join(''); }
+async function copyText(text, message = '内容已复制。') {
+  try { await navigator.clipboard.writeText(text); toast(message); }
+  catch { const input = element('textarea', { value: text, class: 'copy-content', readOnly: true }); const generation = startDetail('复制内容'); replace($('detail-content'), element('p', { class: 'small muted' }, '当前环境不能自动复制，请选中下方内容手动复制。'), input); input.focus(); input.select(); replace($('detail-footer'), button('关闭', () => $('detail-dialog').close())); }
+}
+function safeImageData(value) { return typeof value === 'string' && /^data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(value); }
+const capabilityNames = { 'chat.text': '发送文字', 'chat.image': '发送图片', 'chat.video': '发送视频', 'chat.file': '发送文件', 'chat.voice': '发送语音消息', 'chat.sticker': '使用表情与表情包', 'message.reply': '引用消息', 'message.retract': '撤回自己的消息', 'contacts.read': '读取联系人', 'groups.read': '读取群列表', 'friend.manage': '处理好友请求', 'group.manage': '群管理', 'profile.update': '修改账号资料', 'feed.read': '查看动态／朋友圈', 'feed.publish': '发布动态／朋友圈', 'feed.react': '动态点赞与评论', 'call.voice': '实时语音通话', 'call.video': '实时视频通话' };
+async function permissionsPanel(id) {
+  const content = element('div');
+  try {
+    const result = await request('permissions.inspect', { id });
+    if (!Array.isArray(result.items)) throw new Error('渠道未返回可核对的能力目录。');
+    const inputs = new Map(), rows = result.items.map(item => {
+      const name = item.label ?? capabilityNames[item.id] ?? item.id;
+      const allowed = element('input', { type: 'checkbox', checked: item.allowed === true, disabled: !item.supported && !item.allowed, 'aria-label': '允许' + name, onchange: event => { if (!item.supported && event.currentTarget.checked) event.currentTarget.checked = false; } }); inputs.set(item.id, allowed);
+      return element('tr', {}, element('th', { scope: 'row' }, name), element('td', { 'data-label': '平台支持' }, item.supported ? '支持' : '未支持'), element('td', { 'data-label': '用户许可' }, allowed), element('td', { 'data-label': '当前可用' }, element('span', {}, item.available ? '可用' : '不可用'), !item.available && item.reason ? element('small', {}, item.reason) : null));
+    });
+    content.append(element('p', { class: 'small muted' }, '权限只决定已接入工具能做什么；是否使用、关注谁和怎样交流仍由相续自己选择。平台不支持的能力不会因为勾选而生效。'),
+      element('div', { class: 'permission-scroll' }, element('table', { class: 'permission-table' }, element('thead', {}, element('tr', {}, ['能力', '平台支持', '用户许可', '当前可用'].map(text => element('th', { scope: 'col' }, text)))), element('tbody', {}, rows))),
+      button('保存这些权限', async () => { await request('permissions.configure', { id, allowed: [...inputs].filter(([, input]) => input.checked).map(([key]) => key) }); toast('权限已保存。'); await renderPage(); }, 'secondary'));
+    const saved = await request('permissions.list', { id });
+    if (Array.isArray(saved.items) && saved.items.length) content.append(element('details', { class: 'advanced-section' }, element('summary', {}, '已保存账号权限'), element('div', { class: 'advanced-body record-list' }, saved.items.map(item => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.accountId), tag((item.allowed ?? []).length + ' 项已保存许可')), element('p', { class: 'small muted' }, '上次设置 ' + date(item.updatedAt)), button('恢复该账号默认权限', async () => { const confirmation = await confirmOperation({ title: '恢复该账号默认权限', description: '移除该账号在当前人格中的授权选择，恢复渠道默认许可：文字，以及渠道中已开启的语音。不会删除聊天记忆或自动断开账号。', preview: { accountId: item.accountId }, accept: '恢复默认权限' }); if (!confirmation) return; await request('permissions.reset', { id, accountId: item.accountId }); toast('该账号权限已恢复默认。'); await renderPage(); }, 'secondary compact'))))));
+  } catch (error) { content.append(notice(errorText(error), 'warning')); }
+  return element('details', { class: 'advanced-section' }, element('summary', {}, '实际能力与权限'), element('div', { class: 'advanced-body' }, content));
+}
+async function connectionWizard(id, connection, initial, generation) {
+  const life = pageLifetime(generation), area = element('div', { class: 'connection-wizard' });
+  const platform = id === 'qq' ? 'QQ' : '微信'; let authorization = initial ?? { id, phase: 'idle' }, polling = false;
+  const flowArea = element('div'), actions = element('div', { class: 'row-actions' });
+  const selectCurrent = value => value?.connections?.find(item => item.id === id) ?? (value?.id === id ? value : null);
+  async function useResult(value, refresh = false) { const next = selectCurrent(value); if (!next) throw new Error('未获得该平台的连接状态。'); authorization = next; if (life.alive()) { await paint(); if (refresh) await renderPage(); } }
+  async function query() {
+    if (polling || !life.alive() || !authorization.flowId) return;
+    polling = true;
+    try { const value = await request('connections.poll', { id, flowId: authorization.flowId }); if (life.alive()) await useResult(value, selectCurrent(value)?.phase === 'authorized'); }
+    catch (error) { if (life.alive()) replace(flowArea, notice('状态查询未完成：' + errorText(error) + '。可以查询原连接，不必重新申请二维码。', 'warning'), button('查询原连接状态', query, 'secondary')); }
+    finally { polling = false; }
+  }
+  async function start() { const result = await request('connections.start', { id }); if (life.alive()) await useResult(result); }
+  async function paint() {
+    replace(flowArea); replace(actions);
+    const phase = authorization.phase ?? 'idle', waiting = ['waiting', 'scanned', 'verify'].includes(phase);
+    if (waiting) {
+      if (safeImageData(authorization.qrDataUrl)) flowArea.append(element('img', { class: 'connection-qr', src: authorization.qrDataUrl, alt: platform + '官方授权二维码' }));
+      else if (authorization.qrContent) flowArea.append(notice('当前没有生成二维码图片。可复制真实授权链接，在手机上打开。', 'warning'));
+      flowArea.append(element('div', {}, element('p', { class: 'small muted' }, phase === 'scanned' ? '已扫码，请在手机上完成平台授权。' : phase === 'verify' ? '平台要求验证，请由你本人完成。' : '请用手机' + platform + '扫描二维码并完成授权。'), authorization.expiresAt ? element('p', { class: 'small muted' }, '二维码有效期至 ' + date(authorization.expiresAt)) : null));
+      if (authorization.qrContent) flowArea.append(button('复制授权链接', () => copyText(authorization.qrContent), 'subtle compact'));
+      if (phase === 'verify') {
+        const code = field('connection-' + id + '-verification', '平台验证码', '', { hint: '仅交给本次平台验证流程，不保存到人格记忆。' }); code.input.autocomplete = 'one-time-code'; code.input.maxLength = 128;
+        flowArea.append(code.wrapper, button('提交验证码并查询', async () => { if (!code.input.value.trim()) throw new Error('请填写平台要求的验证码。'); const verifyCode = code.input.value.trim(); code.input.value = ''; await useResult(await request('connections.poll', { id, flowId: authorization.flowId, verifyCode }), true); }, 'secondary'));
+      }
+      actions.append(button('查询扫码状态', query, 'secondary'), button('取消本次连接', async () => { life.stop(); await request('connections.cancel', { id, flowId: authorization.flowId }); await renderPage(); }, 'subtle'));
+      life.later(query, authorization.pollAfterMs ?? 2500);
+    } else if (phase === 'authorized') {
+      flowArea.append(element('p', { class: 'small muted' }, '已获得平台授权' + (authorization.accountId ? ' · ' + authorization.accountId : '') + '。接入范围由你选择，启用后才将来信交给相续。'));
+      const chatTypes = Array.isArray(authorization.chatTypes) ? authorization.chatTypes : [];
+      const privateAllowed = chatTypes.includes('private'), groupAllowed = chatTypes.includes('group');
+      const privateInput = element('input', { type: 'checkbox', checked: connection.config?.mode === 'official' ? Boolean(connection.config?.allowedPrivateIds?.length) : privateAllowed, disabled: !privateAllowed });
+      const groupInput = element('input', { type: 'checkbox', checked: connection.config?.mode === 'official' && Boolean(connection.config?.allowedGroupIds?.length), disabled: !groupAllowed });
+      const voiceCapability = authorization.supportedCapabilities?.['chat.voice'], voiceSupported = voiceCapability === true || voiceCapability?.supported === true;
+      const replyMode = field('official-' + id + '-reply-mode', '回复形式', connection.config?.mode === 'official' ? connection.config?.voiceMode ?? 'text' : 'text', { choices: voiceSupported ? [['text', '文字'], ['both', '文字与语音'], ['voice', '语音']] : [['text', '文字']], hint: voiceSupported ? '语音还需要本机声音可用，并在能力面板允许发送语音。' : '当前连接器未报告语音发送能力。' });
+      flowArea.append(element('label', { class: 'field-checkbox' }, privateInput, authorization.pairedUserId ? '接入本次扫码账号的私聊' : '接入该 Bot 收到的全部私聊'), element('label', { class: 'field-checkbox' }, groupInput, groupAllowed ? '接入该 Bot 收到的全部群聊' : '群聊：当前官方连接器未提供'),
+        element('p', { class: 'small muted' }, '平台账号本身还需具备相应消息权限。接入之后，是否回应、主动和休息仍由相续自己决定。'), replyMode.wrapper);
+      actions.append(button(connection.enabled && connection.config?.mode === 'official' ? '保存范围并重新连接' : '完成连接并启用', async () => {
+        if (!state.status.available) throw new Error('请先加载一个人格实例。');
+        if (!privateInput.checked && !groupInput.checked) throw new Error('请选择至少一个要接入的范围。');
+        if (connection.enabled) await request('channels.stop', { id });
+        await request('channels.configure', { id, config: { mode: 'official', accountId: authorization.accountId, allowedPrivateIds: privateInput.checked ? [authorization.pairedUserId ?? '*'] : [], allowedGroupIds: groupInput.checked ? ['*'] : [], voiceMode: replyMode.input.value } });
+        await request('channels.start', { id }); toast(platform + '接入已获得实际连接结果。'); await renderPage();
+      }, 'primary')); if (connection.enabled) actions.append(button('暂停接入', async () => { await request('channels.stop', { id }); await renderPage(); }, 'secondary')); actions.append(button('断开官方账号', async () => { const confirmation = await confirmOperation({ title: '断开' + platform + '官方账号', description: '停止本插件的该账号连接并移除其本机授权。已经保存的人格记忆保持原样。', accept: '断开连接' }); if (!confirmation) return; if (connection.enabled) await request('channels.stop', { id }); await request('connections.disconnect', { id }); await renderPage(); }, 'subtle'));
+    } else {
+      if (['expired', 'cancelled', 'failed'].includes(phase)) flowArea.append(notice(phase === 'expired' ? '上次二维码已过期，请重新获取。' : phase === 'cancelled' ? '本次连接已取消。' : authorization.error?.message ?? '平台连接未完成，请重试或查看诊断。', phase === 'failed' ? 'error' : 'warning'));
+      actions.append(button(phase === 'idle' ? '连接' + platform : '重新获取二维码', start, 'primary'));
+    }
+    if (authorization.error && phase !== 'failed') flowArea.append(notice(authorization.error.message ?? authorization.error.code ?? '平台返回了连接错误。', 'warning'));
+  }
+  area.append(element('p', { class: 'small muted' }, id === 'qq' ? '扫码绑定独立 QQ Bot 身份，后续配置由插件保存。它不会接管桌面已登录的个人 QQ。' : '使用微信官方扫码授权，目前接入私聊；普通群聊、朋友圈和实时通话以实际连接器能力为准。'), flowArea, actions);
+  await paint(); return area;
+}
+
 async function chatPage() {
-  const channels = await request('channels.status'), container = element('div');
+  const generation = state.generation;
+  const [channels, official] = await Promise.all([request('channels.status'), request('connections.status')]);
+  const container = element('div');
   const connections = Array.isArray(channels.connections) ? channels.connections : [];
   const platformName = value => ({ qq: 'QQ', wechat: '微信' })[value] ?? value;
-  const statusName = value => ({ connected: '桥已连接', ready: '已就绪', connecting: '正在连接', disconnected: '尚未连接', disabled: '已停用', unconfigured: '尚未配置', unavailable: '暂不可用', error: '连接异常' })[value] ?? value;
-  container.append(element('p', { class: 'page-note' }, 'QQ、微信目前需要兼容的本地连接服务。此版本尚未提供一键安装或扫码登录；已准备好连接服务时，可以使用下面的高级配置。'));
+  const statusName = value => ({ connected: '已连接', ready: '已就绪', connecting: '正在连接', disconnected: '尚未连接', disabled: '已停用', unconfigured: '尚未配置', unavailable: '暂不可用', error: '连接异常' })[value] ?? value;
+  container.append(element('p', { class: 'page-note' }, '选择平台后扫码授权，再选择接入范围。官方账号、个人号兼容桥和实际支持的能力分别显示；高级连接仍可手动配置。'));
   const parseIds = input => [...new Set(input.value.split(/[\s,，;；]+/u).map(value => value.trim()).filter(Boolean))];
   async function copyField(input, message) {
     try { await navigator.clipboard.writeText(input.value); toast(message); }
@@ -403,7 +496,7 @@ async function chatPage() {
     const voiceMode = field('channel-' + id + '-voice', '回复形式', config.voiceMode ?? 'text', { choices: [['text', '文字'], ['both', '文字与语音'], ['voice', '语音']] });
     const save = button('保存接入设置', async () => {
       if (accessToken.input.value && clearAccessToken.checked) throw new Error('请只选择填写新令牌，或清除已保存的令牌。');
-      const patch = { apiUrl: apiUrl.input.value.trim(), accountId: account.input.value.trim(), allowedPrivateIds: parseIds(privateIds.input), allowedGroupIds: parseIds(groupIds.input), voiceMode: voiceMode.input.value };
+      const patch = { mode: 'bridge', apiUrl: apiUrl.input.value.trim(), accountId: account.input.value.trim(), allowedPrivateIds: parseIds(privateIds.input), allowedGroupIds: parseIds(groupIds.input), voiceMode: voiceMode.input.value };
       if (accessToken.input.value) patch.accessToken = accessToken.input.value;
       if (clearAccessToken.checked) patch.clearAccessToken = true;
       await request('channels.configure', { id, config: patch }); accessToken.input.value = ''; toast(title + '接入设置已保存。'); await renderPage();
@@ -434,7 +527,9 @@ async function chatPage() {
     const excluded = connection.recentExcluded ?? connection.excluded ?? [];
     const excludedInfo = Array.isArray(excluded) && excluded.length ? element('details', {}, element('summary', { class: 'small muted' }, '最近未接入的对象与群'), element('div', { class: 'record-list channel-details' }, excluded.slice(-10).map(value => element('div', { class: 'record' }, kv({ '对象 ID': value.senderId ?? value.userId ?? '—', '群 ID': value.roomId ?? value.groupId ?? '私聊', '时间': value.at ? date(value.at) : '未提供' }))))) : null;
     container.append(card(title, isWechat ? '私聊、群聊能力由实际接入的连接服务提供。' : '连接服务准备好后，可接入选定的私聊与群聊。',
-      element('div', { class: 'row-actions channel-status' }, statusBadge),
+      element('div', { class: 'row-actions channel-status' }, statusBadge, tag(config.mode === 'official' ? '官方连接' : '兼容桥')),
+      await connectionWizard(id, connection, official.connections?.find(value => value.id === id), generation),
+      await permissionsPanel(id),
       connection.error ? notice(connection.error.message ?? String(connection.error), 'error') : null,
       element('details', { class: 'advanced-section' }, element('summary', {}, '高级：已有兼容桥，手动配置'), element('div', { class: 'advanced-body' },
       element('p', { class: 'small muted' }, isWechat ? '需要兼容 OneBot 12 的微信连接服务。协议本身不提供账号登录或普通微信群聊。' : '需要 NapCat 等兼容 OneBot 11 的 QQ 连接服务；在该服务中完成账号登录。'),
@@ -473,6 +568,134 @@ async function chatPage() {
   container.append(card('语音与音色', '使用本机语音合成，再由实际支持语音的聊天渠道交付。', voiceArea,
     element('p', { class: 'subtle-note' }, '文字与语音的实际发送能力以渠道桥返回为准。音色由人格自主选择或由你指定；试听不会写入聊天记忆。')));
   container.append(element('details', { class: 'advanced-section' }, element('summary', {}, '开发信息：后续扩展接口'), element('div', { class: 'advanced-body' }, element('p', { class: 'small muted' }, 'Telegram、个人网页目前仅保留接口，尚未连接或开启服务。'))));
+  return container;
+}
+
+
+async function mediaPage() {
+  const generation = state.generation, life = pageLifetime(generation), instanceId = state.instanceId;
+  const mediaRequest = (action, args = {}) => request(action, { ...args, instanceId });
+  const view = await mediaRequest('media.inspect', { includeConfiguration: true });
+  const identity = view.identity ?? {}, limits = view.limits ?? {}, container = element('div');
+  const assets = await mediaRequest('media.listAssets', { limit: 12 });
+  const description = field('identity-description', '形象描述', identity.description ?? '', { multiline: true, hint: '用于保持角色身份的外貌描述；动作、衣服与场景可以在每次创作时变化。' });
+  const locked = element('input', { type: 'checkbox', checked: identity.locked === true });
+  const primary = element('div', { class: 'identity-primary' });
+  if (identity.primaryAssetId) {
+    try { const asset = await mediaRequest('media.getAsset', { assetId: identity.primaryAssetId, preview: true }); primary.append(safeImageData(asset.dataUrl) ? element('img', { src: asset.dataUrl, alt: '当前形象主参考图', class: 'identity-reference' }) : notice('主参考图已保存。原图超过预览容量时，可下载原文件查看。'), element('p', { class: 'small muted' }, '主参考 · ' + (asset.name ?? asset.assetId ?? identity.primaryAssetId)), element('div', { class: 'row-actions' }, button('下载主参考原文件', () => request('ui.asset.download', { assetId: identity.primaryAssetId, instanceId }), 'secondary compact'), button('取消主参考选择，保留图片', async () => { await mediaRequest('media.updateIdentity', { primaryAssetId: null }); if (life.alive()) { toast('已取消主参考选择，图片仍保留在图库。'); await renderPage(); } }, 'subtle compact'))); }
+    catch (error) { primary.append(notice(errorText(error), 'warning')); }
+  } else primary.append(empty('尚未选择主参考图', '上传一张图，或在生成作品后将其设为主参考。后续创作会沿用所选形象参考。'));
+  const upload = element('input', { id: 'identity-reference-file', type: 'file', accept: 'image/png,image/jpeg,image/webp' });
+  const setAsPrimary = element('input', { type: 'checkbox', checked: true }), uploadProgress = element('p', { class: 'small muted', role: 'status' });
+  async function uploadReference() {
+    const file = upload.files?.[0]; if (!file) throw new Error('请先选择一张参考图。');
+    const maxBytes = limits.imageBytes ?? 8388608;
+    if (!file.size || file.size > maxBytes) throw new Error('参考图需为有效的 PNG/JPEG/WebP，最大 ' + number(maxBytes) + ' bytes。');
+    let uploadId;
+    try {
+      const started = await mediaRequest('media.uploadBegin', { mime: file.type, name: file.name, totalBytes: file.size }); uploadId = started.uploadId;
+      if (!uploadId) throw new Error('未获得上传编号。');
+      for (let offset = 0, index = 0; offset < file.size; offset += 32768, index++) {
+        if (!life.alive()) throw new Error('页面已切换，上传停止。');
+        const bytes = new Uint8Array(await file.slice(offset, offset + 32768).arrayBuffer());
+        let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
+        await mediaRequest('media.uploadChunk', { uploadId, index, dataBase64: btoa(binary) }); uploadProgress.textContent = '已上传 ' + number(Math.min(offset + bytes.length, file.size)) + ' / ' + number(file.size) + ' bytes';
+      }
+      await mediaRequest('media.uploadFinish', { uploadId, setAsPrimary: setAsPrimary.checked }); uploadId = null; if (!life.alive()) return; toast('参考图已保存。'); await renderPage();
+    } finally { if (uploadId) { try { await mediaRequest('media.uploadCancel', { uploadId }); } catch {} } }
+  }
+  container.append(card('形象档案', '主参考图、描述和版本保存在当前人格实例；图库按需读取，不会每轮全量送入模型。',
+    kv({ '当前版本': identity.version == null ? '尚未建立' : 'v' + identity.version, '主参考': identity.primaryAssetId ?? '未选择' }), primary, description.wrapper,
+    element('label', { class: 'field-checkbox' }, locked, '锁定形象档案：人格工具不能修改主参考和形象描述（你仍可在这里修改）'),
+    button('保存形象设置', async () => { if (Array.from(description.input.value).length > (limits.descriptionChars ?? 2048)) throw new Error('形象描述超过技术容量，请缩短后保存。'); await mediaRequest('media.updateIdentity', { description: description.input.value, locked: locked.checked }); toast('形象设置已保存。'); await renderPage(); }, 'primary'),
+    element('details', { class: 'advanced-section' }, element('summary', {}, '上传参考图片'), element('div', { class: 'advanced-body' }, element('label', { class: 'field' }, element('span', {}, 'PNG / JPEG / WebP 参考图'), upload), element('label', { class: 'field-checkbox' }, setAsPrimary, '保存后设为当前主参考'), button('上传并保存参考图', uploadReference, 'secondary'), uploadProgress))));
+  const providers = Array.isArray(view.providers) ? view.providers : [];
+  for (const kind of ['image', 'video']) {
+    const current = providers.find(item => item.kind === kind) ?? { kind, enabled: false, type: kind === 'image' ? 'openai-images' : 'comfyui', capabilities: {} }, name = kind === 'image' ? '图片' : '视频';
+    const enabled = element('input', { type: 'checkbox', checked: current.enabled === true, disabled: current.configured !== true && current.enabled !== true, role: 'switch', 'aria-label': '启用' + name + '生成', onchange: async event => { const input = event.currentTarget, requested = input.checked; input.checked = current.enabled === true; input.disabled = true; try { await mediaRequest('media.configureProvider', { kind, config: { enabled: requested } }); if (life.alive()) { toast(name + '生成已' + (requested ? '开启。' : '关闭。')); await renderPage(); } } catch (error) { showError(error); } finally { if (input.isConnected) input.disabled = current.configured !== true && current.enabled !== true; } } });
+    const type = field('media-' + kind + '-type', '服务类型', current.type, { choices: kind === 'image' ? [['openai-images', '兼容 Images API'], ['comfyui', 'ComfyUI 工作流']] : [['comfyui', 'ComfyUI 视频工作流']] });
+    const baseUrl = field('media-' + kind + '-url', '服务地址', current.baseUrl ?? '', { placeholder: kind === 'image' ? 'https://服务地址/v1' : 'http://127.0.0.1:8188', hint: '填写自己开通的云 API 或自部署服务。云服务使用 HTTPS；本机／局域网服务可使用 HTTP。' });
+    const apiKey = field('media-' + kind + '-key', 'API 密钥', '', { type: 'password', hint: current.hasApiKey ? '已保存密钥，留空保留，不回显。' : '服务要求密钥时填写；只保存在本机配置。' }); apiKey.input.autocomplete = 'new-password';
+    const clearKey = element('input', { type: 'checkbox' });
+    const model = field('media-' + kind + '-model', '模型名称', current.model ?? '', { hint: '使用该服务实际提供的模型标识。' });
+    const editTransport = field('media-' + kind + '-edit-transport', '参考图接口格式', current.editTransport ?? 'json', { choices: [['json', 'JSON images（当前接口）'], ['multipart', 'multipart image[]（兼容服务）']] });
+    const referenceMode = field('media-' + kind + '-reference', '参考图支持', current.referenceMode ?? 'none', { choices: [['none', '未配置参考图输入'], ['edit', '已配置参考图编辑／输入']] });
+    const workflow = field('media-' + kind + '-workflow', 'ComfyUI API 工作流 JSON', current.workflow ? JSON.stringify(current.workflow, null, 2) : '', { multiline: true, hint: '使用 ComfyUI 的 API 格式工作流；工作流需要真实可用的模型及输出节点。' });
+    const promptNode = field('media-' + kind + '-prompt-node', '文本提示节点 ID', current.promptNode ?? ''), promptInput = field('media-' + kind + '-prompt-input', '文本输入字段', current.promptInput ?? 'text');
+    const referenceNode = field('media-' + kind + '-reference-node', '参考图节点 ID（可选）', current.referenceNode ?? ''), referenceInput = field('media-' + kind + '-reference-input', '参考图输入字段', current.referenceInput ?? 'image');
+    const outputs = field('media-' + kind + '-outputs', '输出节点 ID（可选）', (current.outputNodeIds ?? []).join(', '), { hint: '多个 ID 用逗号分隔，留空使用工作流实际输出。' });
+    const downloadOrigins = field('media-' + kind + '-download-origins', '返回文件的额外下载来源（可选）', (current.downloadOrigins ?? []).join('\n'), { multiline: true, hint: '服务返回独立 CDN 文件时，每行填写一个受信任的 HTTPS 主机来源，不填完整临时链接或密钥。' });
+    const openaiOptions = element('div', {}, model.wrapper, element('details', { class: 'advanced-section' }, element('summary', {}, '高级：参考图接口兼容格式'), element('div', { class: 'advanced-body' }, editTransport.wrapper, downloadOrigins.wrapper))), comfyOptions = element('details', { class: 'advanced-section' }, element('summary', {}, '高级：工作流与节点绑定'), element('div', { class: 'advanced-body' }, workflow.wrapper, element('div', { class: 'form-grid' }, promptNode.wrapper, promptInput.wrapper, referenceNode.wrapper, referenceInput.wrapper), outputs.wrapper));
+    const updateType = () => { openaiOptions.hidden = type.input.value !== 'openai-images'; comfyOptions.hidden = type.input.value !== 'comfyui'; }; type.input.addEventListener('change', updateType); updateType();
+    const feedback = element('div');
+    container.append(card(name + '生成服务', kind === 'video' ? '独立可选；需要已部署并验证可运行的视频工作流。' : '独立可选；开启后相续可按需调用，保存配置不会自动生成。',
+      element('label', { class: 'field-checkbox' }, enabled, '启用' + name + '生成'),
+      !current.configured ? element('p', { class: 'small muted' }, '先在下方配置服务，保存后再开启。未开启时不会向服务提交生成任务。') : null,
+      element('p', { class: 'small muted' }, '当前能力：' + (current.capabilities?.generate ? '配置可提交生成' : '尚未就绪') + '；' + (current.capabilities?.reference ? '支持形象参考' : '尚未支持形象参考') + '。实际结果以服务回执为准。'),
+      element('details', { class: 'advanced-section' }, element('summary', {}, current.configured ? '修改已保存的服务配置' : '配置' + name + '服务'), element('div', { class: 'advanced-body' }, type.wrapper, baseUrl.wrapper, apiKey.wrapper,
+      current.hasApiKey ? element('label', { class: 'field-checkbox' }, clearKey, '明确清除已保存的密钥') : null, referenceMode.wrapper, openaiOptions, comfyOptions,
+      element('div', { class: 'row-actions' }, button('保存' + name + '服务', async () => {
+        if (apiKey.input.value && clearKey.checked) throw new Error('不能同时填写新密钥并清除密钥。');
+        const config = { enabled: enabled.checked, type: type.input.value, baseUrl: baseUrl.input.value.trim(), referenceMode: referenceMode.input.value, allowRemote: /^https:\/\//i.test(baseUrl.input.value.trim()) };
+        if (apiKey.input.value) config.apiKey = apiKey.input.value; if (clearKey.checked) config.clearApiKey = true;
+        if (type.input.value === 'openai-images') { config.model = model.input.value.trim(); config.referenceMode = referenceMode.input.value; config.editTransport = editTransport.input.value; config.downloadOrigins = downloadOrigins.input.value.split(/[\s,，]+/u).filter(Boolean); }
+        else { if (workflow.input.value.trim()) { try { config.workflow = JSON.parse(workflow.input.value); } catch { throw new Error('工作流 JSON 格式无效。'); } } config.promptNode = promptNode.input.value.trim(); config.promptInput = promptInput.input.value.trim() || 'text'; config.referenceNode = referenceNode.input.value.trim(); config.referenceInput = referenceInput.input.value.trim() || 'image'; config.outputNodeIds = outputs.input.value.split(/[\s,，]+/u).filter(Boolean); }
+        if (new TextEncoder().encode(JSON.stringify({ kind, config, instanceId })).length > 60000) throw new Error('工作流或配置超过当前管理请求容量，请使用更精简的 API 工作流；内容没有被截断。');
+        await mediaRequest('media.configureProvider', { kind, config }); apiKey.input.value = ''; if (!life.alive()) return; toast(name + '服务配置已保存。'); await renderPage();
+      }, 'secondary')))), button('检查已保存的连接', async () => { const result = await mediaRequest('media.probeProvider', { kind }); replace(feedback, kv({ '服务可访问': result.reachable ? '是' : '未确认', '配置有效': result.configurationValid ? '是' : '未确认', '实际生成验证': result.verifiedGeneration ? '已验证' : '未执行生成' }), result.message ? notice(result.message) : null); }, 'secondary', { disabled: !current.configured }), feedback));
+  }
+  const prompt = field('media-create-prompt', '这次想创作什么', '', { multiline: true, hint: '例如：沿用当前形象，在窗边喝茶的半身照。只在点击开始创作后提交任务。' });
+  const kind = field('media-create-kind', '创作类型', 'image', { choices: [['image', '图片'], ['video', '视频']] });
+  const useReference = element('input', { type: 'checkbox', checked: Boolean(identity.primaryAssetId), disabled: !identity.primaryAssetId });
+  const requestFeedback = element('div');
+  async function showJob(jobId) {
+    if (!life.alive()) return;
+    const detailGeneration = startDetail('创作任务'); let querying = false;
+    async function query() {
+      if (querying || !life.alive() || detailGeneration !== state.detailGeneration || !$('detail-dialog').open) return; querying = true;
+      try {
+      const job = await mediaRequest('media.getJob', { jobId, poll: true });
+      if (!life.alive() || detailGeneration !== state.detailGeneration || !$('detail-dialog').open) return;
+      replace($('detail-content'), kv({ '任务编号': job.jobId ?? jobId, '类型': job.kind === 'video' ? '视频' : '图片', '状态': labels[job.status] ?? ({ submitted: '已提交到服务', running: '生成中' })[job.status] ?? job.status, '形象参考版本': job.referenceVersion == null ? '未使用' : 'v' + job.referenceVersion }), job.error ? notice(job.error.message ?? job.error.code, 'error') : null,
+        job.status === 'unknown' ? notice('任务结果尚未确认。查询不会重新提交生成；请先核对原任务，避免重复付费。', 'warning') : null,
+        element('div', { class: 'row-actions' }, (job.resultAssetIds ?? []).map(assetId => button('查看生成作品', () => showAsset(assetId), 'secondary'))));
+      replace($('detail-footer'), button('查询原任务', query, 'secondary'), !['completed', 'failed', 'cancelled', 'unknown', 'revoked'].includes(job.status) ? button('取消可取消的任务', async () => { await mediaRequest('media.cancelJob', { jobId }); await query(); }, 'secondary') : null, button('关闭', () => $('detail-dialog').close(), 'secondary'));
+      if (['prepared', 'running', 'submitted'].includes(job.status)) life.later(() => query().catch(showError), 3500);
+      } finally { querying = false; }
+    }
+    await query();
+  }
+  async function showAsset(assetId) {
+    const detailGeneration = startDetail('形象作品'), asset = await mediaRequest('media.getAsset', { assetId, preview: true });
+    if (!life.alive() || detailGeneration !== state.detailGeneration || !$('detail-dialog').open) return;
+    replace($('detail-content'), safeImageData(asset.dataUrl) ? element('img', { class: 'asset-preview', src: asset.dataUrl, alt: asset.name ?? '形象作品' }) : notice('原文件已保存，面板不自动加载大图或视频。可下载原文件查看。'), kv({ '名称': asset.name ?? asset.assetId, '类型': asset.mime, '大小': number(asset.bytes) + ' bytes', '参考版本': asset.referenceVersion == null ? '未使用' : 'v' + asset.referenceVersion, '来源': asset.origin === 'import' ? '用户上传' : '生成作品' }));
+    replace($('detail-footer'), asset.kind === 'image' ? button('设为当前主参考', async () => { await mediaRequest('media.updateIdentity', { primaryAssetId: assetId }); $('detail-dialog').close(); toast('主参考已更新。'); await renderPage(); }, 'secondary') : null,
+      button('下载原文件', async () => { const result = await request('ui.asset.download', { assetId, instanceId }); if (result.status === 'download_started') toast('已交给浏览器下载；如出现保存提示，请完成保存。'); }, 'secondary'), button('删除这份资产', async () => { const confirmation = await confirmOperation({ title: '删除这份形象资产', description: '删除这份本机作品和资产索引，同时清除保留历史里对此图片的引用；不会删除其它作品，无法从此图库恢复。', accept: '删除资产', danger: true }); if (!confirmation) return; await mediaRequest('media.deleteAsset', { assetId }); $('detail-dialog').close(); toast('资产已删除。'); await renderPage(); }, 'danger', { disabled: asset.isPrimaryReference === true || assetId === identity.primaryAssetId, title: asset.isPrimaryReference === true || assetId === identity.primaryAssetId ? '请先取消或更换当前主参考。' : '明确删除本机资产' }), button('关闭', () => $('detail-dialog').close(), 'secondary'));
+  }
+  const jobsArea = element('div'), gallery = element('div');
+  async function loadJobs() {
+    const result = await mediaRequest('media.listJobs', { limit: 12 });
+    replace(jobsArea, getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(job => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, job.kind === 'video' ? '视频任务' : '图片任务'), pill(job.status)), element('p', { class: 'small muted' }, date(job.createdAt)), button('查询进度与结果', () => showJob(job.jobId), 'secondary compact')))) : empty('尚无创作任务', '配置服务不会自动提交生成任务。'));
+  }
+  async function renderAssets(result, pageNumber = 1) {
+    replace(gallery, getItems(result).length ? element('div', { class: 'asset-grid' }, getItems(result).map(asset => element('article', { class: 'record asset-card' }, element('h3', { class: 'record-title' }, asset.name ?? (asset.kind === 'video' ? '视频作品' : '图片作品')), element('p', { class: 'small muted' }, (asset.kind === 'video' ? '视频' : '图片') + ' · ' + number(asset.bytes) + ' bytes' + (asset.pinned ? ' · 主参考已保留' : '')), button('查看作品', () => showAsset(asset.assetId), 'secondary compact')))) : empty('作品库还是空的', '上传和生成的资产会保存在这里。'), paginator(result, async cursor => renderAssets(await mediaRequest('media.listAssets', { limit: 12, cursor }), pageNumber + 1), { pageNumber }));
+  }
+  const createButton = button('开始这次创作', async () => {
+      if (!prompt.input.value.trim()) throw new Error('请先描述这次想创作的内容。');
+      const confirmation = await confirmOperation({ title: '提交这次创作', description: '向已保存的' + (kind.input.value === 'video' ? '视频' : '图片') + '服务提交一次任务，可能产生服务费用。后续查询使用同一个任务编号。', accept: '开始生成' }); if (!confirmation) return;
+      const requestId = operationId('media_ui');
+      try { const job = await mediaRequest('media.generate', { requestId, kind: kind.input.value, prompt: prompt.input.value.trim(), useIdentityReference: useReference.checked }); if (!life.alive()) return; replace(requestFeedback, notice('任务已记录，正在按原任务编号查询。')); await loadJobs(); await showJob(job.jobId); }
+      catch (error) { if (!life.alive()) return; replace(requestFeedback, notice('提交结果未确认时，请先刷新下方原任务列表，避免重新付费提交。请求编号：' + requestId, 'warning')); await loadJobs(); throw error; }
+    }, 'primary');
+  const providerReady = element('p', { class: 'small muted' });
+  const updateCreationAvailability = () => { const selected = providers.find(value => value.kind === kind.input.value); const ready = selected?.enabled === true && selected?.configured === true && selected?.capabilities?.generate === true; createButton.disabled = !ready; providerReady.textContent = ready ? '使用上方已保存的服务配置。' : '先保存并启用所选类型的生成服务，再开始创作。'; };
+  kind.input.addEventListener('change', updateCreationAvailability); updateCreationAvailability();
+  container.append(card('开始创作', '任务使用已保存的服务配置，可能产生该服务的费用。相同任务只查询原编号，不因等待时间较长自动重发。', element('div', { class: 'form-grid' }, kind.wrapper), prompt.wrapper, element('label', { class: 'field-checkbox' }, useReference, identity.primaryAssetId ? '沿用当前主参考形象（服务需支持参考图）' : '尚无主参考，本次使用文字描述'),
+    createButton, providerReady, requestFeedback));
+  await loadJobs(); await renderAssets(assets);
+  container.append(card('最近创作任务', '生成成功、文件保存和平台发送是不同结果。', button('刷新任务列表', loadJobs, 'secondary compact'), jobsArea),
+    card('作品与参考图库', '只在查看时读取作品。主参考与临时缓存分开保存，资产容量以实际用量为准。', view.usage ? kv({ '资产用量': view.usage.assetBytes == null ? '按实际清单查看' : number(view.usage.assetBytes) + ' bytes', '总容量': number(limits.assetBytes) + ' bytes' }) : null, gallery,
+      button('导出资产清单', async () => { const manifest = await mediaRequest('media.exportManifest'); startDetail('资产备份清单'); replace($('detail-content'), notice('此处是文件名、摘要与参考关系清单。原始图片／视频仍需一并备份；清单不包含 API 密钥。'), data(manifest)); replace($('detail-footer'), button('复制完整清单', () => copyText(JSON.stringify(manifest, null, 2)), 'secondary'), button('关闭', () => $('detail-dialog').close(), 'secondary')); }, 'secondary')));
   return container;
 }
 

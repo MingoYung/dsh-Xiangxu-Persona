@@ -1,10 +1,11 @@
 import { lstat, readFile } from 'node:fs/promises';
+import { createLoginQr } from './login-qr.js';
 
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** Owner-only composition behind the existing native DSH management route. */
-export function createPersonaSurfaces({ management, channels, speech, mobile, getCoordinator }) {
+export function createPersonaSurfaces({ management, channels, connections, permissions, speech, mobile, getCoordinator }) {
   if (typeof management?.dispatch !== 'function' || typeof getCoordinator !== 'function') throw new TypeError('Management and current coordinator ports are required');
   return {
     async dispatch(action, args = {}) {
@@ -12,8 +13,45 @@ export function createPersonaSurfaces({ management, channels, speech, mobile, ge
       if (action.startsWith('channels.')) {
         if (!channels) fail('CHANNEL_UNAVAILABLE', '聊天渠道服务尚未就绪');
         const method = action.slice(9);
-        if (!['status', 'configure', 'start', 'stop', 'probe', 'rotateIngress'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown channel action');
+        if (!['status', 'configure', 'start', 'stop', 'probe', 'rotateIngress', 'capabilities'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown channel action');
         return channels[method](args);
+      }
+      if (action.startsWith('connections.')) {
+        if (!connections) fail('CONNECTION_UNAVAILABLE', '扫码连接服务尚未就绪');
+        const method = action.slice(12);
+        if (!['status', 'start', 'poll', 'cancel', 'disconnect'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown connection action');
+        if (method === 'disconnect') await channels?.stop({ id: args.id });
+        const result = await connections[method](args);
+        const withQr = item => {
+          if (!item?.qrContent) return item;
+          try { return { ...item, qrDataUrl: createLoginQr(item.qrContent) }; }
+          catch { return { ...item, qrDataUrl: null, qrUnavailable: true }; }
+        };
+        return Array.isArray(result?.connections) ? { ...result, connections: result.connections.map(withQr) } : withQr(result);
+      }
+      if (action.startsWith('permissions.')) {
+        if (!permissions) fail('PERMISSION_UNAVAILABLE', '权限服务尚未就绪');
+        const method = action.slice(12);
+        if (!['inspect', 'configure', 'list', 'reset'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown permission action');
+        return permissions[method](args);
+      }
+      if (action.startsWith('media.')) {
+        const c = await getCoordinator(args.instanceId);
+        if (!c) fail('INSTANCE_UNLOADED', '先加载人格实例再使用形象与创作');
+        await c.ready;
+        if (c.initializationError) throw c.initializationError;
+        if (c.mediaInitializationError || !c.media) fail('MEDIA_UNAVAILABLE', '形象与创作服务暂不可用');
+        const method = action.slice(6);
+        if (['uploadBegin', 'uploadChunk', 'uploadFinish', 'uploadCancel', 'readAssetChunk'].includes(method)) {
+          if (!c.ownerAssets) fail('MEDIA_UNAVAILABLE', '资产传输服务暂不可用');
+          return c.ownerAssets[method](args);
+        }
+        if (!['inspect', 'configureProvider', 'probeProvider', 'listAssets', 'getAsset', 'importReference', 'updateIdentity', 'generate', 'getJob', 'listJobs', 'cancelJob', 'exportManifest', 'deleteAsset'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown media action');
+        const input = { ...args }; delete input.instanceId; delete input.actor; delete input.sourceRefs; delete input.sourceRecordIds;
+        if (method === 'deleteAsset') c.ownerAssets?.invalidate();
+        if (method === 'updateIdentity' || method === 'generate') return c.media[method](input, { actor: 'user' });
+        if (method === 'inspect') return c.media.inspect({ includeConfiguration: input.includeConfiguration === true });
+        return c.media[method](input);
       }
       if (action.startsWith('mobile.')) {
         if (!mobile) fail('MOBILE_UNAVAILABLE', '手机聊天服务尚未就绪');

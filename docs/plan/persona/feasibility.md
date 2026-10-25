@@ -1,6 +1,6 @@
 # 可行性与边界
 
-当前实现（0.4.1）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置保留七页功能并沿用DSH宿主颜色、字体和透明背景；主动联系开关附日常说明，休息时才显示“现在叫醒”。QQ/微信已有兼容桥的高级配置默认折叠，真实使用仍需用户已有桥和账号，尚未实现扫码或接管桌面登录；Windows本机声音入口保留。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
+当前实现（0.5.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生八页设置沿用DSH宿主样式，保留主动联系／现在叫醒的日常说明，新增官方QQBot／微信iLink扫码、实际能力许可、形象档案与可选图片／视频接口；高级OneBot保留。陪伴预设在普通DSH／IM／主动／唤醒中仅提供七个人格工具，不继承子agent派发；其它预设与内部原生接收通道不变。平台未实现的动态、通话或群能力不冒称可用，服务默认关闭、本人扫码和真实供应商输出仍需实际环境验证。当前入口与证据见[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)；研究和旧版本结果保留历史含义。
 
 修订日期：2026-10-26。适用设计：`persona-memory/3`。本文件说明哪些已有机制可借用、哪些是待实现和待测假设；主计划定义目标，`persona-schema.md` 定义唯一字段契约，`architecture.md` 定义执行流程。
 
@@ -71,3 +71,7 @@
 - reasoning不长期保留是容量和复用的工程选择；临时完整上下文有参考价值，不等于每次必须全量读入，更不能从有偏推理实验推出所有思考过程一律有害。
 
 具体证据与阅读深度保留在调研层。后续实现未测项目以 `api-surface.md` 与 `self-check.md` 为准。
+
+## 7. 0.5.0可选媒体与平台能力
+
+QQBot／微信iLink扫码、高级OneBot与媒体provider都留在DSH适配层，core不读取平台凭据。仅实际驱动支持且用户许可的动作可执行；动态、RTC与未验证编码链继续显示不可用。形象参考、版本与锁定是用户可选工具边界，生成连续性取决于真实模型／工作流，不作效果保证。容量及撤销契约见persona-schema第14、15节，实际操作见[渠道](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。

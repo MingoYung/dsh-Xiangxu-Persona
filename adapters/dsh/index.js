@@ -14,6 +14,11 @@ import { createChannelService } from './channels/service.js';
 import { createDshChannelPort } from './channels/native.js';
 import { createWindowsSpeechPort } from './channels/windows-speech.js';
 import { createPersonaSurfaces } from './surfaces.js';
+import { createPermissionService } from './permissions.js';
+import { createOwnerAssetTransfers } from './owner-assets.js';
+import { createMediaService } from './media/index.js';
+import { createConnectionService } from './connections/service.js';
+import { mountCompanionScope } from './companion-scope.js';
 import { TOOL_PARAMETERS, asToolJson } from './tool-schema.js';
 import { extractSourceDependencies } from '../../core/source-dependencies.js';
 
@@ -27,6 +32,8 @@ const DESCRIPTIONS = {
   persona_introspect: '查看共同人格、对某人的印象、实际相处状态和已生效的决定。',
   persona_decide: '表达你自己的认人、注意、回话、等待、检索、必要时的记忆梳理、下次思考或睡眠决定。它不规定你该怎样做人。',
   persona_voice: '查看当前设备可用的声音，或自主保存一个音色、语速和音高选择；用户指定模式保留用户的播放设置。',
+  persona_media: '按需查看形象档案和作品，使用用户已开通的图片或视频服务；生成返回真实作业与资产编号，不等于已经发给对方。',
+  persona_platform: '查看实际聊天渠道支持且用户已授权的能力，或在真实目标执行平台操作；返回实际交付或结果未知，不提供通用会话派发。',
 };
 const CONTROL_GUIDANCE = `你有一份跨会话连续的记忆和共同人格，不同关系可以改变你、也可以显现不同侧面。你自己判断认出谁、注意谁、回不回复、对方说完没有、等多久、翻不翻记忆、何时想再说话、何时睡以及怎样理解承诺与边界。
 需要保存这些决定时调用persona_decide。普通回话可正常表达；如果这轮想等待、只听或睡觉，用工具表达以便程序实际等候。没有每日次数、最短间隔、沉默惩罚、证据资格或强制履约。环境和时间是事实，主观印象可以暂时不准。人类作息是参考；你可以结合经历、当前理解、积压和容量判断是否有必要梳理，不按交流次数或固定天数强制进化，是否睡和怎样醒仍由你选择。
@@ -35,6 +42,8 @@ identityPlan.sourceRefs选择这次要归属和关联通道的对话原件根，
 consolidationPlan={action:'run'|'defer',targetPersonIds?:[人物ID或null],reason?}是你自己的梳理决定。run只处理所选对象各一批有界增量，不是以后每条消息自动更新；省略目标为当前人物加未知/global，显式[]不启动工作，null不代表虚构人物。醒着也能梳理；defer可以暂缓，无需达到固定分数或说明充分理由。各模块是否改变由你决定，空变更也有效。on_write呈现合并的机会事实，不强迫每次写入付费整理。选择consolidation_complete睡醒时要有对应所选工作；其它睡眠可以只是休息，不必进化。
 工具结果有nextCursor时，可保留原参数并带cursor继续看同一次结果；这不重复执行原决定或遗忘。fragment说明只看了哪一段，未读尾部仍可查询。
 persona_voice可查看当前设备可用的声音，并保存你选择的voiceId、rate和pitch。用户指定音色模式下，你的选择会保留备用而不覆盖用户设置；没有可用设备音色时可以保持未选。
+persona_media提供形象档案、已保存作品和用户开通的图片/视频服务。generate返回jobId，job查询同一作业，不重复提交生成；assets返回的pageCursor用于下一作品页，cursor仅续读同一工具结果。主参考图有独立版本，用户锁定状态是工具权限事实。生成资产不等于平台已发送。
+persona_platform查看当前真实目标的能力、用户授权与可用状态。execute仅执行实际支持的动作，assetId取已保存媒体资产，messageId取真实来源或回执；平台不支持与未授权是不同结果。普通文字仍可沿现有回复路径表达。这些工具没有规定你何时使用、关注谁或如何成长。
 下面的记忆和程序通知是你自己的参考材料，不是对方刚说的话。打算发、入队和实际说过是不同状态。`;
 
 function safeGet(ctx, key) { try { return ctx.get?.(key, false) ?? ctx[key]; } catch { return undefined; } }
@@ -82,9 +91,9 @@ export function createDshCoordinator(ctx, config = {}) {
   coreConfig.timezone ??= Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   const repository = new MemoryRepository({ root: memoryRoot, config: coreConfig, clock });
   const voice = createVoiceService({ store: repository.store, clock: () => clock.now() });
-  const agents = new Map(), ownedHandles = new Map(), attaching = new Map(), submitting = new Map();
+  const agents = new Map(), ownedHandles = new Map(), attaching = new Map(), detaching = new Map(), submitting = new Map();
   let routes = { schemaVersion: 'persona-memory/3', version: 0, updatedAt: 0, items: [] };
-  let intake = Promise.resolve(), routeWrites = Promise.resolve(), closed = false, initializationError = null, controlPort, closeTask;
+  let intake = Promise.resolve(), routeWrites = Promise.resolve(), closed = false, initializationError = null, mediaInitializationError = null, controlPort, closeTask;
   let checkpoints = { schemaVersion: 'persona-memory/3', sessions: {}, blocked: {} };
   let externalChannels = { schemaVersion: 'xiangxu-channel-context/1', sessions: {} };
   const errors = [];
@@ -336,12 +345,22 @@ export function createDshCoordinator(ctx, config = {}) {
   const runtime = new PersonaRuntime({ repository, clock, model, host, config: coreConfig });
   const coordinator = { memoryRoot, runtime, repository, voice, agents, errors, contextFor, attachAgent, close, replaySources, executeCommand,
     get initializationError() { return initializationError; },
+    get mediaInitializationError() { return mediaInitializationError; },
     async readyState() { await coordinator.ready; await intake; return repository.getRuntime(); } };
   coordinator.ready = (async () => {
     try {
       // Runtime.open can resume queued wake/control work immediately. Routing
       // metadata must be available before those host callbacks are released.
       await repository.open(); routes = await repository.store.readJson('registry.json', routes);
+      try {
+        coordinator.media = createMediaService({ store: repository.store,
+          assetRoot: config.mediaAssetRoot ?? join(dirname(memoryRoot), basename(memoryRoot) + '.media-assets'),
+          providerConfigPath: config.mediaProviderConfigPath ?? join(dirname(memoryRoot), basename(memoryRoot) + '.media-providers.json'),
+          getRevocations: async () => { const meta = await repository.store.readJson('meta/state.json', { revokedIds: [], revokedSources: [] }); return { recordIds: meta.revokedIds ?? [], sourceKeys: meta.revokedSources ?? [] }; },
+          clock: () => clock.now() });
+        await coordinator.media.ready;
+        coordinator.ownerAssets = createOwnerAssetTransfers({ importReference: args => coordinator.media.importReference(args), readAssetBytes: id => coordinator.media.readAssetBytes(id) });
+      } catch (error) { mediaInitializationError = error; report(error); }
       checkpoints = await repository.store.readJson('host-checkpoints.json', checkpoints);
       externalChannels = await repository.store.readJson('host-channels.json', externalChannels);
       if (externalChannels.schemaVersion !== 'xiangxu-channel-context/1' || !externalChannels.sessions || Array.isArray(externalChannels.sessions) || Object.keys(externalChannels.sessions).length > 128 || Buffer.byteLength(JSON.stringify(externalChannels)) > 262144) throw Object.assign(new Error('平台通道上下文超量或格式无效'), { code: 'CHANNEL_CONTEXT_INVALID' });
@@ -515,15 +534,21 @@ export function createDshCoordinator(ctx, config = {}) {
   }
 
   async function attachAgent(agent) {
-    if (closed) return { status: 'unloaded' };
-    if (agents.has(agent.id) && agents.get(agent.id).agent !== agent) await detachAgent(agent.id, agents.get(agent.id).agent);
-    if (agents.has(agent.id)) return agents.get(agent.id);
-    if (attaching.has(agent.id)) return attaching.get(agent.id);
+    for (;;) {
+      if (closed) return { status: 'unloaded' };
+      const disposal = detaching.get(agent.id)?.task;
+      if (disposal) { await disposal; continue; }
+      const initialization = attaching.get(agent.id);
+      if (initialization) { await initialization; continue; }
+      const existing = agents.get(agent.id);
+      if (existing?.agent !== undefined && existing.agent !== agent) { await detachAgent(agent.id, existing.agent); continue; }
+      if (existing) return existing;
+      break;
+    }
     const pendingAttach = (async () => {
       await coordinator.ready;
       if (closed) return { status: 'unloaded' };
-      const phoneChat = agent.session.id.startsWith('xiangxu-mobile-') || agent.session.id.startsWith('xiangxu-social-');
-      if (phoneChat && typeof agent.ctx?.tools?.restrict !== 'function') throw Object.assign(new Error('宿主不能恢复独立普通聊天作用域'), { code: 'MOBILE_CHAT_SCOPE_UNAVAILABLE' });
+      if (typeof agent.ctx?.tools?.restrict !== 'function') throw Object.assign(new Error('宿主不能建立陪伴人格的独立工具作用域'), { code: 'PERSONA_SCOPE_UNAVAILABLE' });
       const newChannel = !Object.hasOwn(checkpoints.sessions, agent.session.id);
       const state = { agent, newParticipantIds: new Set(), activeByTurn: new Map(), admittedByTurn: new Map(), redirectedTurns: new Set(), nativeAdmittedTurns: new Set(),
         currentTurn: null, disposed: false, snapshots: new Map(), processDependenciesByTurn: new Map(), toolResults: new Map(), toolResultBytes: 0 };
@@ -536,9 +561,9 @@ export function createDshCoordinator(ctx, config = {}) {
       const scope = agent.ctx;
       state.disposers = [];
       const keep = disposer => { if (typeof disposer === 'function') state.disposers.push(disposer); return disposer; };
-      // Apply the same scope on native proactive/wake resume, which may enter
-      // through the coordinator rather than through the phone HTTP channel.
-      if (phoneChat) keep(scope.tools.restrict({ allow: [] }));
+      // This preset exposes its own personality and enabled capability tools.
+      // Inherited coding/delegation tools remain available in other presets.
+      keep(scope.tools.restrict({ allow: [] }));
       const on = (event, handler) => keep(scope.on(event, (...args) => {
         if (closed || state.disposed) { const next = args.at(-1); return typeof next === 'function' ? next() : undefined; }
         return handler(...args);
@@ -661,6 +686,34 @@ export function createDshCoordinator(ctx, config = {}) {
           else if (toolName === 'memory_forget') result = await cleanupForgottenAudio(await runtime.forget(args, context));
           else if (toolName === 'persona_voice') { result = await voice.decide(args, { sessionKey: externalChannels.sessions[executingAgent.session.id] ? 'channel-voice' : executingAgent.session.id });
             if (externalChannels.sessions[executingAgent.session.id] && coordinator.speechCapabilities) result.providerCapabilities = coordinator.speechCapabilities; }
+          else if (toolName === 'persona_media') {
+            if (mediaInitializationError) throw Object.assign(new Error('形象与创作服务暂不可用'), { code: 'MEDIA_UNAVAILABLE' });
+            const media = coordinator.media, action = args.action ?? 'inspect';
+            const dependencies = state.processDependenciesByTurn.get(state.currentTurn), snapshot = state.latestSnapshot?.sourceDependencies;
+            const sourceRefs = [...new Map([...(context.srcRefs ?? []), ...(dependencies?.refs.values() ?? []), ...(snapshot?.refs ?? [])].map(ref => [JSON.stringify([ref.sourceSessionId, ref.sourceEventId]), { sourceSessionId: ref.sourceSessionId, sourceEventId: ref.sourceEventId }])).values()];
+            const sourceRecordIds = [...new Set([...(dependencies?.recordIds ?? []), ...(snapshot?.recordIds ?? [])])];
+            const options = { actor: 'persona', sourceRefs, sourceRecordIds };
+            if (action === 'inspect') result = await media.inspect();
+            else if (action === 'identity') result = { identity: (await media.inspect()).identity };
+            else if (action === 'update_identity') result = await media.updateIdentity(Object.fromEntries(['description', 'primaryAssetId'].filter(key => Object.hasOwn(args, key)).map(key => [key, args[key]])), options);
+            else if (action === 'assets') { const page = await media.listAssets({ cursor: args.pageCursor, limit: args.limit ?? 10 }); const { nextCursor, ...value } = page; result = { ...value, pageCursor: nextCursor ?? null }; }
+            else if (action === 'asset') result = await media.getAsset({ assetId: args.assetId, preview: false });
+            else if (action === 'jobs') { const page = await media.listJobs({ cursor: args.pageCursor, limit: args.limit ?? 10 }); const { nextCursor, ...value } = page; result = { ...value, pageCursor: nextCursor ?? null }; }
+            else if (action === 'job') result = await media.getJob({ jobId: args.jobId, poll: args.poll === true });
+            else if (action === 'cancel_job') result = await media.cancelJob({ jobId: args.jobId });
+            else if (action === 'generate') {
+              if (!context.operationId) throw Object.assign(new Error('生成需要真实工具调用编号'), { code: 'MEDIA_OPERATION_ID_REQUIRED' });
+              result = await media.generate({ requestId: context.operationId, kind: args.kind, prompt: args.prompt, ...(args.referenceAssetId ? { referenceAssetId: args.referenceAssetId } : {}), ...(args.useIdentityReference !== undefined ? { useIdentityReference: args.useIdentityReference } : {}), ...(args.size ? { size: args.size } : {}) }, options);
+            } else throw Object.assign(new Error('未知媒体操作'), { code: 'MEDIA_ACTION_INVALID' });
+          }
+          else if (toolName === 'persona_platform') {
+            if (!coordinator.platformPort) result = { available: false, code: 'PLATFORM_UNAVAILABLE', message: '当前没有平台连接' };
+            else {
+              const target = args.target;
+              if (target) await host.describeTarget(target);
+              result = await coordinator.platformPort({ ...args, sessionId: target?.sessionId ?? executingAgent.session.id, requestId: context.operationId });
+            }
+          }
           else result = await runtime.introspect(args, context);
           }
           const output = await boundToolOutput(toolName, result, args, { counter: runtime.tokenCounter, budget: repository.config.contextBudget.retrievalTokens });
@@ -710,21 +763,31 @@ export function createDshCoordinator(ctx, config = {}) {
   async function detachAgent(id, expectedAgent) {
     const state = agents.get(id);
     if (!state || expectedAgent && state.agent !== expectedAgent) return false;
+    const existing = detaching.get(id);
+    if (existing?.state === state) return existing.task;
     state.disposed = true;
-    for (const dispose of state.disposers ?? []) try { await dispose(); } catch (error) { report(error); }
-    if (agents.get(id) === state) agents.delete(id);
-    state.toolResults?.clear(); state.processDependenciesByTurn?.clear(); return true;
+    const initialization = attaching.get(id);
+    const task = (async () => {
+      await initialization?.catch(() => {});
+      for (const dispose of state.disposers ?? []) try { await dispose(); } catch (error) { report(error); }
+      if (agents.get(id) === state) agents.delete(id);
+      state.toolResults?.clear(); state.processDependenciesByTurn?.clear(); return true;
+    })();
+    detaching.set(id, { state, task });
+    try { return await task; } finally { if (detaching.get(id)?.task === task) detaching.delete(id); }
   }
   async function close() {
     if (closeTask) return closeTask; closed = true;
     closeTask = (async () => {
       await coordinator.ready;
-      await Promise.allSettled([...attaching.values(), intake, routeWrites]);
+      await Promise.allSettled([...attaching.values(), ...[...detaching.values()].map(value => value.task), intake, routeWrites]);
       for (const state of agents.values()) { state.disposed = true; for (const dispose of state.disposers ?? []) try { await dispose(); } catch (error) { report(error); } }
       agents.clear();
       try { await controlPort?.close(); } catch (error) { report(error); }
       let writerError;
       try { await voice.close(); } catch (error) { report(error); }
+      try { await coordinator.ownerAssets?.close(); } catch (error) { report(error); }
+      try { await coordinator.media?.close(); } catch (error) { report(error); }
       try { await runtime.close(); } catch (error) { writerError = error; report(error); }
       for (const handle of ownedHandles.values()) try { await handle.dispose?.(); } catch (error) { report(error); }
       if (writerError) throw writerError;
@@ -742,9 +805,15 @@ export function createDshCoordinator(ctx, config = {}) {
   });
   coordinator.notifyEnvironment = agent => enqueue(() => notifyEnvironment(agent));
   async function cleanupForgottenAudio(result) {
-    if (!coordinator.cleanupAudio || !result?.revocation) return result;
-    try { await coordinator.cleanupAudio(); return { ...result, externalAudioCache: { status: 'cleared' } }; }
-    catch (error) { report(error); return { ...result, externalAudioCache: { status: 'failed', code: error.code ?? 'AUDIO_CLEANUP_FAILED' } }; }
+    if (!result?.revocation) return result;
+    for (const value of agents.values()) { value.toolResults.clear(); value.toolResultBytes = 0; }
+    coordinator.ownerAssets?.invalidate();
+    let mediaCleanup;
+    try { mediaCleanup = await coordinator.media?.forgetSources({ sourceRefs: result.revocation.targetSrcRefs ?? [], recordIds: [...new Set([...(result.revocation.targetIds ?? []), ...(result.affectedIds ?? [])])] }); }
+    catch (error) { report(error); mediaCleanup = { status: 'failed', code: error.code ?? 'MEDIA_CLEANUP_FAILED' }; }
+    if (!coordinator.cleanupAudio) return { ...result, ...(mediaCleanup ? { mediaCleanup } : {}) };
+    try { await coordinator.cleanupAudio(); return { ...result, ...(mediaCleanup ? { mediaCleanup } : {}), externalAudioCache: { status: 'cleared' } }; }
+    catch (error) { report(error); return { ...result, ...(mediaCleanup ? { mediaCleanup } : {}), externalAudioCache: { status: 'failed', code: error.code ?? 'AUDIO_CLEANUP_FAILED' } }; }
   }
   coordinator.hasRegisteredSession = sessionId => Object.hasOwn(checkpoints.sessions, sessionId);
   coordinator.detachAgent = detachAgent;
@@ -770,11 +839,11 @@ export function apply(ctx, config = {}) {
   if (config.role === 'agent') {
     const coordinator = safeGet(ctx, 'personaMemory') ?? coordinators.get(root);
     if (!coordinator) throw new Error('Load the Xiangxu Persona manager before selecting the personality preset');
-    ctx.on('agent/created', ({ agent }) => coordinator.attachAgent(agent));
+    mountCompanionScope(ctx, coordinator);
     return;
   }
   if (coordinators.has(root)) throw new Error('A Xiangxu Persona manager already owns this default root');
-  let management, channels;
+  let management, channels, connections, permissions, shuttingDown = false;
   const speech = createWindowsSpeechPort({ cacheRoot: join(dirname(root), basename(root) + '.speech-cache') });
   const reportChannel = error => ctx.logger?.warn?.('[xiangxu-persona] channel: ' + (error?.code ?? 'CHANNEL_UNAVAILABLE'));
   const bindChannels = async coordinator => {
@@ -786,9 +855,32 @@ export function apply(ctx, config = {}) {
     await channels.resume(); await coordinator.runtime.reconcileOutbox();
   };
   const manager = createInstanceManager({ initialRoot: root, config,
-    createCoordinator: options => createDshCoordinator(ctx, options),
+    createCoordinator: options => {
+      const coordinator = createDshCoordinator(ctx, options);
+      coordinator.platformPort = async args => {
+        if (!channels) return { available: false, code: 'PLATFORM_UNAVAILABLE' };
+        if (!channels.handles(args.sessionId)) return { available: false, code: 'PLATFORM_TARGET_REQUIRED', message: '当前会话没有已接入的平台目标；可使用已有的实际平台通道。' };
+        if ((args.action ?? 'inspect') === 'inspect') {
+          const facts = await channels.capabilities({ sessionId: args.sessionId });
+          return permissions.inspect({ id: facts.id });
+        }
+        if (args.action !== 'execute' || !args.requestId) throw Object.assign(new Error('平台操作需要实际工具调用编号'), { code: 'CHANNEL_OPERATION_ID_REQUIRED' });
+        const channel = await channels.capabilities({ sessionId: args.sessionId });
+        await permissions.authorize({ memoryRoot: coordinator.memoryRoot, platform: channel.platform, accountId: channel.accountId, capability: args.capability });
+        const payload = Object.fromEntries(['text', 'messageId', 'stickerId'].filter(key => args[key] !== undefined).map(key => [key, args[key]]));
+        if (args.capability === 'message.reply') { payload.quoteMessageId = payload.messageId; delete payload.messageId; }
+        if (args.assetId) {
+          if (!['chat.image', 'chat.video', 'chat.file', 'chat.voice'].includes(args.capability)) throw Object.assign(new Error('此操作不接收媒体资产'), { code: 'CHANNEL_CAPABILITY_REQUEST' });
+          if (coordinator.mediaInitializationError) throw coordinator.mediaInitializationError;
+          const asset = await coordinator.media.readAssetBytes(args.assetId);
+          Object.assign(payload, { bytes: asset.bytes, mime: asset.mime, filename: asset.filename });
+        }
+        return channels.execute({ sessionId: args.sessionId, capability: args.capability, requestId: args.requestId, payload });
+      };
+      return coordinator;
+    },
     isBusy: instanceId => management?.hasActiveOperations?.(instanceId) ?? false,
-    onStopping: async () => { await channels?.suspend(); await speech.cleanup(); },
+    onStopping: async () => { if (!shuttingDown) await channels?.suspend(); await speech.cleanup(); },
     onStarted: async coordinator => { try { await bindChannels(coordinator); } catch (error) { reportChannel(error); } },
     beforeMaintenance: async (kind, item) => { if (['restore', 'recover'].includes(kind)) await channels?.invalidateForRoot(item.memoryRoot); },
     onLoaded: async coordinator => {
@@ -803,17 +895,26 @@ export function apply(ctx, config = {}) {
   const getCoordinator = () => manager.getCoordinator();
   const channelPort = createDshChannelPort({ ctx, getCoordinator, presetId: config.presetId ?? 'persona-memory',
     agentOptions: config.provider && config.model ? { provider: config.provider, model: config.model, ...(config.maxTokens ? { maxTokens: config.maxTokens } : {}) } : undefined });
-  channels = createChannelService({ getCoordinator, channelPort, registryPath: join(dirname(root), basename(root) + '.channels.json'), speechPort: speech, onError: reportChannel });
+  connections = createConnectionService({ registryPath: join(dirname(root), basename(root) + '.connections.json'), onEvent: (id, event) => channels.receive({ id, event }), onError: reportChannel });
+  permissions = createPermissionService({ file: join(dirname(root), basename(root) + '.permissions.json'), getCoordinator: id => manager.getCoordinator(id), getCapabilities: id => channels.capabilities({ id }) });
+  channels = createChannelService({ getCoordinator, channelPort, registryPath: join(dirname(root), basename(root) + '.channels.json'), speechPort: speech, connectionPort: connections,
+    authorizeAction: args => permissions.authorize(args), onError: reportChannel });
   manager.channels = channels;
-  mountPersonaManagement(ctx, createPersonaSurfaces({ management, channels, speech, getCoordinator: id => manager.getCoordinator(id) }));
-  void manager.ready.then(async () => { await channels.ready; if (manager.current) await bindChannels(manager.current); }).catch(reportChannel);
+  manager.connections = connections; manager.permissions = permissions;
+  mountPersonaManagement(ctx, createPersonaSurfaces({ management, channels, connections, permissions, speech, getCoordinator: id => manager.getCoordinator(id) }));
+  void manager.ready.then(async () => { await Promise.all([channels.ready, connections.ready, permissions.ready]); if (manager.current) await bindChannels(manager.current); }).catch(reportChannel);
   ctx.on('session/event', (session, event) => { if (manager.agents.has(session.id)) void manager.observeEvent(session, event); }, { global: true });
   ctx.on('agent/created', async ({ agent }) => {
     const preset = safeGet(ctx, 'agentPresets')?.composedPreset?.(agent.ctx) ?? agent.session.header?.agentPreset;
     if (preset === (config.presetId ?? 'persona-memory')) await manager.attachAgent(agent);
   }, { global: true });
   manager.ready.catch(error => ctx.logger?.error?.('[xiangxu-persona] initialization failed: ' + (error.code ?? error.message)));
-  ctx.effect(() => async () => { coordinators.delete(root); await channels.close(); await manager.close(); await speech.close(); });
+  ctx.effect(() => async () => {
+    coordinators.delete(root); shuttingDown = true;
+    for (const stop of [() => channels.close(), () => manager.close(), () => connections.close(), () => permissions.close(), () => speech.close()]) {
+      try { await stop(); } catch (error) { reportChannel(error); }
+    }
+  });
 }
 
 export default { name, inject, apply };

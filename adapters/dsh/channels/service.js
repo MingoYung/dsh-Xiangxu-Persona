@@ -4,19 +4,21 @@ import path from 'node:path';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { atomicReplaceWithRetry } from '../../../core/store.js';
 import { createOneBotClient, decodeOneBotEvent } from './onebot.js';
+import { CAPABILITY_IDS, capabilities as capabilityMap, normalizedEvent } from '../connections/common.js';
+import { createBridgeClient } from '../connections/bridge.js';
 
 export const CHANNEL_LIMITS = Object.freeze({ registryBytes: 1048576, bindings: 128, receipts: 2048, unresolved: 256, terminalReceipts: 1024, scopeIds: 256, bodyBytes: 65536, queued: 32, excluded: 8 });
 const SCHEMA = 'xiangxu-channels/1', IDS = ['qq', 'wechat'];
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const clone = value => structuredClone(value);
-const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
+const hash = value => createHash('sha256').update(typeof value === 'string' || value instanceof Uint8Array ? value : JSON.stringify(value)).digest('hex');
 const failure = (code, message) => Object.assign(new Error(message), { code });
 const fail = (code, message) => { throw failure(code, message); };
 const bounded = (value, name, max = 256, empty = false) => { if (typeof value !== 'string' || !empty && !value || Array.from(value).length > max || /[\u0000-\u001f\u007f]/u.test(value)) fail('CHANNEL_BAD_REQUEST', name + '格式无效'); return value; };
 const normalizedRoot = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
 const terminal = receipt => !['prepared', 'unknown'].includes(receipt.status);
 const cleanError = error => ({ code: /^[A-Z0-9_]{1,80}$/.test(error?.code ?? '') ? error.code : 'CHANNEL_OPERATION_FAILED', message: '渠道操作未完成，请检查本地桥、连接设置和诊断。' });
-const DEFAULT_CONFIG = { apiUrl: '', accountId: '', accessToken: '', allowedPrivateIds: [], allowedGroupIds: [], voiceMode: 'text', allowRemote: false };
+const DEFAULT_CONFIG = { mode: 'bridge', apiUrl: '', accountId: '', accessToken: '', allowedPrivateIds: [], allowedGroupIds: [], voiceMode: 'text', allowRemote: false };
 function retainedRoute(value) {
   if (!object(value) || Object.keys(value).some(key => !['provider', 'model', 'reasoningEffort', 'maxTokens'].includes(key))) fail('CHANNEL_ROUTE_INVALID', '宿主模型路由无效');
   bounded(value.provider, '模型提供方'); bounded(value.model, '模型');
@@ -28,7 +30,7 @@ function profileDefaults(id) { return { id, platform: id, protocol: id === 'qq' 
 function configuration(patch, previous = DEFAULT_CONFIG) {
   if (!object(patch)) fail('CHANNEL_BAD_CONFIG', '渠道配置必须是对象');
   for (const key of Object.keys(patch)) if (!Object.hasOwn(DEFAULT_CONFIG, key) && key !== 'clearAccessToken') fail('CHANNEL_BAD_CONFIG', '未知渠道配置字段');
-  const next = { ...clone(previous), ...clone(patch) }; delete next.clearAccessToken;
+  const next = { ...clone(DEFAULT_CONFIG), ...clone(previous), ...clone(patch) }; delete next.clearAccessToken;
   if (patch.accessToken === '') next.accessToken = previous.accessToken;
   if (patch.clearAccessToken !== undefined && typeof patch.clearAccessToken !== 'boolean') fail('CHANNEL_BAD_CONFIG', '清除令牌标记无效');
   if (patch.clearAccessToken) { if (patch.accessToken) fail('CHANNEL_BAD_CONFIG', '不能同时设置并清除令牌'); next.accessToken = ''; }
@@ -42,7 +44,7 @@ function configuration(patch, previous = DEFAULT_CONFIG) {
     if (!Array.isArray(next[key]) || next[key].length > CHANNEL_LIMITS.scopeIds) fail('CHANNEL_BAD_CONFIG', '接入范围超过技术容量');
     next[key] = [...new Set(next[key].map(value => bounded(value, '接入ID')))];
   }
-  if (!['text', 'both', 'voice'].includes(next.voiceMode) || typeof next.allowRemote !== 'boolean') fail('CHANNEL_BAD_CONFIG', '回复形式或远程许可无效');
+  if (!['text', 'both', 'voice'].includes(next.voiceMode) || typeof next.allowRemote !== 'boolean' || !['bridge', 'official'].includes(next.mode)) fail('CHANNEL_BAD_CONFIG', '回复形式、连接方式或远程许可无效');
   return next;
 }
 function validateRegistry(value) {
@@ -52,6 +54,7 @@ function validateRegistry(value) {
     const selected = value.profiles.filter(profile => profile?.id === id);
     if (selected.length !== 1 || selected[0].platform !== id || selected[0].protocol !== (id === 'qq' ? 'onebot11' : 'onebot12') || typeof selected[0].enabled !== 'boolean' || selected[0].ingressHash !== null && !/^[0-9a-f]{64}$/.test(selected[0].ingressHash) || !Array.isArray(selected[0].recentExcluded) || selected[0].recentExcluded.length > CHANNEL_LIMITS.excluded) fail('CHANNEL_REGISTRY_INVALID', '渠道档案无效');
     configuration(selected[0].config);
+    if (selected[0].generation !== undefined && (!Number.isSafeInteger(selected[0].generation) || selected[0].generation < 0)) fail('CHANNEL_REGISTRY_INVALID', '渠道代次无效');
   }
   const sessions = new Set();
   for (const binding of value.bindings) {
@@ -98,7 +101,7 @@ export function createChannelRegistryStorage(file) {
 }
 
 /** Optional IM transport. This registry stores routing metadata and receipts, never dialogue text. */
-export function createChannelService({ getCoordinator, channelPort, registryPath, storage, clientFactory = createOneBotClient, speechPort, clock = Date.now, onError = () => {}, port = 17654 } = {}) {
+export function createChannelService({ getCoordinator, channelPort, registryPath, storage, clientFactory = createBridgeClient, speechPort, connectionPort, authorizeAction = async ({ capability }) => { if (!['chat.text', 'chat.voice'].includes(capability)) fail('CAPABILITY_PERMISSION_DENIED', '此操作尚未获得用户授权'); }, clock = Date.now, onError = () => {}, port = 17654 } = {}) {
   if (typeof getCoordinator !== 'function' || typeof channelPort?.create !== 'function' || typeof channelPort?.send !== 'function' || typeof channelPort?.close !== 'function' || !storage && !registryPath || typeof clientFactory !== 'function') throw new TypeError('Channels need a coordinator, native port and external registry');
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) fail('CHANNEL_BAD_CONFIG', '渠道监听端口无效');
   const persistence = storage ?? createChannelRegistryStorage(registryPath), clients = new Map(), probes = new Map(), sockets = new Set();
@@ -115,7 +118,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   function compact(next) {
     let entries = next.receipts;
     while (entries.filter(terminal).length > CHANNEL_LIMITS.terminalReceipts || entries.length >= CHANNEL_LIMITS.receipts || Buffer.byteLength(JSON.stringify(next)) > CHANNEL_LIMITS.registryBytes - 8192) {
-      const removable = entries.filter(terminal).sort((a, b) => a.at - b.at)[0];
+      const removable = entries.filter(value => terminal(value) && !value.capability).sort((a, b) => a.at - b.at)[0];
       if (!removable) fail('CHANNEL_RECEIPT_CAPACITY', '渠道元数据已满；未确认回执没有被删除');
       if (removable.kind === 'inbound') {
         const binding = next.bindings.find(value => value.sessionId === removable.sessionId);
@@ -143,13 +146,17 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   function asClientProfile(value) { return { platform: value.platform, protocol: value.protocol, ...value.config }; }
   function client(value) {
     const fingerprint = hash(asClientProfile(value)); let entry = clients.get(value.id);
-    if (!entry || entry.fingerprint !== fingerprint) { entry = { fingerprint, value: clientFactory(asClientProfile(value)), verified: false }; clients.set(value.id, entry); }
+    const official = value.config.mode === 'official' ? connectionPort?.client(value.id) : null;
+    if (value.config.mode === 'official' && !official) fail('CHANNEL_OFFICIAL_UNAVAILABLE', '扫码连接服务尚未就绪');
+    if (!entry || entry.fingerprint !== fingerprint || official && entry.value !== official) { entry = { fingerprint, value: official ?? clientFactory(asClientProfile(value)), verified: false }; clients.set(value.id, entry); }
     return entry;
   }
   async function runProbe(selected) {
-    if (!selected.config.apiUrl || !selected.config.accountId) fail('CHANNEL_NOT_CONFIGURED', '请先保存本地桥地址和账号');
+    if (selected.config.mode === 'official') await connectionPort?.ready;
+    if (!selected.config.accountId || selected.config.mode !== 'official' && !selected.config.apiUrl) fail('CHANNEL_NOT_CONFIGURED', '请先完成扫码授权，或保存已有兼容桥配置');
     const entry = client(selected); let result;
     try { result = await entry.value.probe(); } catch (error) { report(error); result = { connected: false, status: 'unknown', code: cleanError(error).code }; }
+    if (selected.config.mode === 'official' && result?.accountId !== selected.config.accountId) result = { connected: false, status: 'failed', code: 'CHANNEL_ACCOUNT_MISMATCH' };
     entry.verified = result?.connected === true; probes.set(selected.id, clone(result ?? { connected: false, status: 'unknown' })); return result;
   }
   function callbackUrl(id) { return 'http://127.0.0.1:' + (livePort ?? registry.port) + '/channels/' + id + '/events'; }
@@ -160,13 +167,13 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   async function status() {
     await ready; const root = activeRoot(), speech = await speechCatalog();
     return { connections: registry.profiles.map(selected => {
-      const last = probes.get(selected.id), connected = Boolean(selected.enabled && !suspended && listener && last?.connected), capabilities = last?.capabilities ?? {};
-      return { id: selected.id, platform: selected.platform, protocol: selected.protocol, configured: Boolean(selected.config.apiUrl && selected.config.accountId), enabled: selected.enabled, connected,
+      const official = selected.config.mode === 'official', last = probes.get(selected.id), connected = Boolean(selected.enabled && !suspended && (official ? clients.get(selected.id)?.value.listening : listener) && last?.connected), capabilities = last?.capabilities ?? {};
+      return { id: selected.id, platform: selected.platform, mode: official ? 'official' : 'bridge', protocol: official ? selected.id === 'qq' ? 'qqbot' : 'ilink' : selected.protocol, configured: Boolean(selected.config.accountId && (official || selected.config.apiUrl)), enabled: selected.enabled, connected,
         status: suspended && selected.enabled ? 'suspended' : !selected.enabled ? 'disabled' : connected ? 'connected' : last?.status ?? 'disconnected',
         error: last?.code ? { code: last.code, message: '本地桥未确认连接，请检查桥运行状态、账号和鉴权。' } : null,
-        capabilities: { private: connected, group: connected && (selected.platform === 'qq' || capabilities.group === true), text: connected && capabilities.text !== false, voice: connected && capabilities.voice === true && speech.supported === true },
+        capabilities: { private: connected, group: connected && (selected.platform === 'qq' || capabilities.group === true), text: connected && capabilities.text !== false, voice: connected && capabilities.voice === true && speech.supported === true }, chatTypes: official && selected.id === 'wechat' ? ['private'] : ['private', 'group'],
         config: Object.fromEntries(Object.entries(selected.config).filter(([key]) => key !== 'accessToken')), hasAccessToken: Boolean(selected.config.accessToken), hasIngressToken: Boolean(selected.ingressHash), callbackUrl: callbackUrl(selected.id), recentExcluded: clone(selected.recentExcluded), currentInstance: root ?? null,
-        driverRequired: true, livePlatformVerified: false };
+        driverRequired: !official, livePlatformVerified: false };
     }), listener: { running: Boolean(listener), host: '127.0.0.1', port: livePort }, voice: { supported: speech.supported === true, provider: speech.provider ?? null, catalog: { voices: speech.voices ?? [] }, capabilities: speech.capabilities ?? {} }, limits: { ...CHANNEL_LIMITS }, extensions: { telegram: 'reserved', mobileWeb: 'reserved' } };
   }
   async function closeListener() {
@@ -195,6 +202,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       if (!match || url.search) return reply(response, 404, { ok: false, error: { code: 'CHANNEL_ROUTE_NOT_FOUND', message: '未找到渠道回调' } });
       if (request.method !== 'POST') return reply(response, 405, { ok: false, error: { code: 'CHANNEL_METHOD', message: '渠道事件只接受POST' } });
       const selected = profile(match[1]), authorization = request.headers.authorization;
+      if (selected.config.mode === 'official') fail('CHANNEL_TRANSPORT_MISMATCH', '此渠道已选择官方连接，不接收兼容桥回调');
       const incoming = typeof authorization === 'string' && authorization.startsWith('Bearer ') ? hash(authorization.slice(7)) : null;
       if (!selected.ingressHash || !incoming || !timingSafeEqual(Buffer.from(selected.ingressHash), Buffer.from(incoming))) fail('CHANNEL_AUTH_REQUIRED', '渠道事件鉴权失败');
       const payload = await body(request), result = await queue(() => {
@@ -213,7 +221,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(registry.port, '127.0.0.1', resolve); });
     listener = server; livePort = server.address().port; server.on('error', report);
   }
-  async function configure({ id, config } = {}) { return queue(async () => { await ready; const selected = profile(id); if (selected.enabled) fail('CHANNEL_STOP_BEFORE_CONFIG', '请先停用此渠道再修改接入配置'); const next = configuration(config, selected.config); if (next.apiUrl && next.accountId) createOneBotClient({ platform: selected.platform, protocol: selected.protocol, ...next }); await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, config: next } : value) }); clients.delete(id); probes.delete(id); return status(); }); }
+  async function configure({ id, config } = {}) { return queue(async () => { await ready; const selected = profile(id); if (selected.enabled) fail('CHANNEL_STOP_BEFORE_CONFIG', '请先停用此渠道再修改接入配置'); const next = configuration(config, selected.config); if (next.mode !== 'official' && next.apiUrl && next.accountId) createOneBotClient({ platform: selected.platform, protocol: selected.protocol, ...next }); const changedIdentity = (selected.config.mode ?? 'bridge') !== next.mode || selected.config.accountId !== next.accountId; await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, config: next, ...(changedIdentity ? { generation: (value.generation ?? 0) + 1 } : {}) } : value), bindings: changedIdentity ? registry.bindings.map(value => value.profileId === id ? { ...value, retired: true } : value) : registry.bindings }); clients.delete(id); probes.delete(id); return status(); }); }
   async function probe({ id } = {}) { return queue(async () => { await ready; await runProbe(profile(id)); return status(); }); }
   async function rotateIngress({ id } = {}) { return queue(async () => { await ready; const selected = profile(id), value = randomBytes(32).toString('base64url'); await save({ ...registry, profiles: registry.profiles.map(item => item.id === id ? { ...item, ingressHash: hash(value) } : item) }); return { callbackUrl: callbackUrl(selected.id), ingressToken: value }; }); }
   async function start({ id, port: selectedPort } = {}) { return queue(async () => {
@@ -222,25 +230,29 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       if (!Number.isSafeInteger(selectedPort) || selectedPort < 0 || selectedPort > 65535 || listener && selectedPort !== 0 && selectedPort !== livePort) fail('CHANNEL_BAD_CONFIG', '请在监听关闭时选择有效端口');
       if (!listener) await save({ ...registry, port: selectedPort });
     }
-    if (!selected.ingressHash) fail('CHANNEL_INGRESS_REQUIRED', '请先生成并配置事件上报令牌');
+    if (selected.config.mode !== 'official' && !selected.ingressHash) fail('CHANNEL_INGRESS_REQUIRED', '请先生成并配置事件上报令牌');
     const checked = await runProbe(selected); if (!checked?.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '本地桥尚未确认账号在线，请检查连接后启用');
-    await listen(); boundRoot = coordinator.memoryRoot; suspended = false;
+    if (selected.config.mode !== 'official') await listen(); boundRoot = coordinator.memoryRoot; suspended = false;
     try { await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, enabled: true } : value) }); }
     catch (error) { if (!registry.profiles.some(value => value.enabled)) await closeListener(); throw error; }
+    if (selected.config.mode === 'official') try { await connectionPort.listen({ id }); } catch (error) { await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, enabled: false } : value) }); report(error); throw error; }
     return status();
   }); }
   async function stop({ id } = {}) { return queue(async () => {
     await ready; profile(id); await ensureIdle(id);
     await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, enabled: false } : value) });
+    if (profile(id).config.mode === 'official') await connectionPort?.stop({ id });
     for (const binding of registry.bindings.filter(value => value.profileId === id)) await channelPort.closeChannel?.(binding);
-    if (!registry.profiles.some(value => value.enabled)) await closeListener(); return status();
+    if (!registry.profiles.some(value => value.enabled && value.config.mode !== 'official')) await closeListener(); return status();
   }); }
   function allowed(selected, event) { const list = event.conversation.type === 'group' ? selected.config.allowedGroupIds : selected.config.allowedPrivateIds; const id = event.conversation.type === 'group' ? event.conversation.id : event.sender.id; return list.includes('*') || list.includes(id); }
-  async function ingest(id, payload) {
-    const selected = profile(id); if (suspended || !listener) fail('CHANNEL_SUSPENDED', '渠道当前未接收事件'); if (!selected.enabled) fail('CHANNEL_DISABLED', '这个渠道尚未启用');
+  async function ingest(id, payload, normalized = false) {
+    const selected = profile(id); if (suspended || selected.config.mode !== 'official' && !listener) fail('CHANNEL_SUSPENDED', '渠道当前未接收事件'); if (!selected.enabled) fail('CHANNEL_DISABLED', '这个渠道尚未启用');
+    if (normalized !== (selected.config.mode === 'official')) fail('CHANNEL_TRANSPORT_MISMATCH', '渠道传输方式不匹配');
     const coordinator = await current(); if (!sameRoot(coordinator.memoryRoot, boundRoot)) fail('CHANNEL_INSTANCE_CHANGED', '人格实例已经切换，请重新启用渠道');
     if (!client(selected).verified && !(await runProbe(selected))?.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '本地桥尚未确认当前账号在线，事件未接收');
-    const event = decodeOneBotEvent(asClientProfile(selected), payload); if (!event) return { status: 'ignored', accepted: false };
+    const event = normalized ? normalizedEvent(payload) : decodeOneBotEvent(asClientProfile(selected), payload); if (!event) return { status: 'ignored', accepted: false };
+    if (event.platform !== selected.platform || event.accountId !== selected.config.accountId) fail('CHANNEL_ACCOUNT_MISMATCH', '事件不属于当前连接账号');
     if (!allowed(selected, event)) {
       const metadata = { senderId: event.sender.id, ...(event.conversation.type === 'group' ? { groupId: event.conversation.id } : {}), at: clock() };
       await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, recentExcluded: [...value.recentExcluded, metadata].slice(-CHANNEL_LIMITS.excluded) } : value) });
@@ -248,9 +260,9 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     }
     if (!event.message.text) return { status: 'unsupported', accepted: false, unsupportedSegments: event.unsupportedSegments ?? [] };
     const root = coordinator.memoryRoot, generation = registry.generations.find(value => sameRoot(value.memoryRoot, root))?.value ?? 0;
-    const facts = { platform: event.platform, accountId: event.accountId, conversation: event.conversation, sender: event.sender }, stable = hash([normalizedRoot(root), generation, facts.platform, facts.accountId, facts.conversation.type, facts.conversation.id, facts.sender.id]);
+    const facts = { platform: event.platform, accountId: event.accountId, conversation: event.conversation, sender: event.sender }, stable = hash([normalizedRoot(root), generation, facts.platform, facts.accountId, facts.conversation.type, facts.conversation.id, facts.sender.id, ...(selected.generation ? [selected.generation] : [])]);
     let binding = registry.bindings.find(value => value.sessionId === 'xiangxu-social-' + stable.slice(0, 32));
-    const sourceId = 'im-' + hash([event.platform, event.accountId, event.message.id]), receiptId = hash([normalizedRoot(root), 'inbound', sourceId]), textHash = hash(event.message.text);
+    const sourceId = 'im-' + hash([event.platform, event.accountId, event.message.id, ...(normalized ? ['official'] : [])]), receiptId = hash([normalizedRoot(root), 'inbound', sourceId]), textHash = hash(event.message.text);
     const previous = registry.receipts.find(value => value.id === receiptId);
     if (previous) { if (previous.textHash !== textHash) fail('CHANNEL_MESSAGE_CONFLICT', '同一平台消息ID不能替换原文'); return { status: previous.status === 'prepared' ? 'unknown' : previous.status, accepted: previous.status === 'accepted', duplicate: true, messageId: previous.messageId }; }
     if (!binding && registry.bindings.length >= CHANNEL_LIMITS.bindings) fail('CHANNEL_BINDING_CAPACITY', '渠道会话登记已达到128条技术上限');
@@ -284,14 +296,17 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     return { status: 'accepted', accepted: true, messageId: sourceId, sessionId: binding.sessionId };
   }
   function resultFor(receipt, duplicate = false) {
+    if (receipt.operationResult) return { ...clone(receipt.operationResult), duplicate };
     if (receipt.status !== 'delivered') return { status: receipt.status === 'prepared' ? 'unknown' : receipt.status, duplicate, code: receipt.code ?? null, deliveryId: receipt.deliveryId ?? null };
-    return { status: 'delivered', duplicate, deliveryId: receipt.deliveryId, receiptId: receipt.platformReceiptId, messageId: receipt.platformMessageId, deliveredAt: receipt.deliveredAt,
+    return { status: 'delivered', duplicate, deliveryId: receipt.deliveryId, receiptId: receipt.platformReceiptId, messageId: receipt.platformMessageId, ...(receipt.messageIdKind ? { messageIdKind: receipt.messageIdKind } : {}), deliveredAt: receipt.deliveredAt,
       sourceSessionId: receipt.sessionId, sourceEventId: receipt.sourceEventId, sourceSeq: receipt.seq, seq: receipt.seq, textHash: receipt.textHash, sourceKind: 'model', confirmedBy: receipt.confirmedBy,
       ...(receipt.voiceUnavailable ? { voiceUnavailable: true } : {}), ...(receipt.voiceDelivery ? { voiceDelivery: clone(receipt.voiceDelivery) } : {}) };
   }
   const confirmedDelivery = value => value?.status === 'delivered' && typeof value.messageId === 'string' && typeof value.receiptId === 'string';
-  const ackFields = value => ({ platformMessageId: value.messageId, platformReceiptId: value.receiptId, deliveredAt: value.deliveredAt ?? clock(), confirmedBy: value.confirmedBy ?? 'platform-receipt' });
+  const ackFields = value => ({ platformMessageId: value.messageId, platformReceiptId: value.receiptId, ...(value.messageIdKind ? { messageIdKind: value.messageIdKind } : {}), deliveredAt: value.deliveredAt ?? clock(), confirmedBy: value.confirmedBy ?? 'platform-receipt' });
+  async function authorize(binding, capability) { await authorizeAction({ memoryRoot: binding.memoryRoot, platform: binding.facts.platform, accountId: binding.facts.accountId, capability }); }
   async function voiceDelivery(entry, binding, text, deliveryId) {
+    await authorize(binding, 'chat.voice');
     if (!speechPort?.synthesize || !entry.value.sendVoice || entry.value.capabilities?.voice !== true) return { status: 'failed', code: 'CHANNEL_VOICE_UNAVAILABLE' };
     const coordinator = await current(), preferences = await coordinator.voice?.inspect?.('channel-voice');
     if (!preferences?.effective?.available) return { status: 'failed', code: 'CHANNEL_VOICE_UNAVAILABLE' };
@@ -328,13 +343,14 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     bounded(deliveryId, '交付编号', 160);
     const next = compact(clone(registry)); next.receipts.push(receipt); await save(next);
     let outcome, audioOutcome = null;
-    if (binding.retired || suspended || !selected.enabled || !sameRoot(binding.memoryRoot, activeRoot())) outcome = { status: 'unknown', code: binding.retired ? 'CHANNEL_BINDING_RETIRED' : 'CHANNEL_DISABLED' };
+    if (binding.retired || suspended || !selected.enabled || !sameRoot(binding.memoryRoot, activeRoot()) || !allowed(selected, binding.facts)) outcome = { status: 'unknown', code: binding.retired ? 'CHANNEL_BINDING_RETIRED' : 'CHANNEL_DISABLED' };
     else {
       try {
         const entry = client(selected); await runProbe(selected);
         if (!entry.verified) outcome = { status: 'unknown', code: 'CHANNEL_BRIDGE_UNAVAILABLE' };
         else if (selected.config.voiceMode === 'voice') outcome = audioOutcome = await voiceDelivery(entry, binding, args.text, deliveryId + '-voice');
         else {
+          await authorize(binding, 'chat.text');
           outcome = await entry.value.sendText(binding.facts, args.text, { deliveryId });
           if (selected.config.voiceMode === 'both' && confirmedDelivery(outcome)) {
             const checkpoint = clone(registry), partial = { ...receipt, status: 'delivered', ...ackFields(outcome), voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_NOT_CONFIRMED' } };
@@ -366,13 +382,48 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     const found = registry.receipts.find(value => value.kind === 'outbound' && value.sessionId === sessionId && (record.sourceEventId ? value.sourceEventId === record.sourceEventId : record.deliveryId && value.deliveryId === record.deliveryId));
     return found ? resultFor(found, true) : { status: 'unknown', code: 'CHANNEL_RECEIPT_UNAVAILABLE' };
   }
-  async function suspend() { return queue(async () => { await ready; await ensureIdle(); suspended = true; await closeListener(); await channelPort.close(); return status(); }); }
+  async function receive({ id, event } = {}) { return queue(async () => { await ready; return ingest(id, event, true); }); }
+  async function capabilities({ id, sessionId } = {}) {
+    await ready;
+    const binding = sessionId ? registry.bindings.find(value => value.sessionId === sessionId) : null;
+    const selected = profile(id ?? binding?.profileId), known = probes.get(selected.id); let supported;
+    try { const entry = client(selected); supported = await entry.value.inspectCapabilities?.(); supported ??= capabilityMap(['chat.text', ...(entry.value.capabilities?.voice ? ['chat.voice'] : [])]); }
+    catch { supported = capabilityMap([]); }
+    const live = (await status()).connections.find(value => value.id === selected.id);
+    return { id: selected.id, platform: selected.platform, accountId: selected.config.accountId, mode: selected.config.mode ?? 'bridge', connected: live.connected, voiceMode: selected.config.voiceMode, chatTypes: live.chatTypes, items: CAPABILITY_IDS.map(id => ({ id, supported: supported[id]?.supported === true, available: supported[id]?.supported === true && live.connected, reason: supported[id]?.reason ?? (live.connected ? null : known?.code ?? '连接后才可使用') })) };
+  }
+  async function execute({ sessionId, capability, payload = {}, requestId } = {}) { return queue(async () => {
+    await ready; bounded(sessionId, '会话'); bounded(requestId, '操作编号', 160);
+    if (!CAPABILITY_IDS.includes(capability) || !object(payload) || Object.keys(payload).some(key => !['text', 'bytes', 'mime', 'filename', 'messageId', 'stickerId', 'quoteMessageId'].includes(key))) fail('CHANNEL_CAPABILITY_REQUEST', '平台操作参数无效');
+    const metadata = {}; for (const [key, value] of Object.entries(payload)) { if (key === 'bytes') { if (!(value instanceof Uint8Array) || !value.byteLength || value.byteLength > 16777216) fail('CHANNEL_MEDIA_CAPACITY', '媒体字节超过技术容量'); metadata.bytesSha256 = hash(value); metadata.bytesLength = value.byteLength; } else { bounded(value, key, key === 'text' ? 16000 : 512, key === 'text'); metadata[key] = value; } }
+    const binding = registry.bindings.find(value => value.sessionId === sessionId); if (!binding) fail('CHANNEL_BINDING_NOT_FOUND', '没有对应的平台会话');
+    const id = hash([normalizedRoot(binding.memoryRoot), 'capability', sessionId, requestId]), textHash = hash({ capability, metadata }), previous = registry.receipts.find(value => value.id === id);
+    if (previous) { if (previous.textHash !== textHash) fail('CHANNEL_OUTPUT_CONFLICT', '同一操作编号不能替换动作或内容'); return resultFor(previous, true); }
+    const selected = profile(binding.profileId);
+    if (binding.retired || suspended || !selected.enabled || !sameRoot(binding.memoryRoot, activeRoot()) || !allowed(selected, binding.facts)) fail('CHANNEL_DISABLED', '此目标当前未接入');
+    const checked = await runProbe(selected); if (!checked.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '平台连接尚未确认');
+    const entry = client(selected), available = await capabilities({ id: selected.id }); if (!available.items.find(item => item.id === capability)?.supported) fail('CAPABILITY_UNSUPPORTED', '当前连接器没有实现这个能力');
+    await authorize(binding, capability);
+    if (['contacts.read', 'groups.read'].includes(capability)) { const read = await entry.value.execute(binding.facts, capability, payload, { deliveryId: 'im-read-' + id.slice(0, 48) }); if (Buffer.byteLength(JSON.stringify(read)) > 32768) fail('CHANNEL_READ_CAPACITY', '读取结果超过单次技术容量'); return read; }
+    const deliveryId = 'im-cap-' + id.slice(0, 48), receipt = { id, kind: 'outbound', sessionId, sourceEventId: 'capability:' + requestId, textHash, deliveryId, capability, status: 'prepared', at: clock() };
+    const next = compact(clone(registry)); next.receipts.push(receipt); await save(next);
+    let outcome;
+    try { if (entry.value.execute) outcome = await entry.value.execute(binding.facts, capability, payload, { deliveryId }); else if (capability === 'chat.text') outcome = await entry.value.sendText(binding.facts, payload.text, { deliveryId }); else if (capability === 'chat.voice') outcome = await entry.value.sendVoice(binding.facts, payload.bytes, { deliveryId }); else outcome = { status: 'unsupported', code: 'CAPABILITY_UNSUPPORTED' }; }
+    catch (error) { outcome = { status: 'unknown', code: report(error).code }; }
+    const result = Object.fromEntries(Object.entries(outcome ?? { status: 'unknown' }).filter(([key]) => ['status', 'deliveryId', 'messageId', 'messageIdKind', 'receiptId', 'deliveredAt', 'confirmedBy', 'affectedMessageId', 'code'].includes(key)));
+    const accepted = confirmedDelivery(result) || result.status === 'completed' && typeof result.receiptId === 'string';
+    if (!accepted && !['failed', 'unsupported'].includes(result.status)) result.status = 'unknown';
+    const final = { ...receipt, status: accepted ? 'delivered' : result.status === 'unknown' ? 'unknown' : 'failed', ...(accepted && result.messageId ? ackFields(result) : {}), operationResult: result };
+    await save({ ...registry, receipts: registry.receipts.map(value => value.id === id ? final : value) }); return result;
+  }); }
+  async function suspend() { return queue(async () => { await ready; await ensureIdle(); suspended = true; await connectionPort?.stop(); await closeListener(); await channelPort.close(); return status(); }); }
   async function resume() { return queue(async () => {
     await ready; const coordinator = await getCoordinator(); if (!coordinator) { suspended = true; return status(); }
     await coordinator.ready; boundRoot = coordinator.memoryRoot; suspended = false;
     const enabled = registry.profiles.filter(value => value.enabled);
     for (const selected of enabled) await runProbe(selected);
-    if (enabled.length) await listen(); return status();
+    if (enabled.some(value => value.config.mode !== 'official')) await listen();
+    for (const selected of enabled.filter(value => value.config.mode === 'official')) if (probes.get(selected.id)?.connected) await connectionPort?.listen({ id: selected.id }); return status();
   }); }
   async function invalidateForRoot(input) { return queue(async () => {
     await ready; const root = typeof input === 'string' ? input : input?.memoryRoot; if (!root || !path.isAbsolute(root)) fail('CHANNEL_BAD_REQUEST', '需要明确实例目录');
@@ -381,9 +432,9 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     next.bindings = next.bindings.map(value => sameRoot(value.memoryRoot, root) ? { ...value, retired: true } : value);
     const old = next.generations.find(value => sameRoot(value.memoryRoot, root)); if (old) old.value++; else next.generations.push({ memoryRoot: root, value: 1 });
     if (affectsActive) next.profiles = next.profiles.map(value => affected.has(value.id) ? { ...value, enabled: false } : value);
-    await save(next); if (affectsActive) { await closeListener(); await channelPort.close(); suspended = true; }
+    await save(next); if (affectsActive) { await connectionPort?.stop(); await closeListener(); await channelPort.close(); suspended = true; }
     return { invalidated: true, profiles: [...affected], stopped: affectsActive };
   }); }
-  async function close() { if (closed) return; await tail; closed = true; suspended = true; await closeListener(); await channelPort.close(); }
-  return { ready, status, configure, start, stop, probe, rotateIngress, suspend, resume, invalidateForRoot, close, output, reconcile, handles };
+  async function close() { if (closed) return; await tail; closed = true; suspended = true; await connectionPort?.stop(); await closeListener(); await channelPort.close(); }
+  return { ready, status, configure, start, stop, probe, rotateIngress, suspend, resume, invalidateForRoot, close, output, reconcile, handles, receive, capabilities, execute };
 }

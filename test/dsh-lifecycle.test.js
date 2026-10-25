@@ -8,7 +8,7 @@ import { createDshCoordinator } from '../adapters/dsh/index.js';
 async function fixture(t, events = [], config = {}) {
   const root = await mkdtemp(join(tmpdir(), 'persona-dsh-'));
   const handlers = new Map(), tools = new Map();
-  const scope = { on(name, handler) { handlers.set(name, handler); }, tools: { register(tool) { tools.set(tool.name, tool); } } };
+  const scope = { on(name, handler) { handlers.set(name, handler); }, tools: { restrict() { return () => {}; }, register(tool) { tools.set(tool.name, tool); } } };
   const session = { id: 'session-a', header: {}, deriveMessages: () => [], requestHeader: () => ({ config: { provider: 'test', model: 'fixture' } }) };
   const agent = { id: session.id, session, ctx: scope, inbox: { nextTurn: [], nextStep: [] }, followup(message) { this.inbox.nextTurn.push(message); } };
   const query = { readSession: async () => ({ events }), readEvent: async ({ seq }) => ({ target: events.find(event => event.seq === seq) }) };
@@ -190,7 +190,7 @@ test('actual visible environment changes trigger only the selected event listene
 
 test('a cross-session native decision routes through a real outbox and stops output in the source turn', async t => {
   const f = await fixture(t), handlers = new Map();
-  const targetAgent = { id: 'session-b', ctx: { on: (name, handler) => handlers.set(name, handler), tools: { register() {} } },
+  const targetAgent = { id: 'session-b', ctx: { on: (name, handler) => handlers.set(name, handler), tools: { restrict() { return () => {}; }, register() {} } },
     session: { id: 'session-b', header: {}, deriveMessages: () => [], requestHeader: () => ({ config: { provider: 'test', model: 'fixture' } }) },
     inbox: { nextTurn: [], nextStep: [] }, followup(message) { this.inbox.nextTurn.push(message); } };
   await f.coordinator.attachAgent(targetAgent);
@@ -221,7 +221,7 @@ test('choosing to observe another channel does not cancel the explicitly chosen 
 
 test('identifying explicitly selected B sources changes B routing without overwriting the active A conversation', async t => {
   const f = await fixture(t);
-  const b = { id: 'session-b', ctx: { on() {}, tools: { register() {} } }, session: { id: 'session-b', header: {}, deriveMessages: () => [] },
+  const b = { id: 'session-b', ctx: { on() {}, tools: { restrict() { return () => {}; }, register() {} } }, session: { id: 'session-b', header: {}, deriveMessages: () => [] },
     inbox: { nextTurn: [], nextStep: [] }, followup(message) { this.inbox.nextTurn.push(message); } };
   await f.coordinator.attachAgent(b);
   await f.repository.upsertPerson({ personId: 'person_a', displayName: 'A' });

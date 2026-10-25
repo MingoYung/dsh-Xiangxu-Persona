@@ -1,6 +1,6 @@
 # 人格与记忆字段契约：persona-memory/3
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.4.1 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.5.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -580,7 +580,7 @@ token必须用实际模型对应的统一计数方法。S6宿主历史、工具�
 实现版本0.1.0仍使用persona-memory/3。以下增加的是已约定能力的表达与恢复元数据，没有增加人格资格或行为干预：
 
 - identityPlan 在同一控制工具表达自主认人。new可由程序生成稳定人物键，associate使用人格选择的键和来源，unknown明确保持未知。它不是认证制度；sessionId不自动变人物键。
-- 当前五工具（memory_search、memory_forget、persona_introspect、persona_decide、persona_voice）可带可选cursor阅读同一次有界结果，返回nextCursor、明确fragment与来源。翻页不重复执行决定/遗忘；游标绑定原参数和结果快照，过期明确报告。memory_forget另支持action:"forget"|"correction"、replacementIds。实际JSON字段使用camelCase needsTarget/needsSelection。
+- 当前七工具（memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform）可带可选cursor阅读同一次有界结果，返回nextCursor、明确fragment与来源。翻页不重复执行决定/遗忘；游标绑定原参数和结果快照，过期明确报告。memory_forget另支持action:"forget"|"correction"、replacementIds。实际JSON字段使用camelCase needsTarget/needsSelection。
 - RequestSnapshot增加tokenAccounting、segments及可选budgetAdjustments。完整时间、时区和真实目标不能被裁掉一半；120段预算不足可在总预算内借用并记理由，总预算放不下时报资源错误。没有模型tokenizer端口时明确估计，provider实际usage另记。稳定协议、工具、宿主历史和输出预留也占完整请求，本实现未证明全DSH请求受精确tokenizer硬限制。
 - RuntimeState增加有界execution：最后路由上下文、pendingControl、pendingWake、pendingEffects、effectReceipts及pendingOffsets。分别保存控制ID、醒来页、决定副作用进度、幂等收据和已实际阅读的Unicode偏移；不保存无限第二份聊天。queued不等于已经阅读/交付，只有匹配实际通知才确认。
 - ConsolidationRun增加inputSlices及记录fragment；未读完原件不越过消费游标。明确遗忘会失效并清除仍冻结着被撤销来源的prepared run，不能重试旧批次复活内容。
@@ -619,9 +619,9 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 有限存储不能保证无限原文永不丢失。保真指真实来源/角色/主体、未读不冒充已读、失败不冒充提交、未消费尾部可续、容量不足可见、仍可用原件可回查。摘要不是原文的可逆编码，原件和外部日志均淘汰后不得声称还能完整还原。[自主整理、容量与补充唤醒验证](../../evolution-and-wake-validation.md)提供本轮实测边界。
 
-## 13. 原生管理界面与操作契约（0.4.1，0.3.0引入）
+## 13. 原生管理界面与操作契约（0.5.0，0.3.0引入）
 
-管理界面以DSH现有Connection的owner认证载体调用persona-memory.manage，不新建网络服务或读取模型密钥。参数action与args使用明确动作白名单；前端七页、主协议、页面/收据上限与操作边界见[相续人格管理界面与验收](../../management-ui.md)。产品与包名改为dsh-Xiangxu-Persona / dsh-xiangxu-persona，预设展示名相续人格；内部presetId persona-memory、schemaVersion persona-memory/3和既有来源ID保留。
+管理界面以DSH现有Connection的owner认证载体调用persona-memory.manage，不新建网络服务或读取模型密钥。参数action与args使用明确动作白名单；前端八页、主协议、页面/收据上限与操作边界见[相续人格管理界面与验收](../../management-ui.md)。产品与包名改为dsh-Xiangxu-Persona / dsh-xiangxu-persona，预设展示名相续人格；内部presetId persona-memory、schemaVersion persona-memory/3和既有来源ID保留。
 
 主动联系开关只切换用户是否允许主动联系，不规定人格必须主动或回复；“现在叫醒”仅睡眠时显示，沿既有explicit_wake路径执行。界面沿用DSH宿主颜色、字体和透明背景，不另设独立主题；内容高度由宿主协调。
 
@@ -633,15 +633,15 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 实例登记采用persona-instances/1，与人格数据schema分开，最多16个登记实例、登记文件64KiB；只一个活动写者，忙碌时拒绝切换。停止实例释放相关工具/监听/计时器与写锁；失败不假装成功。启动以存量技术配置为准，不用bundle初值覆盖用户已保存设置。备份/校验暂时关闭当前写者后可恢复原实例；恢复/恢复中断完成后保持停用，防止悄悄释放旧计时任务。
 
-## 14. 聊天渠道与本机声音技术契约（0.4.1，0.4.0引入）
+## 14. 聊天渠道与本机声音技术契约（0.5.0，0.4.0引入）
 
-这是DSH适配配置；核心schema仍为persona-memory/3，不改变人格决定与成长频率。当前工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice。专用IM会话只挂这五个人格能力，不暴露Harness控制或编码工具，不改变用户其它DSH会话的工具配置。
+这是DSH适配配置；核心schema仍为persona-memory/3，不改变人格决定与成长频率。当前七工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。相续人格预设在普通DSH、IM、主动与唤醒中统一restrict({allow:[]})再仅注册这些工具，不暴露子agent派发、Harness、编码或文件工具；其它DSH预设不变。插件内部创建／恢复接收通道的ctx.agents.create/resume保留，不等于人格可以派发子agent。
 
 ### 14.1 平台配置、环境与owner管理
 
-owner管理action为channels.status/configure/start/stop/probe/rotateIngress，以及voice.inspect/registerCatalog/configure/preview。主界面第七页为“聊天渠道与语音”，已有兼容桥参数默认折叠为高级配置，扫码或接管桌面登录未实现；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
+owner管理action为channels.status/configure/start/stop/probe/rotateIngress/capabilities、connections.status/start/poll/cancel/disconnect、permissions.inspect/configure/list/reset，以及voice.inspect/registerCatalog/configure/preview。主界面第七页为“聊天渠道与语音”，官方QQBot／微信iLink扫码为主入口，已有兼容桥参数默认折叠为高级配置；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
 
-ChannelProfile固定两项：{id/platform:'qq',protocol:'onebot11'}和{id/platform:'wechat',protocol:'onebot12'}。config={apiUrl:string,accountId:string,accessToken:string,allowedPrivateIds:string[],allowedGroupIds:string[],voiceMode:'text'|'both'|'voice',allowRemote:boolean}。初值disabled，接入列表空、voiceMode:text、allowRemote:false。空API令牌配置保留旧值；clearAccessToken:true明确清除，不能同时提交新值。status只返回hasAccessToken/hasIngressToken，不回显令牌。
+ChannelProfile固定两项：{id/platform:'qq',protocol:'onebot11'}和{id/platform:'wechat',protocol:'onebot12'}。config={mode:'official'|'bridge',apiUrl:string,accountId:string,accessToken:string,allowedPrivateIds:string[],allowedGroupIds:string[],voiceMode:'text'|'both'|'voice',allowRemote:boolean}。初值disabled，接入列表空、voiceMode:text、allowRemote:false。空API令牌配置保留旧值；clearAccessToken:true明确清除，不能同时提交新值。status只返回hasAccessToken/hasIngressToken，不回显令牌。
 
 API默认只接受本机/私网字面地址或localhost；远程API必须明确allowRemote且HTTPS，不允许URL凭据、query令牌或fragment。独立桥回调默认127.0.0.1:17654、默认无listener，路径/channels/{qq|wechat}/events，Bearer只存SHA；生成/旋转只返回一次明文，读body后排队时再次核当前hash。Host/Origin、JSON和64KiB正文帽分别验证，没有通用RPC转发或个人网页连接。
 
@@ -669,6 +669,34 @@ catalog={supported:boolean,voices:[{id,name,lang,localService,default}]}只在�
 
 Windows System.Speech是本版本机WAV合成器，不下载TTS模型、不使用Edge在线服务作为默认依赖、不训练或克隆新音色。rate映射为近似SAPI音级；pitch:false，非1值明确unsupported，不静默改成1后假称应用。单次合成最多2000个Unicode字符、单文件8MiB、缓存4文件/总16MiB、60秒进程时限；容量不足或超长不截断后冒充完整朗读。
 
-QQ OneBot11标准record需probe实际确认can_send_record，微信OneBot12当前voice:false。text只发文字；both可由真实文字ack记成功并标voiceUnavailable；voice要求实际合成和音频回执，缺能力/失败不自动改发文字。生成WAV、入发送队列、平台ack和用户听见分别报告；短试听只返回有界data:audio/wav给播放器，用户点播放，不投递平台或写人格经历。
+官方QQ与微信当前chat.voice:false，本机PCM WAV尚无已验证的官方发送编码链；QQ OneBot11标准record需probe实际确认can_send_record，微信OneBot12当前voice:false。text只发文字；both可由真实文字ack记成功并标voiceUnavailable；voice要求实际合成和音频回执，缺能力/失败不自动改发文字。生成WAV、入发送队列、平台ack和用户听见分别报告；短试听只返回有界data:audio/wav给播放器，用户点播放，不投递平台或写人格经历。
 
 当前真实账号与桥前置能力、用户操作和验收分层见[聊天渠道接入](../../channel-integration.md)。未发布手机网页的设备鉴权与SpeechSynthesis字段不在当前生产契约重复定义。
+
+### 14.4 官方连接、能力权限与平台工具
+
+connections.start({id:'qq'|'wechat'})返回真实绑定任务，poll({id,flowId,verifyCode?})查询同任务，cancel取消当前任务，disconnect停止并删除本机凭据但不声称平台远程授权已撤销。状态phase=idle|starting|waiting|scanned|verify|authorized|expired|failed，包含flowId、qrContent／owner生成qrDataUrl、expiresAt、accountId、pairedUserId、chatTypes、supportedCapabilities与error。QQ chatTypes=[private,group]，微信=[private]；本人手机确认后仍需channels.configure选择mode:official／accountId／接入列表并明确start。QQ是官方Bot，不接管桌面个人QQ。所有状态livePlatformVerified:false不作为本人真实扫码收件证明。
+
+xiangxu-connections/1最多两个平台档案、1MiB；传输上限来自CONNECTION_LIMITS：responseBytes=1048576、mediaBytes=16777216、textChars=16000、contexts=128、cursorBytes=16384、queue=32、flowMs=600000。它们是字节／字符／队列技术帽，不是人格行为次数或等待时限；平台可更早让二维码过期。凭据与上下文token不返回人格工具或管理前端，不在文本备份中。
+
+权限schema=xiangxu-permissions/1，按当前memoryRoot／platform／实际accountId保存allowed，最多128条／256KiB；管理inspect返回items:{id,label,supported,allowed,available,reason}，configure只由当前真实账号保存，list与reset用于明确清理旧账号许可。默认chat.text，旧voiceMode迁移可保留chat.voice意图；不支持／未就绪时仍不可用。reset移除该账号自定义许可并释放记录，恢复渠道默认chat.text以及voiceMode=both|voice时已开启的chat.voice意图，返回实际defaults；不删记忆、不自动重连，available仍核实际能力。新增未支持许可被拒绝；旧许可可保留／撤销但不变成available。
+
+能力ID固定为chat.text、chat.image、chat.video、chat.file、chat.voice、chat.sticker、message.reply、message.retract、contacts.read、groups.read、friend.manage、group.manage、profile.update、feed.read、feed.publish、feed.react、call.voice、call.video。它们是能力目录，当前feed.*与call.*未实现；系统表情与自定义表情包、视频文件与实时视频通话分别核实，不能凭勾选宣布支持。
+
+persona_platform action=inspect|execute，可选capability、真实target、assetId、text、messageId、stickerId与结果cursor。inspect读取当前目标支持／许可／可用；execute校验实际原生binding、当前实例／账号、接入范围、driver、用户授权与真实资产，再调用有限平台动作，不读取任意路径或泛化客户端控制。外发prepared／unknown不自动重放；微信ret=0但无远程messageId时以client_id标注API接受回执种类，不虚构平台消息ID或用户已读。具体实现事实见[渠道接入](../../channel-integration.md)。
+
+## 15. 形象、媒体服务与资产技术契约（0.5.0）
+
+这是DSH适配层的可选能力，不改变核心人格／整理控制枚举。identity/profile.json采用xiangxu-identity/1：version、description、primaryAssetId、locked、history、provenance、updatedAt；description最多2048个Unicode字符，档案65536字节、历史最多8。来源字段分别关联描述和主参考，历史含版本／描述／主参考／来源与at。用户locked时persona不能改档案或锁，用户owner可改；没有自动成长频率或外貌评价规则。
+
+Provider分image／video，默认均enabled:false。image type=openai-images|comfyui，video仅comfyui；baseUrl、model、referenceMode=none|edit、editTransport=json|multipart、downloadOrigins、workflow与节点绑定构成技术配置。apiKey只写、hasApiKey只读，clearApiKey明确清除。Images编辑传输由用户明确选定，不失败后自动换格式重发；ComfyUI必须实际API workflow，prompt／reference输入及输出节点真实存在。probe只检查连通与配置，verifiedGeneration:false。owner inspect({includeConfiguration:true})才返回工作流；persona inspect不取完整配置或密钥。
+
+Asset安全元数据={assetId,kind:image|video,mime,bytes,sha256,width,height,name,createdAt,origin,referenceVersion,jobId,pinned,isPrimaryReference,historicalReferenceCount,sourceContributionCount}，路径／来源详情不灌入人格工具。外部库与provider文件在文本根之外且相互分离。Job含jobId／requestId／kind／status／providerType／referenceAssetId／referenceVersion／resultAssetIds／时间／error，公开摘要不含prompt、key或工作流；status=prepared|running|submitted|completed|failed|unknown|cancelled|revoked。同requestId幂等，媒体任务收据不自动淘汰，终态同样保留；达到80条拒绝新任务，避免旧请求身份丢失后重复付费。删除作品不清任务收据、不恢复作业名额，当前未提供收据清理／扩容入口。冷恢复prepared／running为unknown，不自动付费重放。Comfy按原任务查询／只取消己方队列，不全局interrupt；已撤销来源不允许迟到结果复活。
+
+persona_media action=inspect|identity|update_identity|assets|asset|generate|job|jobs|cancel_job；按需使用，不要求调用。assets使用pageCursor继续列表，cursor续读同一有界工具结果；generate参数kind、prompt、referenceAssetId、useIdentityReference、size由适配层校验，requestId由真实调用身份派生。默认沿用共同描述与主参考，缺参考能力明确失败，不静默变纯文生图。owner另有media.configureProvider／probeProvider／importReference／updateIdentity／listAssets／getAsset／generate／getJob／listJobs／cancelJob／deleteAsset／exportManifest。生成资产与平台交付是独立回执。
+
+MEDIA_LIMITS当前值：imageBytes=8388608、videoBytes=67108864、assetBytes=268435456、assets=256、jobs=80、activeJobs=8、profileBytes=65536、descriptionChars=2048、history=8、previewBytes=524288、imageEdge=8192、imagePixels=33554432、previewPixels=4194304、outputAssets=4、metadataBytes=1048576、workflowBytes=131072、responseBytes=25165824、promptChars=8000、requestMs=120000、sourceRefs=32、sourceRecordIds=64、provenance=16。各帽独立执行，拒绝超量，不把二进制库总量变成模型上下文。容量不足不自动删除主参考或作品；owner可明确删非当前主参考，清理历史图片引用但保留描述与referenceRemoved。
+
+owner传输API uploadBegin／uploadChunk／uploadFinish／uploadCancel、readAssetChunk只在认证管理路径；每块raw<=32768，上传图<=8MiB、2个在途／5分钟、完成回执16条／5分钟；下载<=64MiB、单资产缓存60秒。父桥核同资产、顺序、长度和完整SHA再Blob下载，iframe仍allow-scripts。通用请求65536、响应2097152字节帽不扩大；原管理明细131072字节帽不变，大工作流不能通过这个UI完整提交时明确拒绝。
+
+明确遗忘同步核心永久meta撤销，撤销相关作业、派生资产与档案历史；每次服务消费／迟到提交核永久撤销，无法确认撤销状态时不假装可读。用户独立导入／明确确认的同一资产依据可单独保留。删除或遗忘清owner缓存；本地清理失败与远程副本／运行状态分别报告。exportManifest仅元数据／相对文件／SHA，不复制作品；文本备份不含外部资产与凭据，完整备份另存作品原文件。操作、容量解释与未测边界见[形象与创作](../../media-and-identity.md)。

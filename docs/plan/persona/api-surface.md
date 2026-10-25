@@ -1,6 +1,6 @@
 # DSH 扩展点与 P0 接入验证
 
-当前实现（0.4.1）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置保留七页功能并沿用DSH宿主颜色、字体和透明背景；主动联系开关附日常说明，休息时才显示“现在叫醒”。QQ/微信已有兼容桥的高级配置默认折叠，真实使用仍需用户已有桥和账号，尚未实现扫码或接管桌面登录；Windows本机声音入口保留。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
+当前实现（0.5.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生八页设置沿用DSH宿主样式，保留主动联系／现在叫醒的日常说明，新增官方QQBot／微信iLink扫码、实际能力许可、形象档案与可选图片／视频接口；高级OneBot保留。陪伴预设在普通DSH／IM／主动／唤醒中仅提供七个人格工具，不继承子agent派发；其它预设与内部原生接收通道不变。平台未实现的动态、通话或群能力不冒称可用，服务默认关闭、本人扫码和真实供应商输出仍需实际环境验证。当前入口与证据见[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)；研究和旧版本结果保留历史含义。
 
 修订日期：2026-10-26。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
 
@@ -99,7 +99,7 @@ ctx.tools.register(defineTool({
 }))
 ```
 
-exec 中能取得哪些 session/request/channel 信息要实测。当前插件注册五个工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice，完整参数以 persona-schema 为准。缺省目标由真实宿主上下文补齐，显式目标可指已知他人；scope 是用途而非管理员 ACL。删除/更正需要目标可解析，歧义不能扩大为批量操作。
+exec 中能取得哪些 session/request/channel 信息要实测。当前插件注册七个工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform，完整参数以 persona-schema 为准。缺省目标由真实宿主上下文补齐，显式目标可指已知他人；scope 是用途而非管理员 ACL。删除/更正需要目标可解析，歧义不能扩大为批量操作。
 
 前轮 dsh-tools 记录到 guard、tools/pre-execute、tools/execute、tools/post-execute、tools/result；`_plugins/dsh-dispatch-concurrency-gate/index.js:178` 有 guard 用例。工具结果可附来源与可用性信息；这些宿主拦截能力不构成给人格加发送次数、印象门槛、承诺 SLA 或边界硬拦截的理由。
 
@@ -170,10 +170,10 @@ agent/assistant-stream 与 tool/result 是否暴露完整原件、不同供应�
 
 P0 完成并不意味着整个人格效果已验收，只意味着实现路径和失败边界有依据。后续阶段完成记忆、人格演化、两模式切换、主动与睡眠等全部功能；不能用接口探针通过替代长期行为观察，也不能用人格数量、准确印象或始终讨喜作为强制达标条件。
 
-## 0.4.1 聊天渠道、外观与声音适配
+## 0.5.0 陪伴工具、扫码、权限与形象适配
 
-DSH设置沿用宿主的颜色、字体和透明背景，使用可换行页签与设置分隔行，不另设主题选择器或品牌页眉；第七页“聊天渠道与语音”把已有兼容桥的参数折叠为高级配置，尚未实现扫码或接管桌面登录。该页适配用户已有QQ、微信软件的普通私聊/群聊。QQ适配OneBot11/NapCat，微信需要兼容OneBot12本地桥；微信官方接口当前不提供本方案所需普通群聊能力。默认没有listener，用户明确启用后仅在本机提供桥事件回调；个人网页和Telegram是预留接口，不挂载手机网页主入口。
+DSH设置沿用宿主颜色、字体和透明背景；第七页“聊天渠道与语音”新增官方QQBot／微信iLink真实扫码，授权后按驱动实际支持的私群范围明确启用，高级OneBot保留。QQ连接Bot，不自动接管桌面个人QQ；微信官方只支持私聊，朋友圈和实时通话未实现。平台、账号、房间、真实发言者、原话和时间继续分别保存，外部ID不自动成为personId。能力表区分支持、用户许可、当前可用，未支持项目不能新授权。
 
-平台、账号、房间、实际发言者、消息ID和平台发生时间作为真实环境事实保留；每发言者＋房间的原生通道仍共享同一个人格，外部ID和昵称不自动成为personId。接入范围是用户选择的连接边界，空范围未接入，显式*才开放相应全部对象/群；没有被@、主动次数、最短间隔或话题资格规则。原件经原生inbox持久，最终正文只有平台桥真实消息回执后才计实际说过，unknown不自动重放。
+陪伴预设在普通DSH／IM／主动／唤醒中清空继承工具范围，只提供memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。不向人格暴露子agent派发、Harness、编码或文件工具；其它预设不变，内部接收与恢复通道仍可使用原生API。该工具边界不改认人、注意、回复、主动、睡眠和run／defer的自主机制。
 
-当前五工具追加persona_voice供人格按需查看真实音色目录和自主选择，用户指定模式优先。IM音频使用Windows System.Speech生成WAV，再取平台音频回执；rate近似SAPI音级、pitch:false，不克隆音色、不硬映射性格标签或强迫每轮选声。voice-only缺能力明确失败，both可保留真实文字交付并标语音不可用。技术字段和容量以persona-schema第14节为唯一权威；实际操作与验证见[聊天渠道接入](../../channel-integration.md)。
+第八页“形象与创作”提供形象描述、主参考版本与用户锁定，图片／视频分开配置且默认关闭。图片使用明确Images JSON／multipart或ComfyUI，视频需要实际工作流；生成／查询／平台发送分别记录真实状态，unknown不自动付费重放。作品字节与服务凭据在文本库之外，文本备份及元数据清单不等于完整作品备份。字段权威为persona-schema第14、15节；操作与当前证据见[渠道接入](../../channel-integration.md)、[形象创作](../../media-and-identity.md)及[管理说明](../../management-ui.md)。

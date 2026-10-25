@@ -174,7 +174,7 @@ test('detaching a social agent disables old tools while a fresh same-session sco
   const rejected = await staleTool.execute({ identityPlan: { action: 'new', personId: 'must_not_be_created' } }, { agent: old.agent, callId: 'stale-after-stop' });
   assert.equal(rejected.code, 'INSTANCE_UNLOADED'); assert.equal((await f.coordinator.repository.listPeople()).some(person => person.personId === 'must_not_be_created'), false);
   const fresh = replacementOf(old); f.agents.set(A, fresh); await f.coordinator.attachAgent(fresh.agent); await f.coordinator.attachAgent(fresh.agent);
-  assert.equal(fresh.tools.size, 5); assert.equal(fresh.registrations.length, 5); assert.equal(new Set(fresh.registrations).size, 5);
+  assert.equal(fresh.tools.size, 7); assert.equal(fresh.registrations.length, 7); assert.equal(new Set(fresh.registrations).size, 7);
   assert.equal(f.coordinator.contextFor(fresh.agent).personId, 'recognized_before_stop');
   assert.equal((await f.coordinator.repository.getContext({ personId: 'recognized_before_stop' })).records.some(record => record.sourceEventId === 'before-channel-stop'), true);
   assert.equal(f.modelCalls, 0);
@@ -183,9 +183,9 @@ test('detaching a social agent disables old tools while a fresh same-session sco
 test('a stale expectedAgent reference cannot detach the newer same-ID agent installed by attachAgent', async t => {
   const f = await fixture(t); await f.register(); const old = f.agents.get(A), staleTool = old.tools.get('persona_decide');
   const fresh = replacementOf(old); f.agents.set(A, fresh); await f.coordinator.attachAgent(fresh.agent);
-  assert.equal(old.tools.size, 0); assert.equal(old.handlers.size, 0); assert.equal(fresh.tools.size, 5);
-  assert.equal(await f.coordinator.detachAgent(A, old.agent), false); assert.equal(f.coordinator.agents.get(A).agent, fresh.agent); assert.equal(fresh.tools.size, 5);
+  assert.equal(old.tools.size, 0); assert.equal(old.handlers.size, 0); assert.equal(fresh.tools.size, 7);
+  assert.equal(await f.coordinator.detachAgent(A, old.agent), false); assert.equal(f.coordinator.agents.get(A).agent, fresh.agent); assert.equal(fresh.tools.size, 7);
   assert.equal((await staleTool.execute({ identityPlan: { action: 'unknown' } }, { agent: fresh.agent })).code, 'INSTANCE_UNLOADED');
   await fresh.tools.get('persona_decide').execute({ identityPlan: { action: 'new', personId: 'recognized_after_replacement' } }, { agent: fresh.agent, callId: 'new-scope-still-works' });
-  assert.equal(f.coordinator.contextFor(fresh.agent).personId, 'recognized_after_replacement'); assert.equal(fresh.registrations.length, 5); assert.equal(f.modelCalls, 0);
+  assert.equal(f.coordinator.contextFor(fresh.agent).personId, 'recognized_after_replacement'); assert.equal(fresh.registrations.length, 7); assert.equal(f.modelCalls, 0);
 });

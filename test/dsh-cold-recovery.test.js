@@ -32,7 +32,7 @@ test('cold inactive wake recovery loads delayed host metadata before resolving a
   } finally { await repository.close(); }
 
   const handlers = new Map(), tools = new Map(), queued = [], resumes = [], metadata = { registry: false, checkpoints: false }; let resumedRoute;
-  const scope = { on(name, handler) { handlers.set(name, handler); }, tools: { register(tool) { tools.set(tool.name, tool); } } };
+  const scope = { on(name, handler) { handlers.set(name, handler); }, tools: { restrict() { return () => {}; }, register(tool) { tools.set(tool.name, tool); } } };
   const session = { id: 'inactive_session', header: {}, deriveMessages: () => [] };
   const agent = { id: session.id, ctx: scope, session, inbox: { nextTurn: [], nextStep: [] },
     followup(message) { queued.push(message); this.inbox.nextTurn.push(message); } };

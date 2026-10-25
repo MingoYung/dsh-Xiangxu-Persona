@@ -15,6 +15,22 @@ const target = nullable({ type: 'object', required: ['channelId', 'sessionId', '
 const recheckOn = { type: 'array', items: { type: 'string', enum: ['new_message', 'environment_change', 'explicit_wake'] } };
 const cursor = { type: 'string', description: 'Use a returned nextCursor with the same other arguments to read the same result, without executing the operation again.' };
 export const TOOL_PARAMETERS = {
+  persona_media: {
+    action: { type: 'string', enum: ['inspect', 'identity', 'update_identity', 'assets', 'asset', 'generate', 'job', 'jobs', 'cancel_job'] },
+    kind: { type: 'string', enum: ['image', 'video'] }, prompt: { type: 'string', maxLength: 4000 },
+    description: { type: 'string', maxLength: 4000 }, primaryAssetId: nullable({ type: 'string', maxLength: 256 }),
+    assetId: { type: 'string', maxLength: 256 }, referenceAssetId: { type: 'string', maxLength: 256 }, useIdentityReference: { type: 'boolean' },
+    jobId: { type: 'string', maxLength: 256 }, poll: { type: 'boolean' }, size: { type: 'string', maxLength: 64 },
+    pageCursor: { type: 'string', maxLength: 2048, description: 'Use a returned pageCursor to query the next asset/job page. This is distinct from cursor, which only continues one bounded tool-result snapshot.' },
+    limit: { type: 'integer', minimum: 1, maximum: 20 }, cursor,
+  },
+  persona_platform: {
+    action: { type: 'string', enum: ['inspect', 'execute'] },
+    capability: { type: 'string', enum: ['chat.text','chat.image','chat.video','chat.file','chat.voice','chat.sticker','message.reply','message.retract','contacts.read','groups.read','friend.manage','group.manage','profile.update','feed.read','feed.publish','feed.react','call.voice','call.video'] },
+    target, assetId: { type: 'string', maxLength: 256 }, text: { type: 'string', maxLength: 16000 },
+    messageId: { type: 'string', maxLength: 256, description: 'Copy an actual platform message ID from current source facts or a confirmed receipt; do not invent one.' },
+    stickerId: { type: 'string', maxLength: 128 }, cursor,
+  },
   persona_voice: {
     action: { type: 'string', enum: ['inspect', 'select'] },
     voiceId: nullable({ type: 'string', maxLength: 256 }),

@@ -8,7 +8,7 @@ import { boundToolOutput } from '../adapters/dsh/tool-output.js';
 
 async function fixture(t, { config = {}, query } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'persona-dsh-process-deps-')), handlers = new Map(), tools = new Map();
-  const scope = { on(name, handler) { handlers.set(name, handler); }, tools: { register(tool) { tools.set(tool.name, tool); } } };
+  const scope = { on(name, handler) { handlers.set(name, handler); }, tools: { restrict() { return () => {}; }, register(tool) { tools.set(tool.name, tool); } } };
   const session = { id: 'session-a', header: {}, deriveMessages: () => [], requestHeader: () => ({ config: { provider: 'test', model: 'fixture' } }) };
   const agent = { id: session.id, session, ctx: scope, inbox: { nextTurn: [], nextStep: [] }, followup(message) { this.inbox.nextTurn.push(message); } };
   const coordinator = createDshCoordinator({ agents: { get: () => agent }, llm: {}, get: key => key === 'sessionQuery' ? query : undefined },

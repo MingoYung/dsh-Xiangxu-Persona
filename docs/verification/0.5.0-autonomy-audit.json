@@ -1,0 +1,773 @@
+{
+  "schemaVersion": "xiangxu-final-autonomy-audit/1",
+  "createdAt": "2026-10-25T20:33:41.125Z",
+  "head": "af82aebd93c20c000eb74757502f190ebe061184",
+  "scope": "Read-only independent source/package audit; no real accounts, model calls, provider generation or production writes",
+  "status": "passed",
+  "blockingIssues": [],
+  "notes": [
+    {
+      "code": "DORMANT_MOBILE_INTERFACE",
+      "message": "surfaces retains an optional mobile interface but main composition supplies no mobile service; requests fail MOBILE_UNAVAILABLE. It is not a released personal-app endpoint."
+    },
+    {
+      "code": "TECHNICAL_LIMITS",
+      "message": "Provider disabled/default grants, locked identity, source/SHA validation, platform-specific message windows, byte/queue/record caps and unknown receipt idempotence constrain tool execution and resources; no new reply/attention/sleep/growth threshold was found in the added guidance or scope."
+    },
+    {
+      "code": "UI_LABEL_AUTHORITY",
+      "message": "The UI fallback label chat.sticker is broad, but normal rows use backend item.label first; current backend explicitly labels system stickers. This does not advertise unsupported custom mface or RTC."
+    },
+    {
+      "code": "HOST_PROVIDED_REACT",
+      "message": "Generated ui/client.js uses the existing DSH module loader require(react); React is host-provided rather than an omitted relative package dependency."
+    }
+  ],
+  "portableCore": {
+    "files": 9,
+    "unchangedFromHead": true,
+    "coreStatus": "",
+    "digests": [
+      {
+        "path": "core/capacity.js",
+        "headSha256": "c81bdd17395c713e387dfb4faf66e878a6e295f587bfb541eb3a70c0f9812f53",
+        "currentSha256": "c81bdd17395c713e387dfb4faf66e878a6e295f587bfb541eb3a70c0f9812f53",
+        "unchanged": true
+      },
+      {
+        "path": "core/index.js",
+        "headSha256": "97b0d2d9d5899aecd477a14083758360e61d87b9433fdefee444bdd368d2b35e",
+        "currentSha256": "97b0d2d9d5899aecd477a14083758360e61d87b9433fdefee444bdd368d2b35e",
+        "unchanged": true
+      },
+      {
+        "path": "core/maintenance.js",
+        "headSha256": "2e2b10b584da003d27c75301618872d7f7eb55fd59d6d834740bc8f6921f45a8",
+        "currentSha256": "2e2b10b584da003d27c75301618872d7f7eb55fd59d6d834740bc8f6921f45a8",
+        "unchanged": true
+      },
+      {
+        "path": "core/prompts.js",
+        "headSha256": "f8a97624b43bd4c1328912c823d64fa6b20e2a7c4fd24ceebf1c7dc1ade06261",
+        "currentSha256": "f8a97624b43bd4c1328912c823d64fa6b20e2a7c4fd24ceebf1c7dc1ade06261",
+        "unchanged": true
+      },
+      {
+        "path": "core/repository.js",
+        "headSha256": "f78502adfd496d0b81bdddf50751f92a3dc6e65115c22c7c1715622f4ccad9a8",
+        "currentSha256": "f78502adfd496d0b81bdddf50751f92a3dc6e65115c22c7c1715622f4ccad9a8",
+        "unchanged": true
+      },
+      {
+        "path": "core/runtime.js",
+        "headSha256": "4a78711cc23bece04b67659a7061e3b1d60b1683a50b0c14fe82fa5ea5d95c99",
+        "currentSha256": "4a78711cc23bece04b67659a7061e3b1d60b1683a50b0c14fe82fa5ea5d95c99",
+        "unchanged": true
+      },
+      {
+        "path": "core/schema.js",
+        "headSha256": "e435ed57428738a844730b173cd32d39bc3d34783a4e9a3939c753374ae28302",
+        "currentSha256": "e435ed57428738a844730b173cd32d39bc3d34783a4e9a3939c753374ae28302",
+        "unchanged": true
+      },
+      {
+        "path": "core/source-dependencies.js",
+        "headSha256": "77025fd09a6cc62fba3b9ea96922a96fd9b941e272811287289bf759fcb2ca41",
+        "currentSha256": "77025fd09a6cc62fba3b9ea96922a96fd9b941e272811287289bf759fcb2ca41",
+        "unchanged": true
+      },
+      {
+        "path": "core/store.js",
+        "headSha256": "473cd33c6b6b0bc28308e3da995b6436b3325d79bb2f00e76f35aa6073b0d290",
+        "currentSha256": "473cd33c6b6b0bc28308e3da995b6436b3325d79bb2f00e76f35aa6073b0d290",
+        "unchanged": true
+      }
+    ]
+  },
+  "autonomy": {
+    "existingControlGuidanceUnchanged": true,
+    "oldGuidanceSha256": "f0e4f0e1f2be6e333ed1d837d9f6baf0c880c36a02615afa91958e1b202fe107",
+    "addedCapabilityGuidance": [
+      "persona_media提供形象档案、已保存作品和用户开通的图片/视频服务。generate返回jobId，job查询同一作业，不重复提交生成；assets返回的pageCursor用于下一作品页，cursor仅续读同一工具结果。主参考图有独立版本，用户锁定状态是工具权限事实。生成资产不等于平台已发送。",
+      "persona_platform查看当前真实目标的能力、用户授权与可用状态。execute仅执行实际支持的动作，assetId取已保存媒体资产，messageId取真实来源或回执；平台不支持与未授权是不同结果。普通文字仍可沿现有回复路径表达。这些工具没有规定你何时使用、关注谁或如何成长。"
+    ],
+    "unchangedOldTools": [
+      {
+        "name": "persona_voice",
+        "unchanged": true
+      },
+      {
+        "name": "memory_search",
+        "unchanged": true
+      },
+      {
+        "name": "memory_forget",
+        "unchanged": true
+      },
+      {
+        "name": "persona_introspect",
+        "unchanged": true
+      },
+      {
+        "name": "persona_decide",
+        "unchanged": true
+      }
+    ],
+    "companionOnlyScope": true,
+    "internalCreateResumeRetained": true,
+    "evidence": [
+      {
+        "file": "adapters/dsh/index.js",
+        "line": 824,
+        "needle": "if (config.role === 'agent')"
+      },
+      {
+        "file": "adapters/dsh/index.js",
+        "line": 559,
+        "needle": "keep(scope.tools.restrict({ allow: [] }))"
+      },
+      {
+        "file": "adapters/dsh/companion-scope.js",
+        "line": 54,
+        "needle": "ctx.on('agent-preset/selected'"
+      },
+      {
+        "file": "adapters/dsh/index.js",
+        "line": 629,
+        "needle": "for (const toolName of Object.keys(TOOL_PARAMETERS))"
+      }
+    ]
+  },
+  "tools": {
+    "count": 7,
+    "names": [
+      "persona_media",
+      "persona_platform",
+      "persona_voice",
+      "memory_search",
+      "memory_forget",
+      "persona_introspect",
+      "persona_decide"
+    ],
+    "descriptionNames": [
+      "memory_search",
+      "memory_forget",
+      "persona_introspect",
+      "persona_decide",
+      "persona_voice",
+      "persona_media",
+      "persona_platform"
+    ],
+    "docToolLines": {
+      "README.md": "“相续人格”陪伴预设在普通DSH对话、IM来信、主动与唤醒中统一只提供七个人格工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。它不继承DSH的子agent派发、Harness控制、编码与文件工具；其它DSH预设照常使用原工具。插件内部为接收消息建立和恢复原生通道仍可执行，不把技术通道当成第二个人格，也不改变它的注意、睡眠和成长判断。",
+      "docs/feature-map.md": "当前七工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。新增工具不要求人格一定使用能力或固定频率更新形象，不改认人、注意、主动、睡眠与整理必要性的判断。平台媒体发送与生成分别取得回执。完整操作、容量和当前／历史证据见[渠道接入](channel-integration.md)、[形象与创作](media-and-identity.md)及[管理说明](management-ui.md#050-实现与验证范围)。",
+      "docs/plan/persona/persona-schema.md": "- 当前七工具（memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform）可带可选cursor阅读同一次有界结果，返回nextCursor、明确fragment与来源。翻页不重复执行决定/遗忘；游标绑定原参数和结果快照，过期明确报告。memory_forget另支持action:\"forget\"|\"correction\"、replacementIds。实际JSON字段使用camelCase needsTarget/needsSelection。"
+    }
+  },
+  "capabilities": {
+    "count": 18,
+    "ids": [
+      "chat.text",
+      "chat.image",
+      "chat.video",
+      "chat.file",
+      "chat.voice",
+      "chat.sticker",
+      "message.reply",
+      "message.retract",
+      "contacts.read",
+      "groups.read",
+      "friend.manage",
+      "group.manage",
+      "profile.update",
+      "feed.read",
+      "feed.publish",
+      "feed.react",
+      "call.voice",
+      "call.video"
+    ],
+    "catalogIds": [
+      "chat.text",
+      "chat.image",
+      "chat.video",
+      "chat.file",
+      "chat.voice",
+      "chat.sticker",
+      "message.reply",
+      "message.retract",
+      "contacts.read",
+      "groups.read",
+      "friend.manage",
+      "group.manage",
+      "profile.update",
+      "feed.read",
+      "feed.publish",
+      "feed.react",
+      "call.voice",
+      "call.video"
+    ],
+    "toolEnum": [
+      "chat.text",
+      "chat.image",
+      "chat.video",
+      "chat.file",
+      "chat.voice",
+      "chat.sticker",
+      "message.reply",
+      "message.retract",
+      "contacts.read",
+      "groups.read",
+      "friend.manage",
+      "group.manage",
+      "profile.update",
+      "feed.read",
+      "feed.publish",
+      "feed.react",
+      "call.voice",
+      "call.video"
+    ],
+    "uiIds": [
+      "chat.text",
+      "chat.image",
+      "chat.video",
+      "chat.file",
+      "chat.voice",
+      "chat.sticker",
+      "message.reply",
+      "message.retract",
+      "contacts.read",
+      "groups.read",
+      "friend.manage",
+      "group.manage",
+      "profile.update",
+      "feed.read",
+      "feed.publish",
+      "feed.react",
+      "call.voice",
+      "call.video"
+    ],
+    "uiUsesAuthoritativeRows": true,
+    "evidence": [
+      {
+        "file": "ui/app.js",
+        "line": 406,
+        "needle": "const name = item.label ??"
+      },
+      {
+        "file": "adapters/dsh/permissions.js",
+        "line": 6,
+        "needle": "const CAPABILITY_CATALOG"
+      },
+      {
+        "file": "adapters/dsh/connections/common.js",
+        "line": 4,
+        "needle": "const CAPABILITY_IDS"
+      }
+    ]
+  },
+  "package": {
+    "filename": "dsh-xiangxu-persona-0.5.0.tgz",
+    "fileCount": 109,
+    "entryRoots": [
+      "adapters/dsh/index.js",
+      "core/index.js",
+      "ui/client.js",
+      "adapters/dsh/channels/native.js",
+      "adapters/dsh/channels/windows-speech.js",
+      "adapters/dsh/media/index.js",
+      "adapters/dsh/connections/service.js",
+      "cordis.patch.yml",
+      "scripts/persona-cli.mjs",
+      "scripts/install-dsh.mjs",
+      "scripts/build-ui.mjs"
+    ],
+    "reachableModules": 49,
+    "edges": [
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "core/index.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/index.js",
+        "target": "core/runtime.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/runtime.js",
+        "target": "core/schema.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/schema.js",
+        "target": "core/capacity.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/runtime.js",
+        "target": "core/prompts.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/prompts.js",
+        "target": "core/schema.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/prompts.js",
+        "target": "core/source-dependencies.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/index.js",
+        "target": "core/repository.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/repository.js",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/store.js",
+        "target": "core/capacity.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/repository.js",
+        "target": "core/source-dependencies.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/repository.js",
+        "target": "core/capacity.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/index.js",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/index.js",
+        "target": "core/schema.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/index.js",
+        "target": "core/prompts.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/index.js",
+        "target": "core/maintenance.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/maintenance.js",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "core/maintenance.js",
+        "target": "core/source-dependencies.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/normalize.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/model.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/control.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/control.js",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/instances.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/instances.js",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/instances.js",
+        "target": "core/maintenance.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/instances.js",
+        "target": "core/schema.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/management.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/management.js",
+        "target": "core/schema.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/ui-host.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/tool-output.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/voice.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/channels/service.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/channels/service.js",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/channels/service.js",
+        "target": "adapters/dsh/channels/onebot.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/channels/service.js",
+        "target": "adapters/dsh/connections/common.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/channels/service.js",
+        "target": "adapters/dsh/connections/bridge.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/connections/bridge.js",
+        "target": "adapters/dsh/channels/onebot.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/connections/bridge.js",
+        "target": "adapters/dsh/connections/common.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/channels/native.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/channels/windows-speech.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/channels/windows-speech.js",
+        "target": "adapters/dsh/channels/windows-speech.ps1",
+        "kind": "file-url"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/surfaces.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/surfaces.js",
+        "target": "adapters/dsh/login-qr.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/login-qr.js",
+        "target": "adapters/dsh/vendor/qrcode.mjs",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/surfaces.js",
+        "target": "adapters/dsh/qr.js",
+        "kind": "dynamic"
+      },
+      {
+        "importer": "adapters/dsh/qr.js",
+        "target": "adapters/dsh/vendor/qrcode.mjs",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/permissions.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/permissions.js",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/owner-assets.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/media/index.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/media/index.js",
+        "target": "adapters/dsh/media/service.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/media/service.js",
+        "target": "adapters/dsh/media/io.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/media/io.js",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/media/service.js",
+        "target": "adapters/dsh/media/providers.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/media/providers.js",
+        "target": "adapters/dsh/media/io.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/media/index.js",
+        "target": "adapters/dsh/media/providers.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/connections/service.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/connections/service.js",
+        "target": "adapters/dsh/channels/service.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/connections/service.js",
+        "target": "adapters/dsh/connections/common.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/connections/service.js",
+        "target": "adapters/dsh/connections/qq.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/connections/qq.js",
+        "target": "adapters/dsh/connections/common.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/connections/service.js",
+        "target": "adapters/dsh/connections/wechat.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/connections/wechat.js",
+        "target": "adapters/dsh/connections/common.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/companion-scope.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "adapters/dsh/tool-schema.js",
+        "kind": "static"
+      },
+      {
+        "importer": "adapters/dsh/index.js",
+        "target": "core/source-dependencies.js",
+        "kind": "static"
+      },
+      {
+        "importer": "scripts/persona-cli.mjs",
+        "target": "core/store.js",
+        "kind": "static"
+      },
+      {
+        "importer": "scripts/persona-cli.mjs",
+        "target": "core/maintenance.js",
+        "kind": "dynamic"
+      },
+      {
+        "importer": "scripts/check-docs.mjs",
+        "target": "core/schema.js",
+        "kind": "static"
+      },
+      {
+        "importer": "scripts/dsh-real-lifecycle.mjs",
+        "target": "scripts/dsh-integration.mjs",
+        "kind": "static"
+      },
+      {
+        "importer": "scripts/sync-plan-docs.mjs",
+        "target": "scripts/check-docs.mjs",
+        "kind": "dynamic"
+      }
+    ],
+    "missing": [],
+    "externalModules": [
+      "node:crypto",
+      "node:os",
+      "node:path",
+      "node:util",
+      "node:fs/promises",
+      "node:fs",
+      "node:http",
+      "node:net",
+      "node:child_process",
+      "node:url",
+      "node:vm"
+    ],
+    "experimentalPacked": [],
+    "mobileMounted": false,
+    "speechHelperPacked": true
+  },
+  "sourceFingerprints": {
+    "adapters/dsh/index.js": "68761b837aab765dd81ff56936780928c28cf1a5a01403a256363197c6c00e3b",
+    "adapters/dsh/tool-schema.js": "614a871841fc086f0a45f63e4b496f8c4ba2907a66588db5ca46c315581777c8",
+    "adapters/dsh/companion-scope.js": "418b2e80712f4acdc090bc1d9d1ab1f46e358232e231176baf902a3770f97b0f",
+    "adapters/dsh/permissions.js": "43803b8cc7e4bcf393161787ad2f237871cf48eb67b83b4fbc3e18af9b349c81",
+    "adapters/dsh/connections/common.js": "f63fd8547d93fb7663410ad2197c27c71a07f7badb7c01a6719d980f27190aad",
+    "adapters/dsh/channels/service.js": "c3bda291105890ce48031f481b83776f596f7db8d0a2d49aec4c81c0c74ace53",
+    "adapters/dsh/channels/native.js": "37e6a1750a106963621d54906d5d6d4d111f18e09e155407683cf172302f6453",
+    "adapters/dsh/surfaces.js": "0bbd620e0f87f6ee922bc2c2b65ee1afa02c976f72ec38e17219da79304857c3",
+    "ui/app.js": "acf26161e6fa2c66960b6d400ffa2e6f69e93f41fbcff844ea4fa8fb4b16f550",
+    "ui/client.js": "276be0b94c8821520273acdc627d19d07907c074b30ff4369d8a39869f3993aa",
+    "package.json": "7d0d27c99abb5eee023000e423b68c6f2c483124847dad21967ca027a1f76f50",
+    "cordis.patch.yml": "dbb4f78bc9d7bd643b1be5776072dc8fa0d349a2e8942a77185373fa355a1e17",
+    "README.md": "9f526436c813873fe75e0d8864705ff46f328787e09829404e28d5c3b16278e0",
+    "docs/feature-map.md": "332a0bc003047373e9ec7e508bb4234a220ced6d60c2da6c7196ceb77132a0b7",
+    "docs/plan/persona/persona-schema.md": "9c3f9ff3d2ee23aba80431f8351f29b4b4aa81aa69825ea953231fbf617c562a"
+  },
+  "sourceChangedDuringAudit": [],
+  "finalScopeReview": {
+    "reviewedAt": "2026-10-25T20:37:01.060Z",
+    "status": "passed",
+    "blockingIssues": [],
+    "file": "adapters/dsh/companion-scope.js",
+    "sha256": "8ef9f8c6cf32cfe9f50e44bee22fa7ecb9f2efc2b41d588ef4c4d6baf95c8962",
+    "priorAuditedSha256": "0ad29a18744d89179dfd1c14ec47089ef952d988b21eaf37d97377a1ff80f1d1",
+    "priorAuditReconstructedExactly": true,
+    "batchBaselineSha256": "58b0fcf90c0240ab615a22967bbfc248b16b89684d8b7bd738cdbaee72dfbb3d",
+    "delta": [
+      "Retain the disposed owner in the map until its exact asynchronous detach and releases finish; delete only when it is still the map owner.",
+      "A same-object selection reuses prior task only while not disposed. Reselection captures priorDisposal and waits before registering fresh tools."
+    ],
+    "reason": "Rapid leave/reselect cannot bypass the old disposal promise; old detach completes before the new attach. Exact-owner map cleanup cannot delete a replacement owner. Immediate mask and pre-step attachment gate remain intact.",
+    "autonomy": "No change to tool set, personality guidance, reply/attention/sleep/growth rules, or other preset scope.",
+    "coreStatusUnchanged": true,
+    "evidence": {
+      "sourceLines": {
+        "dispose": 12,
+        "ownerDeletion": 22,
+        "activationGuard": 29,
+        "disposalBarrier": 31,
+        "newAttachWait": 36
+      },
+      "regressionScenario": {
+        "file": "test/companion-scope.test.js",
+        "line": 76,
+        "sha256": "e868adc400a1bf98ed12def6b6c72560cc957393c5932087ffaa6defba0e9a33"
+      },
+      "testsRunByThisReviewer": 0,
+      "parentReportedTests": "10 companion-scope + 4 surfaces; independent review does not re-label this as reviewer-run tests"
+    }
+  },
+  "lastReviewedAt": "2026-10-25T20:48:48.292Z",
+  "finalNativeRaceReview": {
+    "reviewedAt": "2026-10-25T20:48:48.292Z",
+    "status": "passed",
+    "blockingIssues": [],
+    "scope": "Only final two-file lifecycle delta; no broad re-audit or runtime changes.",
+    "baselineManifest": "work/persona-expansion/batchbackup/companion-native-race/manifest.json",
+    "files": [
+      {
+        "path": "adapters/dsh/index.js",
+        "currentSha256": "68761b837aab765dd81ff56936780928c28cf1a5a01403a256363197c6c00e3b",
+        "baselineSha256": "c1555b47d3ae421bb420a5e62b87cb98ddb1a56ed020b2751aa5a5824bc0ea35"
+      },
+      {
+        "path": "adapters/dsh/companion-scope.js",
+        "currentSha256": "418b2e80712f4acdc090bc1d9d1ab1f46e358232e231176baf902a3770f97b0f",
+        "baselineSha256": "8ef9f8c6cf32cfe9f50e44bee22fa7ecb9f2efc2b41d588ef4c4d6baf95c8962"
+      }
+    ],
+    "indexOutsideLifecycleBlocksByteIdentical": true,
+    "controlGuidanceByteIdentical": true,
+    "toolRegistrationAndBusinessBodyUnchanged": true,
+    "findings": [
+      "WeakMap keyed by manager shares a per-session lease across preset mounts. Same live Agent adds a claim instead of re-attaching. Only final claim retirement queues detach.",
+      "Per-session slot.tail orders retiring detach before replacement attach; per-mount masks and pre-step gates remain independently released. Late old cleanup deletes only its own current slot.",
+      "Coordinator attach waits for detaching and full attaching before reading or returning state. Duplicate detach shares the state-specific task, waits initialization, releases exact state and clears only its own barrier.",
+      "Coordinator close drains pending detach as well as attach; existing tool registration, core business flow and personality guidance remain byte-identical outside those lifecycle sections."
+    ],
+    "autonomy": "No reply, attention, sleep or growth threshold/rule added. Preset boundary and internal channel create/resume contract unchanged.",
+    "coreStatusUnchanged": true,
+    "evidence": {
+      "sharedLease": {
+        "file": "adapters/dsh/companion-scope.js",
+        "line": 1
+      },
+      "claimRelease": {
+        "file": "adapters/dsh/companion-scope.js",
+        "line": 32
+      },
+      "coordinatorAttach": {
+        "file": "adapters/dsh/index.js",
+        "line": 536
+      },
+      "coordinatorDetach": {
+        "file": "adapters/dsh/index.js",
+        "line": 763
+      }
+    },
+    "testsRunByThisReviewer": 0,
+    "parentReportedNativeEvidence": {
+      "attempt": "attempt-08",
+      "checksPassed": 22,
+      "checksTotal": 22,
+      "rapidTransitions": 12,
+      "samePresetSelections": 5,
+      "firstStepToolCount": 7,
+      "unloadedToolCount": 0,
+      "reloadedToolCount": 7,
+      "reportedOnly": true
+    },
+    "publishFullSuite": "Still in parent execution; no final count asserted by this review"
+  }
+}

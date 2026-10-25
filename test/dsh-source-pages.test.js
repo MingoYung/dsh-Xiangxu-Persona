@@ -9,7 +9,7 @@ async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'persona-dsh-source-page-')), agents = new Map();
   const makeAgent = id => {
     const handlers = new Map(), tools = new Map();
-    const scope = { on(name, handler) { handlers.set(name, handler); }, tools: { register(tool) { tools.set(tool.name, tool); } } };
+    const scope = { on(name, handler) { handlers.set(name, handler); }, tools: { restrict() { return () => {}; }, register(tool) { tools.set(tool.name, tool); } } };
     const session = { id, header: { cwd: `C:/real/${id}` }, deriveMessages: () => [], requestHeader: () => ({ config: { provider: 'test', model: 'fixture' } }) };
     const agent = { id, session, ctx: scope, handlers, tools, inbox: { nextTurn: [], nextStep: [], splice(target, ...args) {
       return (target === 'next-turn' ? this.nextTurn : this.nextStep).splice(...args);

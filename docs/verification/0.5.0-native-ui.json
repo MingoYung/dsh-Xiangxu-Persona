@@ -1,0 +1,136 @@
+{
+  "version": "0.5.0",
+  "status": "passed",
+  "checkedAt": "2026-10-25T20:49:01.340Z",
+  "host": "Installed DSH NEXT 0.2.1-rc.2; isolated owner-authenticated web profile",
+  "sourceDigests": {
+    "package.json": "7d0d27c99abb5eee023000e423b68c6f2c483124847dad21967ca027a1f76f50",
+    "scripts/build-ui.mjs": "9fa1f0b8cd0965d0777bbce4de55c590f583721dd15a6f55c23b4266ca076b2f",
+    "ui/index.html": "b15c98ebed93abecf97894c1d39e3d30213861e1e34707843e7f3039f19ced64",
+    "ui/style.css": "444aa28020fa397dbb474ab9af712aca0fcf30f853db6a5b6629a2cb1e1411e5",
+    "ui/app.js": "acf26161e6fa2c66960b6d400ffa2e6f69e93f41fbcff844ea4fa8fb4b16f550",
+    "ui/client.js": "276be0b94c8821520273acdc627d19d07907c074b30ff4369d8a39869f3993aa"
+  },
+  "changedAfterHostStart": [
+    "package.json",
+    "ui/app.js",
+    "ui/client.js"
+  ],
+  "hotReloadObserved": true,
+  "checks": {
+    "checkedAt": "2026-10-25T20:32:07.444Z",
+    "eightPagesOpened": true,
+    "qqQrAppearedAndCancelled": true,
+    "wechatQrAppearedAndCancelled": true,
+    "qrScreenshotSaved": false,
+    "accountAuthorized": false,
+    "capabilityRows": 18,
+    "unsupportedGrantDisabled": true,
+    "identityDescriptionSavedAndReadBack": true,
+    "identityLockSavedAndReadBack": true,
+    "identityVersionObserved": 2,
+    "referenceSeededVia": "owner authenticated HTTP chunk transfer; not GUI file picker",
+    "referencePreviewVisible": true,
+    "parentDownloadVerified": true,
+    "downloadBytes": 70,
+    "downloadSha256": "4f917fc74f919eabac2f04f6c2a1f5484d182edc506ec89de3ec93b74f5eef4b",
+    "imageProviderDisabled": true,
+    "videoProviderDisabled": true,
+    "modelPromptSubmitted": false,
+    "paidProviderRequestSent": false,
+    "uiFilePickerVerified": false,
+    "filePickerAutomation": "two chooser waits timed out; no UI upload success claimed",
+    "consoleErrorsObserved": 0
+  },
+  "ownerAssetHttp": {
+    "status": "passed",
+    "checkedAt": "2026-10-25T20:31:07.379Z",
+    "transport": "real owner-authenticated HTTP management in installed DSH isolated profile",
+    "syntheticFixture": true,
+    "userReferenceImage": false,
+    "uiFilePickerVerified": false,
+    "uploadBytes": 70,
+    "downloadBytes": 70,
+    "sha256": "4f917fc74f919eabac2f04f6c2a1f5484d182edc506ec89de3ec93b74f5eef4b",
+    "assetId": "asset-4f917fc74f919eabac2f04f6c2a1f548",
+    "identityVersion": 2,
+    "locked": true,
+    "primaryMatches": true,
+    "providerRequestSent": false
+  },
+  "liveQr": {
+    "schemaVersion": "xiangxu-live-unbound-qr-smoke/1",
+    "observedDate": "2026-10-26",
+    "executionScript": "C:\\Users\\Administrator\\Documents\\Codex\\2026-10-25\\c-users-administrator-dsh-reports\\work\\persona-expansion\\scan-live-auth-check.mjs",
+    "scope": "One real QR creation request per platform. No polling, scanning, login, binding or messaging.",
+    "productionTouched": false,
+    "accountLoginPerformed": false,
+    "messagesSent": 0,
+    "qrOrFlowSecretsPersisted": false,
+    "temporaryRegistryCreated": false,
+    "requests": [
+      {
+        "platform": "qq",
+        "endpoint": "https://q.qq.com/lite/create_bind_task",
+        "method": "POST",
+        "httpStatus": 200,
+        "phase": "waiting",
+        "qrContentNonempty": true,
+        "qrContentBytes": 118,
+        "errorCode": null,
+        "cancelledPhase": "idle",
+        "hasCredentials": false,
+        "connected": false,
+        "livePlatformVerified": false
+      },
+      {
+        "platform": "wechat",
+        "endpoint": "https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode",
+        "method": "POST",
+        "httpStatus": 200,
+        "phase": "waiting",
+        "qrContentNonempty": true,
+        "qrContentBytes": 89,
+        "errorCode": null,
+        "cancelledPhase": "idle",
+        "hasCredentials": false,
+        "connected": false,
+        "livePlatformVerified": false
+      }
+    ],
+    "sourceHashes": {
+      "adapters/dsh/connections/common.js": "f63fd8547d93fb7663410ad2197c27c71a07f7badb7c01a6719d980f27190aad",
+      "adapters/dsh/connections/service.js": "3c6a2045dd14553d2a420400abf53b69e82a4e514167cea81e437d8ec0340e8d",
+      "adapters/dsh/connections/qq.js": "bed326e42617fb1a40a87488b9748345515d8b57acf6848353c6348f956e0c0f",
+      "adapters/dsh/connections/wechat.js": "063b5fb49324c28ae4352f27f07666e04a44264b3231f7a5d3d84065e94d4f29"
+    },
+    "limitation": "This proves current real upstream QR acquisition only. Authenticated receive/send and account permissions remain unverified until the user completes login."
+  },
+  "limitations": [
+    "No live account QR authorization, logged-in send/receive or real platform receipt was performed.",
+    "No paid image/video provider or new real-model prompt was used.",
+    "Browser file chooser automation did not emit a chooser event in two attempts; GUI file selection/upload is unverified. Actual owner HTTP chunk import and GUI preview/download were verified.",
+    "Screenshots show synthetic isolated test data; the reference is a 1-pixel PNG byte fixture, not a generated persona portrait."
+  ],
+  "screenshots": [
+    {
+      "path": "docs/images/0.5.0-media-settings-light.png",
+      "bytes": 51576,
+      "sha256": "17b2de56acfc93f2ff7c87e3b88e082071a421e453c12e1865a7e1f0ec63ddc9"
+    },
+    {
+      "path": "docs/images/0.5.0-channel-settings-light.png",
+      "bytes": 55780,
+      "sha256": "b257897cc3a276c45c13f1038291a6cd4ae7a08f372aa544c0bad32eda95a9fa"
+    }
+  ],
+  "cleanup": {
+    "stoppedAt": "2026-10-25T20:32:10.869Z",
+    "instanceUnloadedBeforeStop": true,
+    "writerLocksRemaining": 0,
+    "productionForceRestarted": false,
+    "dedicatedHostRemaining": 0,
+    "mediaWriterLocksRemaining": 0,
+    "hostTerminationExitCode": 1
+  }
+}

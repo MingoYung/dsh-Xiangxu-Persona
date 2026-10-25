@@ -1,0 +1,46 @@
+import * as fs from 'node:fs/promises';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { atomicReplaceWithRetry } from '../../core/store.js';
+
+export const CAPABILITY_CATALOG = Object.freeze([
+  ['chat.text','发送文字消息'],['chat.image','发送图片'],['chat.video','发送视频文件'],['chat.file','发送普通文件'],['chat.voice','发送语音消息'],['chat.sticker','发送系统表情'],
+  ['message.reply','引用消息'],['message.retract','撤回自己的消息'],['contacts.read','查询联系人'],['groups.read','查询群列表'],['friend.manage','处理好友请求'],['group.manage','群相关操作'],['profile.update','修改账号资料'],
+  ['feed.read','查看朋友圈或动态'],['feed.publish','发布朋友圈或动态'],['feed.react','动态点赞或评论'],['call.voice','实时语音通话'],['call.video','实时视频通话'],
+].map(([id,label])=>Object.freeze({id,label})));
+const IDS=new Set(CAPABILITY_CATALOG.map(x=>x.id)),LIMIT=262144,MAX_ENTRIES=128;
+const fail=(code,message)=>{throw Object.assign(new Error(message),{code});};
+const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+const safeId=(v)=>typeof v==='string'&&v.length>0&&Array.from(v).length<=256&&!/[\u0000-\u001f\u007f]/.test(v);
+const rootKey=v=>process.platform==='win32'?path.resolve(v).toLowerCase():path.resolve(v);
+const key=(root,id,account)=>createHash('sha256').update(JSON.stringify([rootKey(root),id,account])).digest('hex');
+async function safeFile(file){const resolved=path.resolve(file);let current=path.parse(resolved).root;for(const part of resolved.slice(current.length).split(path.sep).filter(Boolean)){current=path.join(current,part);try{if((await fs.lstat(current)).isSymbolicLink())fail('PERMISSION_PATH','权限登记不能经过符号链接或目录联接');}catch(e){if(e.code!=='ENOENT')throw e;}}return resolved;}
+function validate(v){
+  if(!object(v)||v.schemaVersion!=='xiangxu-permissions/1'||!Array.isArray(v.entries)||v.entries.length>MAX_ENTRIES)fail('PERMISSION_REGISTRY','权限登记格式或容量无效');
+  const seen=new Set();for(const e of v.entries){if(!object(e)||!/^([a-f0-9]{64})$/.test(e.key)||seen.has(e.key)||!['qq','wechat'].includes(e.platform)||!safeId(e.accountId)||typeof e.memoryRoot!=='string'||!path.isAbsolute(e.memoryRoot)||e.memoryRoot.length>4096||e.key!==key(e.memoryRoot,e.platform,e.accountId)||!Array.isArray(e.allowed)||e.allowed.length>IDS.size||e.allowed.some(x=>!IDS.has(x))||new Set(e.allowed).size!==e.allowed.length||!Number.isSafeInteger(e.updatedAt)||e.updatedAt<0)fail('PERMISSION_REGISTRY','权限登记条目无效');seen.add(e.key);}return v;
+}
+
+/** User-granted tool capabilities, scoped to the actual account and personality root. */
+export function createPermissionService({file,getCoordinator,getCapabilities,clock=Date.now,storage}={}){
+  if(typeof getCoordinator!=='function'||typeof getCapabilities!=='function'||!storage&&!file)throw new TypeError('Permission storage and context ports required');
+  let state={schemaVersion:'xiangxu-permissions/1',entries:[]},closed=false,tail=Promise.resolve();
+  const read=storage?.read??(async()=>{const full=await safeFile(file);try{const h=await fs.open(full,'r');try{const stat=await h.stat();if(!stat.isFile()||stat.size>LIMIT)fail('PERMISSION_CAPACITY','权限登记超过读取上限');const b=Buffer.alloc(LIMIT+1);const n=await h.read(b,0,b.length,0);if(n.bytesRead>LIMIT)fail('PERMISSION_CAPACITY','权限登记超过读取上限');return JSON.parse(b.subarray(0,n.bytesRead).toString('utf8'));}finally{await h.close();}}catch(e){if(e.code==='ENOENT')return null;throw e;}});
+  const write=storage?.write??(async next=>{const s=JSON.stringify(next,null,2)+'\n';if(Buffer.byteLength(s)>LIMIT)fail('PERMISSION_CAPACITY','权限登记超过256KiB');const full=await safeFile(file);await fs.mkdir(path.dirname(full),{recursive:true});await safeFile(full);const tmp=full+'.next';await safeFile(tmp);const h=await fs.open(tmp,'w',0o600);try{await h.writeFile(s);await h.sync();}finally{await h.close();}await atomicReplaceWithRetry(tmp,full);});
+  const ready=(async()=>{const saved=await read();if(saved){if(Buffer.byteLength(JSON.stringify(saved))>LIMIT)fail('PERMISSION_CAPACITY','权限登记超过256KiB');state=validate(saved);}})();
+  const queue=work=>{const p=tail.then(async()=>{await ready;if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');return work();});tail=p.catch(()=>{});return p;};
+  function normalizedCaps(raw={}){
+    const values=Array.isArray(raw.items)?raw.items:Array.isArray(raw.capabilities)?raw.capabilities:Object.entries(raw.capabilities??{}).map(([id,value])=>typeof value==='boolean'?{id,supported:value}:{id,...value});
+    const map=new Map(values.map(x=>[x.id??x.capability,x]));
+    return CAPABILITY_CATALOG.map(item=>{const found=map.get(item.id);return{...item,supported:found?.supported===true,driverAvailable:found?.available??raw.connected===true,reason:found?.reason??(found?.supported===true?null:'当前连接器未提供此能力')};});
+  }
+  async function context(id,instanceId){if(!['qq','wechat'].includes(id))fail('PERMISSION_CHANNEL','请选择QQ或微信');const c=await getCoordinator(instanceId);if(!c)fail('INSTANCE_UNLOADED','先加载人格实例再设置权限');await c.ready;if(c.initializationError)throw c.initializationError;const raw=await getCapabilities(id),accountId=raw.accountId??raw.account?.id??null;return{c,raw,id,accountId,items:normalizedCaps(raw)};}
+  function defaultAllowed(raw){return ['chat.text',...(['both','voice'].includes(raw.voiceMode??raw.config?.voiceMode)?['chat.voice']:[])];}
+  function allowedFor(root,id,accountId,raw){return state.entries.find(x=>x.key===key(root,id,accountId))?.allowed??defaultAllowed(raw);}
+  async function inspect(args={}){await ready;if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');const {c,raw,id,accountId,items}=await context(args.id,args.instanceId);const allowed=safeId(accountId)?allowedFor(c.memoryRoot,id,accountId,raw):[];return{id,platform:id,accountId,connected:raw.connected===true,items:items.map(x=>({...x,allowed:allowed.includes(x.id),available:Boolean(x.supported&&x.driverAvailable&&allowed.includes(x.id)&&safeId(accountId)),reason:!safeId(accountId)?'先连接一个账号':!x.supported?x.reason:!x.driverAvailable?'当前连接未就绪':!allowed.includes(x.id)?'尚未获用户授权':null}))};}
+  function configure(args={}){return queue(async()=>{const {c,raw,id,accountId,items}=await context(args.id,args.instanceId);if(!safeId(accountId))fail('PERMISSION_ACCOUNT','先连接实际账号再设置权限');if(!Array.isArray(args.allowed)||args.allowed.length>IDS.size||args.allowed.some(x=>!IDS.has(x))||new Set(args.allowed).size!==args.allowed.length)fail('PERMISSION_SELECTION','能力授权列表无效');const prior=allowedFor(c.memoryRoot,id,accountId,raw);for(const capability of args.allowed)if(!prior.includes(capability)&&!items.find(x=>x.id===capability)?.supported)fail('PERMISSION_UNSUPPORTED','当前连接器未提供：'+CAPABILITY_CATALOG.find(x=>x.id===capability).label);const entry={key:key(c.memoryRoot,id,accountId),memoryRoot:c.memoryRoot,platform:id,accountId,allowed:[...args.allowed],updatedAt:clock()},next={...state,entries:[...state.entries.filter(x=>x.key!==entry.key),entry]};validate(next);if(Buffer.byteLength(JSON.stringify(next))>LIMIT)fail('PERMISSION_CAPACITY','权限登记已满，请先移除不用的账号记录');await write(next);state=next;return inspect(args);});}
+  async function authorize({memoryRoot,platform,accountId,capability}={}){await ready;if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');if(!IDS.has(capability)||!safeId(accountId)||!path.isAbsolute(memoryRoot??''))fail('CAPABILITY_PERMISSION_DENIED','能力或实际调用对象无效');const c=await getCoordinator();if(!c||rootKey(c.memoryRoot)!==rootKey(memoryRoot))fail('CAPABILITY_PERMISSION_DENIED','人格实例已经切换');const raw=await getCapabilities(platform);if(raw.accountId!==accountId)fail('CAPABILITY_PERMISSION_DENIED','账号已经切换');const item=normalizedCaps(raw).find(x=>x.id===capability);if(!item?.supported)fail('CAPABILITY_UNSUPPORTED',item?.reason??'连接器不支持此能力');if(!item.driverAvailable)fail('CAPABILITY_UNAVAILABLE','当前渠道未就绪');if(!allowedFor(memoryRoot,platform,accountId,raw).includes(capability))fail('CAPABILITY_PERMISSION_DENIED','未获用户授权：'+item.label);return true;}
+  async function list(args={}){await ready;if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');const{c,id}=await context(args.id,args.instanceId);return{items:state.entries.filter(e=>rootKey(e.memoryRoot)===rootKey(c.memoryRoot)&&e.platform===id).map(({accountId,allowed,updatedAt})=>({accountId,allowed:[...allowed],updatedAt}))};}
+  function reset(args={}){return queue(async()=>{const{c,id,accountId,raw}=await context(args.id,args.instanceId),selected=args.accountId??accountId;if(!safeId(selected))fail('PERMISSION_ACCOUNT','需要明确的已保存账号');const selectedKey=key(c.memoryRoot,id,selected),next={...state,entries:state.entries.filter(e=>e.key!==selectedKey)};const removed=next.entries.length!==state.entries.length;if(removed){await write(next);state=next;}return{resetAccountId:selected,removed,defaults:defaultAllowed(raw),current:await inspect(args)};});}
+  async function close(){await tail;closed=true;}
+  return{ready,inspect,configure,authorize,list,reset,close};
+}

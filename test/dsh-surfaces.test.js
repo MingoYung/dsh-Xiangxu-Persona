@@ -9,12 +9,12 @@ import { VOICE_PROFILE_PATH } from '../adapters/dsh/voice.js';
 
 test('actual coordinator exposes voice choices, preserves user playback selection, and unloads the tool', async t => {
   const root = await mkdtemp(join(tmpdir(), 'xiangxu-voice-tool-')), tools = new Map();
-  const scope = { on() { return () => {}; }, tools: { register(tool) { tools.set(tool.name, tool); return () => tools.delete(tool.name); } } };
+  const scope = { on() { return () => {}; }, tools: { restrict() { return () => {}; }, register(tool) { tools.set(tool.name, tool); return () => tools.delete(tool.name); } } };
   const agent = { id: 'voice-chat', session: { id: 'voice-chat', header: {}, deriveMessages: () => [] }, ctx: scope, inbox: { nextTurn: [], nextStep: [] }, status: 'idle' };
   const c = createDshCoordinator({ agents: { get: () => agent }, get: () => undefined, llm: {} }, { memoryRoot: root, operatorControl: false });
   t.after(async () => { await c.close(); await rm(root, { recursive: true, force: true }); });
   await c.ready; await c.attachAgent(agent);
-  assert.deepEqual([...tools.keys()].sort(), ['memory_forget', 'memory_search', 'persona_decide', 'persona_introspect', 'persona_voice']);
+  assert.deepEqual([...tools.keys()].sort(), ['memory_forget', 'memory_search', 'persona_decide', 'persona_introspect', 'persona_media', 'persona_platform', 'persona_voice']);
   const catalog = { supported: true, voices: [{ id: 'local-a', name: '本地甲', lang: 'zh-CN', localService: true, default: true }, { id: 'local-b', name: '本地乙', lang: 'zh-CN', localService: true, default: false }] };
   await c.voice.registerCatalog(agent.session.id, catalog);
   const tool = tools.get('persona_voice');

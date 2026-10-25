@@ -1,8 +1,8 @@
 {
   "name": "dsh-xiangxu-persona",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
-  "description": "Xiangxu Persona: portable long-term personality and memory, native DSH management, optional QQ/WeChat bridge channels and local system speech",
+  "description": "Xiangxu Persona: portable long-term personality and memory, native DSH management, optional QR-connected QQ/WeChat, real capability grants, local speech and reference-based media",
   "engines": {
     "node": ">=22"
   },
@@ -11,7 +11,9 @@
     "./core": "./core/index.js",
     "./client": "./ui/client.js",
     "./dsh-channel": "./adapters/dsh/channels/native.js",
-    "./speech": "./adapters/dsh/channels/windows-speech.js"
+    "./speech": "./adapters/dsh/channels/windows-speech.js",
+    "./media": "./adapters/dsh/media/index.js",
+    "./connections": "./adapters/dsh/connections/service.js"
   },
   "dsh": {
     "bundle": {
@@ -56,6 +58,14 @@
     "adapters/dsh/tool-output.js",
     "adapters/dsh/voice.js",
     "adapters/dsh/surfaces.js",
+    "adapters/dsh/permissions.js",
+    "adapters/dsh/companion-scope.js",
+    "adapters/dsh/owner-assets.js",
+    "adapters/dsh/login-qr.js",
+    "adapters/dsh/qr.js",
+    "adapters/dsh/connections",
+    "adapters/dsh/media",
+    "adapters/dsh/vendor",
     "adapters/dsh/channels",
     "ui/index.html",
     "ui/app.js",
