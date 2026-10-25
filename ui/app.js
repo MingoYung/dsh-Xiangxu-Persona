@@ -7,6 +7,7 @@ const pages = {
   memory: ['记忆与关系', 'MEMORY', '按关系与来源浏览原件、提炼和编码，保留实际发言者与未知归属。'],
   evolution: ['进化与变更', 'EVOLUTION', '跟踪已选整理作业、未完成进度和已保留的变更历史。'],
   settings: ['设置与加载', 'SETTINGS', '管理实例、加载状态和技术资源；保存配置不会要求人格必须改变。'],
+  chat: ['聊天渠道与语音', 'CHANNELS & VOICE', '在熟悉的聊天软件里继续交流，让同一个人格走进私聊和群聊。'],
   maintenance: ['维护与诊断', 'MAINTENANCE', '查看可用诊断、校验和备份恢复结果。写入操作都作用于明确选择的实例。'],
 };
 const labels = { awake: '清醒', sleeping: '睡眠', queued: '待执行', running: '执行中', paused: '已暂停', committed: '已提交', completed: '已完成', prepared: '已准备', failed: '失败', invalidated: '已失效', no_work: '无工作', delivered: '已交付', pending: '待处理', cancelled: '已取消', unknown: '结果未知', deferred: '已暂缓' };
@@ -19,6 +20,17 @@ const personName = id => id == null ? '未知归属' : state.people.find(p => p.
 const memoryScopeLabel = record => record.scope === 'global'
   ? (['facet', 'signature', 'habit'].includes(record.recordType) ? '共同人格' : '共同记忆')
   : record.personId != null ? '关系：' + personName(record.personId) : '未知归属';
+function applyTheme(theme) {
+  const value = ['system', 'light', 'dark'].includes(theme) ? theme : 'system';
+  if (value === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = value;
+  $('theme-choice').value = value;
+}
+let themeRead = false;
+async function loadTheme() {
+  if (themeRead) return;
+  try { const result = await request('ui.theme.get'); applyTheme(result.theme); themeRead = true; }
+  catch { try { applyTheme(localStorage.getItem('xiangxu.theme')); } catch {} }
+}
 function element(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
@@ -80,7 +92,9 @@ function documentView(value) {
 }
 function field(name, label, value, options = {}) {
   const input = options.choices ? element('select', { name, id: name }, options.choices.map(([v, title]) => element('option', { value: v, selected: String(value ?? '') === String(v) }, title)))
-    : element(options.multiline ? 'textarea' : 'input', { name, id: name, value: value ?? '', type: options.type ?? 'text', min: options.min ?? (options.type === 'number' ? 0 : undefined), step: options.type === 'number' ? 1 : undefined, required: options.required ?? false, placeholder: options.placeholder, rows: options.multiline ? 3 : undefined });
+    : options.multiline
+      ? element('textarea', { name, id: name, value: value ?? '', required: options.required ?? false, placeholder: options.placeholder, rows: 3 })
+      : element('input', { name, id: name, value: value ?? '', type: options.type ?? 'text', min: options.min ?? (options.type === 'number' ? 0 : undefined), step: options.type === 'number' ? 1 : undefined, required: options.required ?? false, placeholder: options.placeholder });
   const wrapper = element('label', { class: `field${options.class ? ' ' + options.class : ''}` }, element('span', {}, label), input, options.hint ? element('small', {}, options.hint) : null);
   return { wrapper, input };
 }
@@ -122,6 +136,7 @@ let connecting = false;
 async function connect() {
   if (connecting) return;
   connecting = true;
+  loadTheme();
   clearError(); $('connection-state').textContent = '正在连接'; $('connection-state').className = 'status-pill neutral';
   try {
     const instances = await request('instances.list', { instanceId: undefined }); state.instances = instanceItems(instances);
@@ -153,8 +168,8 @@ async function renderPage() {
   try {
     state.status = await request('status'); updateInstanceBar();
     let content;
-    if (!state.status.available && !['settings', 'maintenance'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('前往设置与加载', () => navigate('settings'), 'primary'));
-    else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage })[state.page]();
+    if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('前往设置与加载', () => navigate('settings'), 'primary'));
+    else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage })[state.page]();
     if (generation !== state.generation) return;
     replace($('page-content'), content); $('last-updated').textContent = '上次读取 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
   } catch (error) { if (generation === state.generation) { showError(error); replace($('page-content'), card('暂时无法读取', '', notice(errorText(error), 'error'), button('重新读取', renderPage, 'secondary'))); } }
@@ -363,6 +378,101 @@ async function settingsPage() {
   form.append(element('div', { class: 'form-footer' }, element('p', {}, '设置作用于当前选定实例。请求预算估算不等于供应商精确 token 计费。'), button('保存设置', saveSettings, 'primary', { dataset: { action: 'save-settings' } })));
   container.append(card('技术设置', '资源边界有明确上限，改变配置不等于改变人格观点。', form)); return container;
 }
+async function chatPage() {
+  const channels = await request('channels.status'), container = element('div');
+  const connections = Array.isArray(channels.connections) ? channels.connections : [];
+  const platformName = value => ({ qq: 'QQ', wechat: '微信' })[value] ?? value;
+  const statusName = value => ({ connected: '桥已连接', ready: '已就绪', connecting: '正在连接', disconnected: '尚未连接', disabled: '已停用', unconfigured: '尚未配置', unavailable: '暂不可用', error: '连接异常' })[value] ?? value;
+  container.append(card('', '', element('div', { class: 'mobile-intro' }, element('div', { class: 'mobile-symbol', 'aria-hidden': true }, '☷'), element('div', {}, element('h2', {}, '在熟悉的聊天软件里相处'), element('p', {}, '把 QQ、微信的私聊或群聊接到这里。相续仍是同一个持续成长的人格，自己判断关注、回应、主动和休息。')))));
+  const parseIds = input => [...new Set(input.value.split(/[\s,，;；]+/u).map(value => value.trim()).filter(Boolean))];
+  async function copyField(input, message) {
+    try { await navigator.clipboard.writeText(input.value); toast(message); }
+    catch { input.select(); toast('请复制已选中的内容。'); }
+  }
+  for (const id of ['qq', 'wechat']) {
+    const connection = connections.find(value => value.id === id) ?? { id, configured: false, enabled: false, connected: false, status: 'unavailable', capabilities: {}, config: {} };
+    const config = connection.config ?? {}, title = platformName(id), isWechat = id === 'wechat';
+    const apiUrl = field('channel-' + id + '-url', '本地桥 API 地址', config.apiUrl ?? '', { placeholder: 'http://127.0.0.1:3000', hint: '填写已运行的本地桥地址；保存不会替你登录账号。' });
+    const account = field('channel-' + id + '-account', '接入账号标识', config.accountId ?? '', { placeholder: isWechat ? '本地桥提供的账号标识' : 'QQ 账号 ID' });
+    const accessToken = field('channel-' + id + '-token', 'API 访问令牌', '', { type: 'password', hint: connection.hasAccessToken ? '已保存令牌。留空保留，不回显原值。' : '本地桥需要令牌时填写；不需要可留空。' });
+    accessToken.input.autocomplete = 'new-password';
+    const clearAccessToken = element('input', { type: 'checkbox' });
+    const privateIds = field('channel-' + id + '-private', '接入的私聊对象', (config.allowedPrivateIds ?? []).join('\n'), { multiline: true, placeholder: '每行一个对象 ID', hint: '空白表示暂不接入私聊；明确填 * 可接入该账号的全部私聊。' });
+    const groupIds = field('channel-' + id + '-groups', '接入的群聊', (config.allowedGroupIds ?? []).join('\n'), { multiline: true, placeholder: '每行一个群 ID', hint: '空白表示暂不接入群聊；明确填 * 可接入该账号的全部群。' });
+    const voiceMode = field('channel-' + id + '-voice', '回复形式', config.voiceMode ?? 'text', { choices: [['text', '文字'], ['both', '文字与语音'], ['voice', '语音']] });
+    const save = button('保存接入设置', async () => {
+      if (accessToken.input.value && clearAccessToken.checked) throw new Error('请只选择填写新令牌，或清除已保存的令牌。');
+      const patch = { apiUrl: apiUrl.input.value.trim(), accountId: account.input.value.trim(), allowedPrivateIds: parseIds(privateIds.input), allowedGroupIds: parseIds(groupIds.input), voiceMode: voiceMode.input.value };
+      if (accessToken.input.value) patch.accessToken = accessToken.input.value;
+      if (clearAccessToken.checked) patch.clearAccessToken = true;
+      await request('channels.configure', { id, config: patch }); accessToken.input.value = ''; toast(title + '接入设置已保存。'); await renderPage();
+    }, 'primary');
+    const controls = element('div', { class: 'row-actions' }, save,
+      button(connection.enabled ? '停用接入' : '启用已保存配置', async () => { await request(connection.enabled ? 'channels.stop' : 'channels.start', { id }); await renderPage(); }, 'secondary', { disabled: !connection.configured && !connection.enabled }),
+      button('检查连接', async () => { await request('channels.probe', { id }); await renderPage(); }, 'secondary', { disabled: !connection.configured }));
+    const callback = field('channel-' + id + '-callback', '事件上报地址', connection.callbackUrl ?? '', { hint: '在本地桥的事件上报设置中使用；平台登录在本地桥完成。' });
+    callback.input.readOnly = true;
+    const ingressArea = element('div');
+    const bridgeDetails = element('details', {}, element('summary', { class: 'small muted' }, '事件上报与鉴权'), element('div', { class: 'channel-details' }, callback.wrapper,
+      element('div', { class: 'row-actions' }, button('复制上报地址', () => { if (!callback.input.value) throw new Error('当前没有可用的上报地址。'); return copyField(callback.input, '上报地址已复制。'); }, 'secondary compact'),
+        button(connection.hasIngressToken ? '重新生成上报令牌' : '生成上报令牌', async () => {
+          const result = await request('channels.rotateIngress', { id });
+          if (typeof result.ingressToken !== 'string' || !result.ingressToken) throw new Error('未获得新的上报令牌。');
+          if (typeof result.callbackUrl === 'string') callback.input.value = result.callbackUrl;
+          const token = field('channel-' + id + '-ingress-once', '本次生成的上报令牌', result.ingressToken, { type: 'password', hint: '只在这里显示本次生成值。旧令牌已失效，请更新本地桥配置。' });
+          token.input.readOnly = true; token.input.autocomplete = 'off';
+          const show = element('input', { type: 'checkbox', onchange: event => { token.input.type = event.target.checked ? 'text' : 'password'; } });
+          replace(ingressArea, token.wrapper, element('label', { class: 'field-checkbox' }, show, '显示本次令牌'), button('复制本次令牌', () => copyField(token.input, '本次上报令牌已复制。'), 'secondary compact'));
+        }, 'secondary compact')), element('div', { class: 'channel-details' }, ingressArea)));
+    const capabilities = connection.capabilities ?? {};
+    const status = connection.status ?? (connection.connected ? 'connected' : connection.enabled ? 'disconnected' : 'disabled'), statusBadge = pill(status);
+    statusBadge.textContent = statusName(status);
+    if (!connection.connected && !connection.error) statusBadge.className = 'status-pill neutral';
+    const capabilityTags = element('div', { class: 'row-actions channel-capabilities' },
+      tag('私聊：' + (capabilities.private ? '支持' : '待桥提供')), tag('群聊：' + (capabilities.group ? '支持' : '待桥提供')), tag('文字：' + (capabilities.text ? '支持' : '待桥提供')), tag('语音：' + (capabilities.voice ? '支持' : '当前不可用')));
+    const excluded = connection.recentExcluded ?? connection.excluded ?? [];
+    const excludedInfo = Array.isArray(excluded) && excluded.length ? element('details', {}, element('summary', { class: 'small muted' }, '最近未接入的对象与群'), element('div', { class: 'record-list channel-details' }, excluded.slice(-10).map(value => element('div', { class: 'record' }, kv({ '对象 ID': value.senderId ?? value.userId ?? '—', '群 ID': value.roomId ?? value.groupId ?? '私聊', '时间': value.at ? date(value.at) : '未提供' }))))) : null;
+    container.append(card(title, isWechat ? '需要你准备兼容 OneBot 12 的本地桥；微信官方接口不等于已具备普通群聊能力。' : '通过 NapCat 等兼容 OneBot 11 的本地桥接入 QQ 私聊与群聊。',
+      element('div', { class: 'row-actions channel-status' }, statusBadge, tag(connection.protocol ?? (isWechat ? 'OneBot 12' : 'OneBot 11'))),
+      connection.error ? notice(connection.error.message ?? String(connection.error), 'error') : null,
+      capabilityTags, element('div', { class: 'form-grid' }, apiUrl.wrapper, account.wrapper), accessToken.wrapper,
+      connection.hasAccessToken ? element('label', { class: 'field-checkbox' }, clearAccessToken, '明确清除已保存的 API 令牌') : null,
+      element('div', { class: 'form-grid' }, privateIds.wrapper, groupIds.wrapper),
+      element('p', { class: 'subtle-note' }, '这些列表只确定哪些对象和群接入人格；接入之后，是否回应、关注谁和怎样相处仍由人格自己判断。'),
+      element('div', { class: 'channel-details' }, voiceMode.wrapper), controls, element('hr', { class: 'divider' }), bridgeDetails, excludedInfo));
+  }
+  const voiceArea = element('div');
+  try {
+    const voice = await request('voice.inspect', { sessionKey: 'channel-voice' });
+    const catalog = Array.isArray(voice.catalog) ? voice.catalog : voice.catalog?.voices ?? channels.voice?.catalog?.voices ?? [], current = voice.profile ?? voice;
+    const supported = channels.voice?.supported ?? voice.supported ?? catalog.length > 0;
+    const mode = field('channel-voice-mode', '由谁选择音色', current.mode ?? 'persona', { choices: [['persona', '让人格自己选择'], ['user', '由我来选择']] });
+    const choice = field('channel-voice-choice', '本机音色', current.userSelection?.voiceId ?? '', { choices: [['', '本机默认音色'], ...catalog.map(value => [value.id, value.name + (value.lang ? ' · ' + value.lang : '')])] });
+    const rate = field('channel-voice-rate', '语速', current.userSelection?.rate ?? 1, { type: 'number', min: 0.1 }), pitch = field('channel-voice-pitch', '音高', current.userSelection?.pitch ?? 1, { type: 'number', min: 0 });
+    rate.input.max = 10; rate.input.step = 0.1; pitch.input.max = 2; pitch.input.step = 0.1;
+    const pitchSupported = voice.providerCapabilities?.pitch !== false;
+    if (!pitchSupported) { pitch.input.disabled = true; pitch.input.value = 1; pitch.wrapper.append(element('small', {}, '当前本机引擎使用原生音高。')); }
+    const manual = element('div', { class: 'form-grid' }, choice.wrapper, rate.wrapper, pitch.wrapper);
+    const updateMode = () => { manual.hidden = mode.input.value !== 'user'; }; mode.input.addEventListener('change', updateMode); updateMode();
+    const selected = catalog.find(value => value.id === current.personaSelection?.voiceId), resultArea = element('div');
+    const voiceActions = element('div', { class: 'row-actions' }, button('保存声音设置', async () => {
+      const nextRate = Number(rate.input.value), nextPitch = Number(pitch.input.value);
+      if (!rate.input.value || !Number.isFinite(nextRate) || nextRate < 0.1 || nextRate > 10 || !pitch.input.value || !Number.isFinite(nextPitch) || nextPitch < 0 || nextPitch > 2) throw new Error('请输入有效语速与音高。');
+      await request('voice.configure', { sessionKey: 'channel-voice', mode: mode.input.value, userSelection: { voiceId: choice.input.value || null, rate: nextRate, pitch: nextPitch } }); toast('声音设置已保存。'); await renderPage();
+    }, 'primary'), button('试听已保存的声音', async () => {
+      const result = await request('voice.preview', { sessionKey: 'channel-voice', text: '你好，这是一段声音试听。' });
+      if (result.status !== 'generated' || result.mime !== 'audio/wav' || typeof result.audioDataUrl !== 'string' || !/^data:audio\/wav;base64,[A-Za-z0-9+/=]+$/.test(result.audioDataUrl)) throw new Error(result.message ?? (result.status === 'unsupportedPitch' ? '当前本机音色不支持这个音高。请保存原生音高后试听。' : '本机暂未返回可播放的试听音频。' + (result.reason ? '（' + result.reason + '）' : '')));
+      replace(resultArea, element('div', { class: 'voice-preview channel-details' }, element('p', {}, '试听已生成，点播放收听。'), element('audio', { controls: true, src: result.audioDataUrl, preload: 'none', 'aria-label': '本机音色试听' }), result.notice || result.pitchSupported === false ? element('p', { class: 'small muted' }, result.notice ?? '当前本机引擎不支持音高调整。') : null));
+    }, 'secondary', { disabled: !supported || !catalog.length }));
+    if (!supported || !catalog.length) voiceArea.append(notice('本机暂未发现可用的语音引擎或音色。文字聊天仍可使用。', 'warning'));
+    voiceArea.append(mode.wrapper, element('p', { class: 'small muted' }, current.mode === 'persona' ? selected ? '人格当前选择：' + selected.name : '人格尚未指定音色，当前使用本机默认声音。' : '当前按你选定的声音播放；人格的自主偏好仍保留。'), manual, voiceActions, resultArea);
+  } catch (error) { voiceArea.append(notice(errorText(error), 'warning')); }
+  container.append(card('语音与音色', '使用本机语音合成，再由实际支持语音的聊天渠道交付。', voiceArea,
+    element('p', { class: 'subtle-note' }, '文字与语音的实际发送能力以渠道桥返回为准。音色由人格自主选择或由你指定；试听不会写入聊天记忆。')));
+  container.append(card('后续扩展', '本轮提供 QQ、微信的渠道适配入口。', element('div', { class: 'row-actions' }, tag('Telegram：预留接口'), tag('个人网页：预留接口')), element('p', { class: 'subtle-note' }, '预留接口不会自动开启服务，也不表示已经连接对应平台。')));
+  return container;
+}
+
 async function maintenancePage() {
   const container = element('div'), resultArea = element('div'), root = state.status.memoryRoot ?? state.instances.find(item => item.id === state.instanceId)?.memoryRoot;
   async function maintenance(action, args, title, description, danger = false) {
@@ -391,6 +501,7 @@ $('detail-dialog').addEventListener('cancel', () => { state.detailGeneration++; 
 $('refresh-button').addEventListener('click', () => { if (state.connected) renderPage().catch(showError); else connect(); });
 $('active-instance').addEventListener('change', async event => { state.instanceId = event.target.value; try { state.status = await request('status'); state.people = state.status.available ? getItems(await request('people.list', { pageSize: 100 })) : []; await renderPage(); } catch (error) { showError(error); } });
 $('connect-retry').addEventListener('click', connect);
+$('theme-choice').addEventListener('change', async event => { const theme = event.target.value; applyTheme(theme); try { const result = await request('ui.theme.set', { theme }); if (result.persisted === false) toast('外观已切换；当前环境无法保存，下次打开会跟随系统。'); } catch { try { localStorage.setItem('xiangxu.theme', theme); } catch { toast('外观已切换；当前环境无法保存。'); } } });
 document.querySelectorAll('[data-page]').forEach(node => node.addEventListener('click', event => { event.preventDefault(); navigate(node.dataset.page).catch(showError); }));
 window.addEventListener('persona-bridge-ready', () => { if (!state.connected) connect(); });
 connect();

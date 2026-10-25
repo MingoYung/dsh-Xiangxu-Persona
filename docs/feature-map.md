@@ -1,6 +1,6 @@
 # 十四模块实现映射
 
-本表说明代码落点；通过的具体测试与限制以 verification.md 和 host-test-results.md 为准。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
+本表说明代码落点；0.4.0的具体测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |
 |---|---|---|
@@ -34,3 +34,11 @@
 ## 0.3.0 原生图形管理与实例
 
 六页界面位于DSH设置“相续人格”，由宿主现有设置slot、Connection认证载体与本地sandbox页面组成。management.js提供有界读取和明确操作；instances.js维护单活动实例、已保存配置、停用/切换与备份恢复；management operation收据持久化，冷恢复未知不重放。人格浏览、记忆/关系与来源、进化patch/有限版本差异、技术设置与维护均有页面入口。当前验收与边界见[管理说明](management-ui.md)。
+
+## 0.4.0 聊天渠道、声音与主题
+
+当前原生管理界面为七页，新增“聊天渠道与语音”，配色可跟随系统或手动选浅/深色。channels/service.js维护本机桥回调、范围、真实actor/房间路由、有限回执及恢复代次；channels/native.js把来信接入原生inbox，并使不同发言者/房间通道共用同一个人格；channels/onebot.js执行QQ OneBot11与微信OneBot12数据规范化和实际HTTP动作。外发只有平台桥明确消息回执才投影为实际assistant对话，unknown不假清用户pending、不自动重放。
+
+voice.js保存有界技术偏好，persona_voice由人格按需选择实际音色；channels/windows-speech.js/.ps1把已安装Windows声音生成实际WAV，渠道音频另取平台ack。语速是近似SAPI音级，pitch:false；voice-only缺能力明确失败，both可保留真实文字ack并标语音不可用。没有性格标签硬映射、每轮选声或新的成长阈值。
+
+当前五工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice。专用IM范围只暴露这些人格能力，保留原有注意、关系、睡眠与主动判断。QQ/微信实际需要用户已有兼容本地桥；微信官方普通群聊能力不在本版保证范围。接口、容量及已验证边界见[聊天渠道接入](channel-integration.md)与[管理说明](management-ui.md)。个人网页与Telegram仅预留，实验mobile源码不挂载、不进入发布主入口。

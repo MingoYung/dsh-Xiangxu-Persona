@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f5fa">
+  <meta name="referrer" content="no-referrer">
+  <title>相续 · 聊天</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <div class="chat-app">
+    <header class="chat-header">
+      <div class="identity"><div class="avatar" aria-hidden="true">续</div><div><h1 id="persona-name">相续</h1><p id="connection-state" role="status">正在连接</p></div></div>
+      <div class="header-actions"><button id="sound-enable" class="quiet-button" type="button">开启声音</button><button id="settings-open" class="icon-button" type="button" aria-label="聊天设置">☷</button></div>
+    </header>
+    <main id="chat-main">
+      <section id="pair-screen" class="welcome" hidden>
+        <div class="welcome-symbol" aria-hidden="true">续</div><div class="eyebrow">XIANGXU PERSONA</div><h2 id="welcome-title">你好，我们在这里继续聊</h2><p id="welcome-description">扫描电脑上“相续人格”里的连接码，打开这个聊天窗口。</p>
+        <div id="pair-options" hidden><label class="input-label">这台设备叫什么<input id="device-label" type="text" maxlength="80" value="我的手机" autocomplete="off"></label><label class="check-label"><input id="remember-device" type="checkbox">记住这台设备</label><button id="pair-connect" class="primary-button" type="button">连接这个设备</button></div>
+        <p id="pair-feedback" class="feedback" role="status"></p>
+      </section>
+      <section id="conversation" hidden><div id="conversation-intro" class="conversation-intro"><span class="intro-line"></span><p>相续 · 我们的日常</p><span class="intro-line"></span></div><div class="history-actions"><button id="history-earlier" class="quiet-button" type="button" hidden>更早记录</button><button id="history-latest" class="quiet-button" type="button" hidden>回到最近聊天</button></div><p id="history-note" class="history-note" hidden></p><div id="messages" class="messages" role="log" aria-label="聊天记录" aria-live="polite" aria-relevant="additions text"></div><div id="long-read-note" class="connection-notice" hidden><span>这条消息较长，尚有未读内容。</span><button id="long-read-continue" class="quiet-button" type="button">继续读取长消息</button></div><div id="waiting-state" class="waiting-state" role="status"></div><button id="wake-button" class="quiet-button" type="button" hidden>轻唤一下</button></section>
+      <div id="connection-notice" class="connection-notice" role="status" hidden></div>
+    </main>
+    <footer id="composer-area" class="composer-area" hidden>
+      <div id="unconfirmed-drafts" class="unconfirmed-drafts" hidden></div>
+      <div id="send-receipt" class="send-receipt" role="status" hidden><span id="receipt-text"></span><button id="receipt-query" type="button">查询发送结果</button><button id="receipt-retry" type="button" hidden>用同一编号重试</button><button id="receipt-dismiss" type="button" hidden>继续输入</button></div>
+      <form id="composer" class="composer"><label class="visually-hidden" for="message-input">给相续发消息</label><textarea id="message-input" rows="1" maxlength="16000" placeholder="想说些什么…" enterkeyhint="send"></textarea><button id="send-button" class="send-button" type="submit" aria-label="发送消息">↑</button></form>
+      <p id="composer-hint" class="composer-hint">把想说的话，慢慢说。</p>
+    </footer>
+  </div>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+    <div class="sheet-header"><div><div class="eyebrow">CHAT SETTINGS</div><h2 id="settings-title">聊天与声音</h2></div><button id="settings-close" class="icon-button" type="button" aria-label="关闭设置">×</button></div>
+    <div class="sheet-body">
+      <section class="setting-section"><h3>声音</h3><p id="speech-state" class="setting-note" role="status">正在检查设备音色</p><div class="inline-actions"><button id="voice-preview" class="secondary-button" type="button">试听声音</button><button id="voice-stop" class="secondary-button" type="button">停止播放</button></div><label class="check-label"><input id="auto-read" type="checkbox" checked>声音开启时，朗读新回复</label></section>
+      <section class="setting-section"><h3>选择音色</h3><label class="input-label">由谁选择<select id="voice-mode"><option value="persona">让相续自己选择</option><option value="user">由我来选择</option></select></label><p id="persona-voice-note" class="setting-note">人格可以在这台设备可用的声音中表达自己的选择。</p><div id="user-voice-fields"><label class="input-label">音色<select id="voice-choice"><option value="">设备默认声音</option></select></label><div class="two-fields"><label class="input-label">语速<input id="voice-rate" type="number" min="0.1" max="10" step="0.1" value="1"></label><label class="input-label">音高<input id="voice-pitch" type="number" min="0" max="2" step="0.1" value="1"></label></div></div><label class="check-label"><input id="remote-voices" type="checkbox">允许设备提供的网络音色</label><p class="setting-note">默认只用本地音色；网络音色会由设备的语音服务处理朗读内容。</p><button id="voice-save" class="primary-button" type="button">保存声音设置</button><p id="voice-feedback" class="feedback" role="status"></p></section>
+      <section class="setting-section"><h3>外观</h3><label class="input-label">主题<select id="theme-choice"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label></section>
+      <section class="setting-section"><h3>这台设备</h3><p id="device-name" class="setting-note"></p><button id="disconnect-button" class="danger-button" type="button">断开并移除此设备</button></section>
+    </div>
+  </dialog>
+</body>
+</html>

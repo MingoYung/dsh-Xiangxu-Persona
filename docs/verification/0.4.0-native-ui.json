@@ -1,0 +1,69 @@
+{
+  "version": "0.4.0",
+  "status": "passed",
+  "host": "Installed DSH NEXT 0.2.1-rc.2, isolated localhost owner web profile",
+  "sourceDigests": {
+    "package.json": "8863998cf6e2b5b15be12f8ba36eae51eac3b02c1638c684ee58d2911157dc5c",
+    "adapters/dsh/index.js": "33661f8f0d1eeca09bf674329fd987a3aa14fcad4fbfb4c09809c4b491afa6c3",
+    "adapters/dsh/instances.js": "08bb4b9d8900c2267516290124f4b31918c42f9bbf8b5623d6db34e0c7c0c759",
+    "adapters/dsh/mobile.js": "093f78dcf10cd56aa44c79b81c198df95038d44f6256f359272270833906743b",
+    "adapters/dsh/mobile-host.js": "811e4e1ee37cd58c9d2da9ba18fe7f5401c38d3f97fcf70c666e2c4441a45a00",
+    "adapters/dsh/voice.js": "040b5ffbdf222ada8cb66ae9f8f9ca37f6f36ba53b69d74b8e65f66a132e22a2",
+    "adapters/dsh/surfaces.js": "e30e62dea3cf6bcc4c0107c7f3c019dd2a52d94a86e70ab498e6e9d9e83a1ed2",
+    "ui/client.js": "3fef9dde0923d4267bc00892aba9ef67811996bf456fe0b360f86b9469920b3f",
+    "ui/app.js": "c01f1b09a1b920c4b96d09e86ad0571ad77122bf7a16c1d722249a82f5e16a4a",
+    "ui/style.css": "047818ca1ddec9e8859e25f5aacfda824ccd6d4612fa34c2409774316cdbd9f6",
+    "ui/index.html": "1e8fdbabd95c62bc72bf809a02d312c307c2c5a972a2be3f91358f007b0a2716",
+    "ui/chat/app.js": "8cc898937b38a67ba9c224c6652b981aafc0d469e97c28de7b49c785d5bef0ed",
+    "ui/chat/style.css": "810e30664eb78db8097fed64e21e2fd472a1ab55bdcfe99a2bf7a2fbce1988c4",
+    "ui/chat/speech.js": "4c7acecbaf76107a1a669f2f2fd34fd9a5dc18e4741d29a48918dfd56c4ac183",
+    "ui/chat/index.html": "39f459f82d7703bea307561cf96a2753680ce6d253def2f0618d15a7970e9e68"
+  },
+  "sourceChangedDuringFinalGui": false,
+  "checks": {
+    "nativeSettingsSlot": true,
+    "sevenPages": true,
+    "lightAndDarkObserved": true,
+    "themeRetainedAfterSettingsRemount": true,
+    "qqWechatPrivateGroupFields": true,
+    "unconfiguredConnectionsHonestlyDisabled": true,
+    "windowsLocalVoicesListed": 2,
+    "userHuihuiSelectionSurvivedColdReload": true,
+    "pitchUnsupportedControlDisabled": true,
+    "actualWavePreviewGenerated": true,
+    "playerHasControlsWithoutAutoplay": true,
+    "voiceNotPlayed": true,
+    "noProductionProfileRestart": true,
+    "mobileWebsiteNotMounted": true,
+    "textareaReadonlyPropertyBugFixed": true,
+    "nullDomTextFixed": true
+  },
+  "modelRequestLogMarkers": 0,
+  "modelPromptSubmitted": false,
+  "screenshots": [
+    {
+      "path": "docs/images/0.4.0-overview-dark.png",
+      "bytes": 34369,
+      "sha256": "9973cdaaa32a05b07ca8ed6d3aaa79b12d1a2a9a1707c9eb317151ac544f4944"
+    },
+    {
+      "path": "docs/images/0.4.0-channels-light.png",
+      "bytes": 33661,
+      "sha256": "dbe9b58bc07019e0b581c917b048b98dd449aaa8e15cdd2bcb29fe26dcf0bedf"
+    },
+    {
+      "path": "docs/images/0.4.0-voice-dark.png",
+      "bytes": 31967,
+      "sha256": "f7e85a43d7db07b213f07c6a93d98530cd633dd394c59ba6cd04bedd48fd68a5"
+    }
+  ],
+  "cleanup": {
+    "instanceUnloadedBeforeStop": true,
+    "writerLocksRemaining": 0,
+    "dedicatedUiProcessRemaining": 0,
+    "hostTerminatedAfterAuthenticatedUnload": true,
+    "hostTerminationExitCode": 1,
+    "productionForceRestarted": false
+  },
+  "scope": "Visual settings and actual local synthesis proof. No real QQ/WeChat bridge, account login, delivery or sound-card listening tested."
+}

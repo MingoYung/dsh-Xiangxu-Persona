@@ -19,13 +19,14 @@
         <button type="button" data-page="memory"><span aria-hidden="true">▤</span>记忆与关系</button>
         <button type="button" data-page="evolution"><span aria-hidden="true">⌁</span>进化与变更</button>
         <button type="button" data-page="settings"><span aria-hidden="true">⚙</span>设置与加载</button>
+        <button type="button" data-page="chat"><span aria-hidden="true">☷</span>聊天渠道与语音</button>
         <button type="button" data-page="maintenance"><span aria-hidden="true">◇</span>维护与诊断</button>
       </nav>
       <div class="sidebar-note"><span class="live-dot" aria-hidden="true"></span><strong>一个持续成长的人格</strong><p>这里查看真实状态、管理资源和执行你的操作。交流与成长的判断仍由人格自己选择。</p></div>
       <div class="sidebar-footer"><span>独立核心 · DSH 适配</span><span id="build-version">—</span></div>
     </aside>
     <div class="workspace">
-      <header class="topbar"><div class="breadcrumb">插件 / <strong>相续人格管理</strong></div><div class="topbar-actions"><span id="connection-state" class="status-pill neutral" role="status">正在连接</span><button id="refresh-button" class="button subtle compact" type="button" disabled>↻ 刷新</button></div></header>
+      <header class="topbar"><div class="breadcrumb">插件 / <strong>相续人格管理</strong></div><div class="topbar-actions"><label class="theme-picker"><span>外观</span><select id="theme-choice" aria-label="外观主题"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><span id="connection-state" class="status-pill neutral" role="status">正在连接</span><button id="refresh-button" class="button subtle compact" type="button" disabled>↻ 刷新</button></div></header>
       <main id="main" tabindex="-1">
         <div class="page-header"><div><div class="eyebrow" id="page-eyebrow">PERSONA / OVERVIEW</div><h1 id="page-title">运行总览</h1><p id="page-description">连接后显示当前实例的真实运行状态与容量。</p></div><div id="page-actions" class="page-actions"></div></div>
         <div id="global-error" class="notice error" role="alert" hidden></div>

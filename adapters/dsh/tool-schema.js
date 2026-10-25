@@ -15,6 +15,13 @@ const target = nullable({ type: 'object', required: ['channelId', 'sessionId', '
 const recheckOn = { type: 'array', items: { type: 'string', enum: ['new_message', 'environment_change', 'explicit_wake'] } };
 const cursor = { type: 'string', description: 'Use a returned nextCursor with the same other arguments to read the same result, without executing the operation again.' };
 export const TOOL_PARAMETERS = {
+  persona_voice: {
+    action: { type: 'string', enum: ['inspect', 'select'] },
+    voiceId: nullable({ type: 'string', maxLength: 256 }),
+    rate: { type: 'number', minimum: 0.1, maximum: 10 },
+    pitch: { type: 'number', minimum: 0, maximum: 2 },
+    reason: { type: 'string', maxLength: 256, description: 'Optional explanation for this choice; not retained as personality memory.' }, cursor,
+  },
   memory_search: { query: string, targetPersonId: string, scope: { type: 'string', enum: ['person', 'global', 'all'] }, limit: { type: 'integer' }, cursor },
   memory_forget: { ids: strings, targetPersonId: string, before: { type: 'number' }, reason: string,
     action: { type: 'string', enum: ['forget', 'correction'] }, replacementIds: strings, cursor },

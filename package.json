@@ -1,15 +1,17 @@
 {
   "name": "dsh-xiangxu-persona",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
-  "description": "Xiangxu Persona: portable autonomous long-term personality and memory with a native DSH management interface",
+  "description": "Xiangxu Persona: portable long-term personality and memory, native DSH management, optional QQ/WeChat bridge channels and local system speech",
   "engines": {
     "node": ">=22"
   },
   "exports": {
     ".": "./adapters/dsh/index.js",
     "./core": "./core/index.js",
-    "./client": "./ui/client.js"
+    "./client": "./ui/client.js",
+    "./dsh-channel": "./adapters/dsh/channels/native.js",
+    "./speech": "./adapters/dsh/channels/windows-speech.js"
   },
   "dsh": {
     "bundle": {
@@ -42,9 +44,23 @@
     "xiangxu"
   ],
   "files": [
-    "adapters",
     "core",
-    "ui",
+    "adapters/dsh/index.js",
+    "adapters/dsh/control.js",
+    "adapters/dsh/instances.js",
+    "adapters/dsh/management.js",
+    "adapters/dsh/ui-host.js",
+    "adapters/dsh/normalize.js",
+    "adapters/dsh/model.js",
+    "adapters/dsh/tool-schema.js",
+    "adapters/dsh/tool-output.js",
+    "adapters/dsh/voice.js",
+    "adapters/dsh/surfaces.js",
+    "adapters/dsh/channels",
+    "ui/index.html",
+    "ui/app.js",
+    "ui/style.css",
+    "ui/client.js",
     "scripts",
     "docs",
     "cordis.patch.yml",

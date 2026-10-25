@@ -1,8 +1,8 @@
 # DSH 扩展点与 P0 接入验证
 
-当前实现（0.3.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生DSH设置内增加六页管理界面；具体入口、单写者实例切换、异步收据、有限历史与验收边界见[相续人格管理界面与验收](../../management-ui.md)。原研究和旧版本验收数字保留，不作为0.3.0浏览器验证结论。
+当前实现（0.4.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置现为七页，增加QQ/微信兼容桥的普通私聊/群聊与Windows本机声音入口；真实使用仍需用户已有桥和账号。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
 
-修订日期：2026-10-25。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
+修订日期：2026-10-26。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
 
 本文保留上一轮从本机安装包、官方 README 和既有插件读取的宿主出处，同时收回把“接口存在”直接写成“端到端行为成立”的结论。本次文档修订没有运行宿主探针，不能据此声称事件完整性、idle agent 自动启动、睡眠静默、请求作用域或最终送达已经实测。
 
@@ -99,7 +99,7 @@ ctx.tools.register(defineTool({
 }))
 ```
 
-exec 中能取得哪些 session/request/channel 信息要实测。插件固定注册四个工具：memory_search、memory_forget、persona_introspect、persona_decide，完整参数以 persona-schema 为准。缺省目标由真实宿主上下文补齐，显式目标可指已知他人；scope 是用途而非管理员 ACL。删除/更正需要目标可解析，歧义不能扩大为批量操作。
+exec 中能取得哪些 session/request/channel 信息要实测。当前插件注册五个工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice，完整参数以 persona-schema 为准。缺省目标由真实宿主上下文补齐，显式目标可指已知他人；scope 是用途而非管理员 ACL。删除/更正需要目标可解析，歧义不能扩大为批量操作。
 
 前轮 dsh-tools 记录到 guard、tools/pre-execute、tools/execute、tools/post-execute、tools/result；`_plugins/dsh-dispatch-concurrency-gate/index.js:178` 有 guard 用例。工具结果可附来源与可用性信息；这些宿主拦截能力不构成给人格加发送次数、印象门槛、承诺 SLA 或边界硬拦截的理由。
 
@@ -169,3 +169,11 @@ agent/assistant-stream 与 tool/result 是否暴露完整原件、不同供应�
 | P0-L 费用与缓存 | 统计判断/梳理/重试/生成的用量，覆盖实际路由更新模式 | 有真实调用、token、缓存与延迟数据，不用固定每日调用承诺代替 |
 
 P0 完成并不意味着整个人格效果已验收，只意味着实现路径和失败边界有依据。后续阶段完成记忆、人格演化、两模式切换、主动与睡眠等全部功能；不能用接口探针通过替代长期行为观察，也不能用人格数量、准确印象或始终讨喜作为强制达标条件。
+
+## 0.4.0 聊天渠道、外观与声音适配
+
+DSH设置改为中性浅/深色，可跟随系统或手动选择；第七页“聊天渠道与语音”使用用户已有QQ、微信软件的普通私聊/群聊。QQ适配OneBot11/NapCat，微信需要兼容OneBot12本地桥；微信官方接口当前不提供本方案所需普通群聊能力。默认没有listener，用户明确启用后仅在本机提供桥事件回调；个人网页和Telegram是预留接口，不挂载手机网页主入口。
+
+平台、账号、房间、实际发言者、消息ID和平台发生时间作为真实环境事实保留；每发言者＋房间的原生通道仍共享同一个人格，外部ID和昵称不自动成为personId。接入范围是用户选择的连接边界，空范围未接入，显式*才开放相应全部对象/群；没有被@、主动次数、最短间隔或话题资格规则。原件经原生inbox持久，最终正文只有平台桥真实消息回执后才计实际说过，unknown不自动重放。
+
+当前五工具追加persona_voice供人格按需查看真实音色目录和自主选择，用户指定模式优先。IM音频使用Windows System.Speech生成WAV，再取平台音频回执；rate近似SAPI音级、pitch:false，不克隆音色、不硬映射性格标签或强迫每轮选声。voice-only缺能力明确失败，both可保留真实文字交付并标语音不可用。技术字段和容量以persona-schema第14节为唯一权威；实际操作与验证见[聊天渠道接入](../../channel-integration.md)。

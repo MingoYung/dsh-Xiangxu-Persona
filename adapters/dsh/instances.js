@@ -32,7 +32,7 @@ async function admit(root) {
 }
 
 /** Host lifecycle only. No autonomous personality decisions are created here. */
-export function createInstanceManager({ initialRoot, config={}, createCoordinator, registryPath, onLoaded=async()=>{}, isBusy=()=>false }) {
+export function createInstanceManager({ initialRoot, config={}, createCoordinator, registryPath, onLoaded=async()=>{}, onStarted=async()=>{}, onStopping=async()=>{}, beforeMaintenance=async()=>{}, isBusy=()=>false }) {
   const firstRoot=path.resolve(initialRoot), location=registryPath??path.join(path.dirname(firstRoot),path.basename(firstRoot)+'.instances.json');
   let registry, active=null, activeId=null, closed=false, lastError=null, tail=Promise.resolve();
   const queue=work=>{const result=tail.then(work);tail=result.catch(()=>{});return result;};
@@ -50,7 +50,7 @@ export function createInstanceManager({ initialRoot, config={}, createCoordinato
   }
   async function stop() {
     const previous=active;
-    if(previous)try{await previous.close();}catch(error){lastError={code:'INSTANCE_CLOSE_FAILED',message:error.message};throw error;}
+    if(previous)try{await onStopping(previous);await previous.close();}catch(error){lastError={code:'INSTANCE_CLOSE_FAILED',message:error.message};throw error;}
     active=null;activeId=null;
   }
   async function start(item) {
@@ -59,7 +59,7 @@ export function createInstanceManager({ initialRoot, config={}, createCoordinato
     const coordinator=createCoordinator({ ...config,...saved,memoryRoot:item.memoryRoot });
     try {await coordinator.ready;if(coordinator.initializationError)throw coordinator.initializationError;await onLoaded(coordinator);}
     catch(error){await coordinator.close().catch(()=>{});throw error;}
-    active=coordinator;activeId=item.instanceId;lastError=null;
+    active=coordinator;activeId=item.instanceId;lastError=null;await onStarted(coordinator);
   }
   async function ensureIdle() {
     if(!active)return;
@@ -90,7 +90,9 @@ export function createInstanceManager({ initialRoot, config={}, createCoordinato
   async function maintain(kind,args={}) {
     await manager.ready;return queue(async()=>{
       const item=descriptor(args);const wasActive=activeId===item.instanceId;
-      if(wasActive){await ensureIdle();await stop();}
+      if(wasActive)await ensureIdle();
+      await beforeMaintenance(kind,item);
+      if(wasActive)await stop();
       let result,error;
       try {
         if(kind==='validate')result=await validateMemoryRoot(item.memoryRoot);

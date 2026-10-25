@@ -1,6 +1,6 @@
 # 实测：DSH 会话日志里「思考过程」占多大
 
-> 当前产品入口（0.3.0）：当前实现（0.3.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生DSH设置内增加六页管理界面；具体入口、单写者实例切换、异步收据、有限历史与验收边界见[相续人格管理界面与验收](../../management-ui.md)。原研究和旧版本验收数字保留，不作为0.3.0浏览器验证结论。
+> 当前产品入口（0.4.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置现为七页，增加QQ/微信兼容桥的普通私聊/群聊与Windows本机声音入口；真实使用仍需用户已有桥和账号。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
 
 > 证据层定位（2026-10-25 修订）：本文保留历史调研出处、原研究范围和实际阅读深度；本次未重新联网，未把摘要升级为正文。论文结果与旧草案不是当前产品规则。当前设计以 `../长期AI人格插件-实施计划.md` 为准，字段以 `persona-schema.md` 的 `persona-memory/3` 为唯一权威；下面的采纳建议已按人格自主判断的要求收窄。
 

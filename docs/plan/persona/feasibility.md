@@ -1,8 +1,8 @@
 # 可行性与边界
 
-当前实现（0.3.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生DSH设置内增加六页管理界面；具体入口、单写者实例切换、异步收据、有限历史与验收边界见[相续人格管理界面与验收](../../management-ui.md)。原研究和旧版本验收数字保留，不作为0.3.0浏览器验证结论。
+当前实现（0.4.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置现为七页，增加QQ/微信兼容桥的普通私聊/群聊与Windows本机声音入口；真实使用仍需用户已有桥和账号。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
 
-修订日期：2026-10-25。适用设计：`persona-memory/3`。本文件说明哪些已有机制可借用、哪些是待实现和待测假设；主计划定义目标，`persona-schema.md` 定义唯一字段契约，`architecture.md` 定义执行流程。
+修订日期：2026-10-26。适用设计：`persona-memory/3`。本文件说明哪些已有机制可借用、哪些是待实现和待测假设；主计划定义目标，`persona-schema.md` 定义唯一字段契约，`architecture.md` 定义执行流程。
 
 ## 1. 总判断
 

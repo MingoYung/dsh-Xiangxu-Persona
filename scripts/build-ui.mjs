@@ -30,7 +30,7 @@ const frameBridge = `(function(){
   window.addEventListener('message',connect);
   window.addEventListener('pagehide',function(){closed=true;port?.close();for(const request of pending.values())request.reject(new Error('管理页面已关闭'));pending.clear()},{once:true});
 })();`;
-const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__PERSONA_FRAME_NONCE__'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">`;
+const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-__PERSONA_FRAME_NONCE__'; style-src 'unsafe-inline'; img-src data:; media-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">`;
 const escapeScript = source => source.replace(/<\/script/gi, '<\\/script');
 const documentSource = html.replace(/<head>/i, '<head>' + csp)
   .replace(cssTag, '<style>' + css.replace(/<\/style/gi, '<\\/style') + '</style>')
@@ -53,6 +53,16 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
             if(disposed||!message||typeof message.id!=='string'||message.id.length>100||typeof message.action!=='string'||!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(message.action))return;
             const current=channel;
             try{
+              if(message.action==='ui.theme.get'||message.action==='ui.theme.set'){
+                let theme='system',persisted=true;
+                try{theme=localStorage.getItem('xiangxu.theme')||'system'}catch{persisted=false}
+                if(message.action==='ui.theme.set'){
+                  theme=message.args?.theme;if(!['system','light','dark'].includes(theme))throw new Error('无效的外观主题');
+                  try{localStorage.setItem('xiangxu.theme',theme)}catch{persisted=false}
+                }
+                if(!['system','light','dark'].includes(theme))theme='system';
+                if(!disposed&&current===channel)channel.port1.postMessage({id:message.id,ok:true,value:{theme,persisted}});return;
+              }
               const result=await ctx.connection.rpc.call('/api','persona-memory.manage',{action:message.action,args:message.args??{}});
               if(!disposed&&current===channel)channel.port1.postMessage(result?.ok?{id:message.id,ok:true,value:result.value}:{id:message.id,ok:false,error:result?.error??{code:'UI_TRANSPORT_RESPONSE',message:'宿主返回了无效结果'}});
             }catch(error){if(!disposed&&current===channel)channel.port1.postMessage({id:message.id,ok:false,error:{code:error?.code??'UI_TRANSPORT_FAILED',message:String(error?.message??'连接失败')}})}

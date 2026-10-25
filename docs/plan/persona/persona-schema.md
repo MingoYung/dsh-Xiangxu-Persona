@@ -1,6 +1,6 @@
 # 人格与记忆字段契约：persona-memory/3
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.3.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.4.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -580,7 +580,7 @@ token必须用实际模型对应的统一计数方法。S6宿主历史、工具�
 实现版本0.1.0仍使用persona-memory/3。以下增加的是已约定能力的表达与恢复元数据，没有增加人格资格或行为干预：
 
 - identityPlan 在同一控制工具表达自主认人。new可由程序生成稳定人物键，associate使用人格选择的键和来源，unknown明确保持未知。它不是认证制度；sessionId不自动变人物键。
-- 四工具可带可选cursor阅读同一次有界结果，返回nextCursor、明确fragment与来源。翻页不重复执行决定/遗忘；游标绑定原参数和结果快照，过期明确报告。memory_forget另支持action:"forget"|"correction"、replacementIds。实际JSON字段使用camelCase needsTarget/needsSelection。
+- 当前五工具（memory_search、memory_forget、persona_introspect、persona_decide、persona_voice）可带可选cursor阅读同一次有界结果，返回nextCursor、明确fragment与来源。翻页不重复执行决定/遗忘；游标绑定原参数和结果快照，过期明确报告。memory_forget另支持action:"forget"|"correction"、replacementIds。实际JSON字段使用camelCase needsTarget/needsSelection。
 - RequestSnapshot增加tokenAccounting、segments及可选budgetAdjustments。完整时间、时区和真实目标不能被裁掉一半；120段预算不足可在总预算内借用并记理由，总预算放不下时报资源错误。没有模型tokenizer端口时明确估计，provider实际usage另记。稳定协议、工具、宿主历史和输出预留也占完整请求，本实现未证明全DSH请求受精确tokenizer硬限制。
 - RuntimeState增加有界execution：最后路由上下文、pendingControl、pendingWake、pendingEffects、effectReceipts及pendingOffsets。分别保存控制ID、醒来页、决定副作用进度、幂等收据和已实际阅读的Unicode偏移；不保存无限第二份聊天。queued不等于已经阅读/交付，只有匹配实际通知才确认。
 - ConsolidationRun增加inputSlices及记录fragment；未读完原件不越过消费游标。明确遗忘会失效并清除仍冻结着被撤销来源的prepared run，不能重试旧批次复活内容。
@@ -619,9 +619,9 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 有限存储不能保证无限原文永不丢失。保真指真实来源/角色/主体、未读不冒充已读、失败不冒充提交、未消费尾部可续、容量不足可见、仍可用原件可回查。摘要不是原文的可逆编码，原件和外部日志均淘汰后不得声称还能完整还原。[自主整理、容量与补充唤醒验证](../../evolution-and-wake-validation.md)提供本轮实测边界。
 
-## 13. 原生管理界面与操作契约（0.3.0）
+## 13. 原生管理界面与操作契约（0.4.0，0.3.0引入）
 
-管理界面以DSH现有Connection的owner认证载体调用persona-memory.manage，不新建网络服务或读取模型密钥。参数action与args使用明确动作白名单；前端六页、主协议、页面/收据上限与操作边界见[相续人格管理界面与验收](../../management-ui.md)。产品与包名改为dsh-Xiangxu-Persona / dsh-xiangxu-persona，预设展示名相续人格；内部presetId persona-memory、schemaVersion persona-memory/3和既有来源ID保留。
+管理界面以DSH现有Connection的owner认证载体调用persona-memory.manage，不新建网络服务或读取模型密钥。参数action与args使用明确动作白名单；前端七页、主协议、页面/收据上限与操作边界见[相续人格管理界面与验收](../../management-ui.md)。产品与包名改为dsh-Xiangxu-Persona / dsh-xiangxu-persona，预设展示名相续人格；内部presetId persona-memory、schemaVersion persona-memory/3和既有来源ID保留。
 
 管理读取列表最多100条，明细默认16000个Unicode字符、返回片段与真实nextCursor；完整浏览不受模型search的1000条上限冒充全量。界面明确显示未读部分，已失效游标重新查询。操作回执不使用导致副作用重执行的详情游标。
 
@@ -630,3 +630,43 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 管理长操作仅显式整理/回补，operations.start先持久记录收据，再执行；get/list只查询。保存最多50个终态、256KiB，并受实例总量与执行队列资源约束；未完成不静默删除，重启遗留queued/running标unknown不自动重放。一次明确操作和人格自主下次选择是不同来源。
 
 实例登记采用persona-instances/1，与人格数据schema分开，最多16个登记实例、登记文件64KiB；只一个活动写者，忙碌时拒绝切换。停止实例释放相关工具/监听/计时器与写锁；失败不假装成功。启动以存量技术配置为准，不用bundle初值覆盖用户已保存设置。备份/校验暂时关闭当前写者后可恢复原实例；恢复/恢复中断完成后保持停用，防止悄悄释放旧计时任务。
+
+## 14. 聊天渠道与本机声音技术契约（0.4.0）
+
+这是DSH适配配置；核心schema仍为persona-memory/3，不改变人格决定与成长频率。当前工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice。专用IM会话只挂这五个人格能力，不暴露Harness控制或编码工具，不改变用户其它DSH会话的工具配置。
+
+### 14.1 平台配置、环境与owner管理
+
+owner管理action为channels.status/configure/start/stop/probe/rotateIngress，以及voice.inspect/registerCatalog/configure/preview。主界面第七页为“聊天渠道与语音”；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
+
+ChannelProfile固定两项：{id/platform:'qq',protocol:'onebot11'}和{id/platform:'wechat',protocol:'onebot12'}。config={apiUrl:string,accountId:string,accessToken:string,allowedPrivateIds:string[],allowedGroupIds:string[],voiceMode:'text'|'both'|'voice',allowRemote:boolean}。初值disabled，接入列表空、voiceMode:text、allowRemote:false。空API令牌配置保留旧值；clearAccessToken:true明确清除，不能同时提交新值。status只返回hasAccessToken/hasIngressToken，不回显令牌。
+
+API默认只接受本机/私网字面地址或localhost；远程API必须明确allowRemote且HTTPS，不允许URL凭据、query令牌或fragment。独立桥回调默认127.0.0.1:17654、默认无listener，路径/channels/{qq|wechat}/events，Bearer只存SHA；生成/旋转只返回一次明文，读body后排队时再次核当前hash。Host/Origin、JSON和64KiB正文帽分别验证，没有通用RPC转发或个人网页连接。
+
+ChannelFacts={platform,accountId,conversation:{id,type:'private'|'group'},sender:{id,name?}}，另保留源消息ID、平台sourceAt、宿主receivedAt、textComplete与未读消息段事实。OneBot只把实际text段作为原话，不从CQ码、昵称、alt_message或媒体占位猜文字。专用binding按memoryRoot/代次/platform/account/room/actor稳定生成xiangxu-social-<hash>，关系personId仍由人格选择。
+
+### 14.2 去重、外发与生命周期
+
+独立登记schemaVersion=xiangxu-channels/1，与人格备份分离；最多1MiB，bindings最多128，scope列表各256项、串行队列32、最近未接入对象/群元数据8项，登记不保存聊天正文。API访问令牌只在本机受限文件，入站鉴权只保存哈希。
+
+入站先保存prepared回执，再执行native create/send/flush；稳定源ID由platform/account/messageId生成，原文只留hash于外部回执。保存native模型路由仅provider/model/reasoningEffort/maxTokens，不保存密钥。native已接收但终态落盘失败返回unknown；冷恢复prepared转unknown，不自动付费重放。
+
+出站按sessionId/sourceEventId去重，准备前不把native生成计实际已说；只有桥明确成功并给稳定消息ID才记delivered。平台known-delivered回执返sourceSeq/seq/textHash后，可单条定位真实assistant原文补本地投影；源不可用或不匹配时如实保持缺口，不用拟发送文字冒充。未知/失败保留草稿过程与用户pending，不因DSH输出存在就虚构平台收件。
+
+回执总数2048，未确认最多256、终态保留目标1024；prepared/unknown不静默淘汰。终态淘汰后，入站保留同真实主体范围的源时间floor，未知ID且sourceAt<=floor明确非2xx拒收、不报消费、不送模；出站高水位阻止旧seq重发，已淘汰确认不伪造为可复核ack。这些是有限传输元数据窗口，不是人格社交频率。
+
+停止/挂起先检查所属忙碌会话再释放载体与owned handles；普通重载保留配置、代次和回执。恢复指定memoryRoot时只失效对应根：旧binding退休、代次递增、相应接入停用，用户明确启用后建新通道；保留原回执阻止旧平台事件重放，不把已退休原生对话重新导回核心。明确遗忘仍沿核心撤销链执行。
+
+### 14.3 声音偏好、引擎与实际交付
+
+VoiceProfile持久路径voice/profile.json，schemaVersion=xiangxu-voice/1，version/updatedAt，mode=persona|user，allowRemoteVoices:boolean，userSelection/personaSelection={voiceId:string|null,rate:0.1..10,pitch:0..2}。初值persona、网络false、voiceId:null、rate/pitch=1，最多16KiB，仅当前coordinator store事务写，不保存自由叙事理由。
+
+persona_voice参数action=inspect|select（省略inspect）、voiceId/rate/pitch可选、reason最多256字符且仅瞬时返回；可带cursor继续同次有界结果。用户mode下人格选择保存备用，effective仍用户选择。voiceId:null使用允许的本机默认声音；明确voiceId不存在时不可用，不静默切云。音色由人格选择，不按人格标签硬映射，也不强制每轮重新选择。
+
+catalog={supported:boolean,voices:[{id,name,lang,localService,default}]}只在内存，最多8会话、每会话32音色、总32KiB、每字符串256字符；本机目录使用win-sapi标识并按需由工具读取，不默认整目录注入每个请求。providerCapabilities如{provider:'win-sapi',rate:true,pitch:false,mime:'audio/wav'}是实际能力事实，不是人格立场或选声规则。
+
+Windows System.Speech是本版本机WAV合成器，不下载TTS模型、不使用Edge在线服务作为默认依赖、不训练或克隆新音色。rate映射为近似SAPI音级；pitch:false，非1值明确unsupported，不静默改成1后假称应用。单次合成最多2000个Unicode字符、单文件8MiB、缓存4文件/总16MiB、60秒进程时限；容量不足或超长不截断后冒充完整朗读。
+
+QQ OneBot11标准record需probe实际确认can_send_record，微信OneBot12当前voice:false。text只发文字；both可由真实文字ack记成功并标voiceUnavailable；voice要求实际合成和音频回执，缺能力/失败不自动改发文字。生成WAV、入发送队列、平台ack和用户听见分别报告；短试听只返回有界data:audio/wav给播放器，用户点播放，不投递平台或写人格经历。
+
+当前真实账号与桥前置能力、用户操作和验收分层见[聊天渠道接入](../../channel-integration.md)。未发布手机网页的设备鉴权与SpeechSynthesis字段不在当前生产契约重复定义。

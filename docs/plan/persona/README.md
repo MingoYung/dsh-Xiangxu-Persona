@@ -1,8 +1,8 @@
 # 相续人格 · 完整方案入口
 
-修订日期：2026-10-25。当前设计版本：`persona-memory/3`。
+修订日期：2026-10-26。当前设计版本：`persona-memory/3`。
 
-当前实现（0.3.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生DSH设置内增加六页管理界面；具体入口、单写者实例切换、异步收据、有限历史与验收边界见[相续人格管理界面与验收](../../management-ui.md)。原研究和旧版本验收数字保留，不作为0.3.0浏览器验证结论。
+当前实现（0.4.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置现为七页，增加QQ/微信兼容桥的普通私聊/群聊与Windows本机声音入口；真实使用仍需用户已有桥和账号。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
 
 ## 一、当前有效设计
 
@@ -74,4 +74,6 @@
 
 - [自主整理、容量与补充唤醒验证](../../evolution-and-wake-validation.md)：0.2.0历史实现、真实模型补测及资源边界。
 
-- [相续人格管理界面与验收](../../management-ui.md)：当前0.3.0原生管理界面、实例和操作回执；浏览器验收范围单独列明。
+- [相续人格管理界面与验收](../../management-ui.md)：当前0.4.0原生七页、渠道、本机声音、实例和操作回执；浏览器验收范围单独列明。
+
+- [聊天渠道接入](../../channel-integration.md)：QQ/微信桥前置条件、私群范围、实际声音能力及验证边界。

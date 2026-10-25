@@ -2,5 +2,5 @@ url: https://github.com/MingoYung/dsh-Xiangxu-Persona
 name: MingoYung/dsh-Xiangxu-Persona
 category: memory
 description:
-  en: 'Long-term persona memory with autonomous reflection, sleep and wake scheduling, and a native DSH management interface.'
-  zh: '提供长期人格记忆、自主整理、睡眠唤醒调度和 DSH 原生管理界面。'
+  en: 'Long-term persona memory and autonomous reflection for DSH, with native management, optional OneBot chat channels, and local Windows speech.'
+  zh: '提供长期人格记忆、自主整理、睡眠唤醒、DSH 原生管理，以及可选 OneBot 聊天渠道与 Windows 本机语音。'
