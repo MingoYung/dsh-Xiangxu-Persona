@@ -1,0 +1,31 @@
+{
+  "status": "passed",
+  "at": "2026-10-25T15:52:20.489Z",
+  "command": "node --test --test-concurrency=1",
+  "tests": 229,
+  "pass": 229,
+  "fail": 0,
+  "cancelled": 0,
+  "skipped": 0,
+  "durationMs": 92522.8601,
+  "sourceDigests": {
+    "core/capacity.js": "c81bdd17395c713e387dfb4faf66e878a6e295f587bfb541eb3a70c0f9812f53",
+    "core/index.js": "97b0d2d9d5899aecd477a14083758360e61d87b9433fdefee444bdd368d2b35e",
+    "core/maintenance.js": "2e2b10b584da003d27c75301618872d7f7eb55fd59d6d834740bc8f6921f45a8",
+    "core/prompts.js": "f8a97624b43bd4c1328912c823d64fa6b20e2a7c4fd24ceebf1c7dc1ade06261",
+    "core/repository.js": "f78502adfd496d0b81bdddf50751f92a3dc6e65115c22c7c1715622f4ccad9a8",
+    "core/runtime.js": "4a78711cc23bece04b67659a7061e3b1d60b1683a50b0c14fe82fa5ea5d95c99",
+    "core/schema.js": "e435ed57428738a844730b173cd32d39bc3d34783a4e9a3939c753374ae28302",
+    "core/source-dependencies.js": "77025fd09a6cc62fba3b9ea96922a96fd9b941e272811287289bf759fcb2ca41",
+    "core/store.js": "473cd33c6b6b0bc28308e3da995b6436b3325d79bb2f00e76f35aa6073b0d290",
+    "adapters/dsh/control.js": "99c2827a108566433b6b8b9d566c27afd0c6c7865e23516b8cb4ef9e46800a63",
+    "adapters/dsh/index.js": "f5bddf1ffa620f924c64ea44458f35743535b1fe75f659e034818afed1247bb1",
+    "adapters/dsh/instances.js": "5a248e8e935e470f03fab053f3155f40a76057d195df52de682afe6afe1f8d7f",
+    "adapters/dsh/management.js": "1c9f4a33c929ee1c3b40f743726eb34d63dcfd93170b313ee58becce4acbeb2a",
+    "adapters/dsh/model.js": "a16810aa9499242ef8935f3382e57a680698df74483538629b01634abecdcb9b",
+    "adapters/dsh/normalize.js": "56a17e1bc7386012d916a11a5bf0f03724522954c42840988101e67a9aae0d0b",
+    "adapters/dsh/tool-output.js": "14aace408ab9de95bd4abd76e9f7d1a554232599c263024c8f78386a79e9456b",
+    "adapters/dsh/tool-schema.js": "484c711adf2cf85d29904c218810222fb3729ac3b7c39b6eaa28e280790d3a81",
+    "adapters/dsh/ui-host.js": "6df209d25a1938454659f3b9aca0a123d233a28b950b95cd605343eca2268fd6"
+  }
+}

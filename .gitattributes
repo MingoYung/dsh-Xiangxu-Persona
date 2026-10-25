@@ -1,0 +1,2 @@
+# Preserve the exact UTF-8 source bytes and recorded source fingerprints across hosts.
+* -text

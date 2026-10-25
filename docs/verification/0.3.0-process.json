@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-10-25T15:56:21.6321896Z",
+  "dedicatedUIHostCount": 0,
+  "processes": [],
+  "knownStoppedUIHostPids": [
+    53588,
+    34404,
+    82296,
+    45284
+  ],
+  "recordedCoreModelUsageRows": 0,
+  "requestedModelOperations": 0,
+  "writerLocksRemaining": 0,
+  "productionDSHForceRestarted": false,
+  "fixtureRoot": "C:\\Users\\Administrator\\Documents\\Codex\\2026-10-25\\c-users-administrator-dsh-reports\\work\\persona-ui-host\\runtime-home\\persona"
+}

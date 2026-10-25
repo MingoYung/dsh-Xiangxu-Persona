@@ -1,0 +1,54 @@
+{
+  "name": "dsh-xiangxu-persona",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Xiangxu Persona: portable autonomous long-term personality and memory with a native DSH management interface",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./adapters/dsh/index.js",
+    "./core": "./core/index.js",
+    "./client": "./ui/client.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1",
+    "check": "node scripts/check.mjs",
+    "test:host": "node scripts/dsh-integration.mjs",
+    "build": "node scripts/build-ui.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MingoYung/dsh-Xiangxu-Persona.git"
+  },
+  "homepage": "https://github.com/MingoYung/dsh-Xiangxu-Persona",
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "persona",
+    "memory",
+    "xiangxu"
+  ],
+  "files": [
+    "adapters",
+    "core",
+    "ui",
+    "scripts",
+    "docs",
+    "cordis.patch.yml",
+    "README.md",
+    "market"
+  ]
+}

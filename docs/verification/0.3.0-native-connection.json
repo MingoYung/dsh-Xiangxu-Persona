@@ -1,0 +1,28 @@
+{
+  "status": "passed",
+  "testedAt": "2026-10-25T15:36:35.474Z",
+  "hostSource": "C:/Users/Administrator/AppData/Local/Programs/DSH NEXT/resources/app.asar/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js",
+  "realShippedHostConnection": true,
+  "httpServerStarted": false,
+  "credentialsAccessed": false,
+  "modelCalls": 0,
+  "nonOwnerStatus": 403,
+  "ownerStatus": 200,
+  "effects": 1,
+  "body": {
+    "type": "server-response",
+    "rpcId": "native-persona-probe",
+    "result": {
+      "ok": true,
+      "value": {
+        "action": "overview",
+        "args": {
+          "sample": "中文😀"
+        },
+        "actualShippedConnection": true
+      }
+    }
+  },
+  "bridgeSha256": "6df209d25a1938454659f3b9aca0a123d233a28b950b95cd605343eca2268fd6",
+  "scope": "Real shipped Cordis Context and Connection shared Fetch exact route dispatch. Local in-process Peer identities only; not a browser/Electron end-to-end rendering proof."
+}

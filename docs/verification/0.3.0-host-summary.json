@@ -1,0 +1,19 @@
+{
+  "evidenceId": "ev_b2f4c4a72f7bc8d8b09f227f9e4d465b9585ca8d63cddeeadbddba9da29461d2",
+  "rootArtifactSha256": "204e1dcc32ff6a9b661200b7ab97bda1cbd449904e2eddb71c9309cf767e06b5",
+  "operation": "analyze_javascript_application",
+  "sourcePaths": [
+    "node_modules/@deepseek-ai/dsh-client-modules/lib/index.js",
+    "node_modules/@deepseek-ai/dsh-client-connection/lib/index.js",
+    "node_modules/@deepseek-ai/dsh-client-connection/lib/client.node.js",
+    "node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js"
+  ],
+  "sourceSelection": "4 selected;16040 other inventoried entries not analyzed",
+  "completeEvidencePath": "C:/Users/Administrator/Documents/Codex/2026-10-25/c-users-administrator-dsh-reports/work/persona-ui-host/rea-ui-bridge.json",
+  "completeEvidenceBytes": 315669391,
+  "limitations": [
+    "Static shipped-artifact evidence, not browser runtime proof",
+    "Plugin backend uses Connection exact Fetch route; settings page mounts through native slots and client loader"
+  ],
+  "runtimeEvidence": "C:/Users/Administrator/Documents/Codex/2026-10-25/c-users-administrator-dsh-reports/work/persona-ui-host/native-connection-result.json"
+}

@@ -1,0 +1,146 @@
+{
+  "status": "passed",
+  "at": "2026-10-25T15:55:42.881Z",
+  "pid": 45284,
+  "isolatedHome": "C:/Users/Administrator/Documents/Codex/2026-10-25/c-users-administrator-dsh-reports/work/persona-ui-host/runtime-home",
+  "origin": "http://127.0.0.1:52837",
+  "ownerExchangeStatus": 303,
+  "baselineUnloaded": true,
+  "loadedAvailable": true,
+  "preservedRecentPreferredDays": 4,
+  "maintenanceReceipt": {
+    "schemaVersion": "persona-memory/3",
+    "root": "C:\\Users\\Administrator\\Documents\\Codex\\2026-10-25\\c-users-administrator-dsh-reports\\work\\persona-ui-host\\runtime-home\\persona",
+    "totalBytes": 74197,
+    "preparedWal": 0,
+    "fileCount": 34,
+    "instanceId": "default",
+    "loaded": true,
+    "requiresLoad": false
+  },
+  "receiptHasFiles": false,
+  "finalUnloaded": true,
+  "recordedCoreModelUsageRows": 0,
+  "requestedModelOperations": 0,
+  "events": [
+    {
+      "action": "status",
+      "status": 200,
+      "ok": true
+    },
+    {
+      "action": "instances.load",
+      "status": 200,
+      "ok": true
+    },
+    {
+      "action": "status",
+      "status": 200,
+      "ok": true
+    },
+    {
+      "action": "maintenance.validate",
+      "status": 200,
+      "ok": true
+    },
+    {
+      "action": "diagnostics.list",
+      "status": 200,
+      "ok": true
+    },
+    {
+      "action": "instances.unload",
+      "status": 200,
+      "ok": true
+    },
+    {
+      "action": "status",
+      "status": 200,
+      "ok": true
+    }
+  ],
+  "sourceSnapshotComparison": {
+    "matches": true,
+    "files": [
+      {
+        "path": "package.json",
+        "expected": "0ebcb8e7394e1571f26f84a70d9f4d4d1820e81eaffd1fd8de565437d6ae57d4",
+        "actual": "0ebcb8e7394e1571f26f84a70d9f4d4d1820e81eaffd1fd8de565437d6ae57d4",
+        "matches": true
+      },
+      {
+        "path": "cordis.patch.yml",
+        "expected": "dbb4f78bc9d7bd643b1be5776072dc8fa0d349a2e8942a77185373fa355a1e17",
+        "actual": "dbb4f78bc9d7bd643b1be5776072dc8fa0d349a2e8942a77185373fa355a1e17",
+        "matches": true
+      },
+      {
+        "path": "adapters/dsh/index.js",
+        "expected": "f5bddf1ffa620f924c64ea44458f35743535b1fe75f659e034818afed1247bb1",
+        "actual": "f5bddf1ffa620f924c64ea44458f35743535b1fe75f659e034818afed1247bb1",
+        "matches": true
+      },
+      {
+        "path": "adapters/dsh/instances.js",
+        "expected": "5a248e8e935e470f03fab053f3155f40a76057d195df52de682afe6afe1f8d7f",
+        "actual": "5a248e8e935e470f03fab053f3155f40a76057d195df52de682afe6afe1f8d7f",
+        "matches": true
+      },
+      {
+        "path": "adapters/dsh/management.js",
+        "expected": "1c9f4a33c929ee1c3b40f743726eb34d63dcfd93170b313ee58becce4acbeb2a",
+        "actual": "1c9f4a33c929ee1c3b40f743726eb34d63dcfd93170b313ee58becce4acbeb2a",
+        "matches": true
+      },
+      {
+        "path": "adapters/dsh/ui-host.js",
+        "expected": "6df209d25a1938454659f3b9aca0a123d233a28b950b95cd605343eca2268fd6",
+        "actual": "6df209d25a1938454659f3b9aca0a123d233a28b950b95cd605343eca2268fd6",
+        "matches": true
+      },
+      {
+        "path": "ui/client.js",
+        "expected": "7cdbc6bd5a685622289fd2c2037b6798797be792569ea6aaa4b279ff6b28c1ce",
+        "actual": "7cdbc6bd5a685622289fd2c2037b6798797be792569ea6aaa4b279ff6b28c1ce",
+        "matches": true
+      },
+      {
+        "path": "ui/app.js",
+        "expected": "3a3ba66671b51b52702dc49ef816e40b5500574e8a545eb271f74af7f3876f3b",
+        "actual": "3a3ba66671b51b52702dc49ef816e40b5500574e8a545eb271f74af7f3876f3b",
+        "matches": true
+      },
+      {
+        "path": "ui/style.css",
+        "expected": "93d425aacdf4a19ee251b5bc2ac69d87199c1de18f0f8bdc268bef87d4693adf",
+        "actual": "93d425aacdf4a19ee251b5bc2ac69d87199c1de18f0f8bdc268bef87d4693adf",
+        "matches": true
+      },
+      {
+        "path": "ui/index.html",
+        "expected": "84c896795241cc6244b5a8ec89881b99fb2a128f499886f5a0bd3b2478149062",
+        "actual": "84c896795241cc6244b5a8ec89881b99fb2a128f499886f5a0bd3b2478149062",
+        "matches": true
+      },
+      {
+        "path": "core/repository.js",
+        "expected": "f78502adfd496d0b81bdddf50751f92a3dc6e65115c22c7c1715622f4ccad9a8",
+        "actual": "f78502adfd496d0b81bdddf50751f92a3dc6e65115c22c7c1715622f4ccad9a8",
+        "matches": true
+      },
+      {
+        "path": "core/runtime.js",
+        "expected": "4a78711cc23bece04b67659a7061e3b1d60b1683a50b0c14fe82fa5ea5d95c99",
+        "actual": "4a78711cc23bece04b67659a7061e3b1d60b1683a50b0c14fe82fa5ea5d95c99",
+        "matches": true
+      },
+      {
+        "path": "core/schema.js",
+        "expected": "e435ed57428738a844730b173cd32d39bc3d34783a4e9a3939c753374ae28302",
+        "actual": "e435ed57428738a844730b173cd32d39bc3d34783a4e9a3939c753374ae28302",
+        "matches": true
+      }
+    ]
+  },
+  "limits": "Actual native owner API after final cold launch. UI screenshots/navigation are separate root CUA evidence. No model work requested or recorded; source hashes are launcher snapshots, not per-import instrumentation."
+}

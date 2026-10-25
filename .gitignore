@@ -1,0 +1,16 @@
+node_modules/
+/work/
+/artifacts/
+/outputs/
+/.dsh/
+.env
+.env.*
+*.log
+*.zip
+*.next
+*.tgz
+coverage/
+/memory/
+/persona/
+writer.lock
+native-web-access.json
