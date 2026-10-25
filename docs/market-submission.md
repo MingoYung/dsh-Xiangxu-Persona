@@ -4,7 +4,7 @@
 
 依据：[awesome-dsh-plugin 贡献指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)，核对日期2026-10-26。
 
-插件根package.json同时声明dsh.bundle和dsh.client；cordis.patch.yml提供协调器与可选相续人格预设，ui/client.js是已经构建的宿主客户端模块。0.4.0包含可选QQ OneBot11、微信OneBot12兼容桥接入与Windows本机语音；默认不监听，不提供个人手机网页主入口。真实使用需要用户已有平台桥和账号，微信官方接口不保证普通群聊能力，当前没有真实QQ/微信账号往返证据。安装不要求下载第三方前端依赖，也不在安装时自动启动模型。安装来源为本仓库，不复制宿主实现或其他插件。
+插件根package.json同时声明dsh.bundle和dsh.client；cordis.patch.yml提供协调器与可选相续人格预设，ui/client.js是已经构建的宿主客户端模块。0.4.1沿用DSH宿主颜色、字体和透明背景，简化日常操作说明；功能包含可选QQ OneBot11、微信OneBot12兼容桥接入与Windows本机语音；默认不监听，不提供个人手机网页主入口。真实使用需要用户已有平台桥和账号，微信官方接口不保证普通群聊能力，当前没有真实QQ/微信账号往返证据。安装不要求下载第三方前端依赖，也不在安装时自动启动模型。安装来源为本仓库，不复制宿主实现或其他插件。
 
 收录草稿在[market/MingoYung__dsh-Xiangxu-Persona.yml](../market/MingoYung__dsh-Xiangxu-Persona.yml)。以后申请时，将该文件放到收录仓库的data/plugins/同名位置并发起PR；无需手工改收录仓库生成的README。草稿使用memory分类，只描述已实现功能，不宣称长期人格质量保证。
 

@@ -1,6 +1,6 @@
 # 当前方案需要解决的缺口与回归点
 
-当前实现（0.4.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置现为七页，增加QQ/微信兼容桥的普通私聊/群聊与Windows本机声音入口；真实使用仍需用户已有桥和账号。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
+当前实现（0.4.1）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置保留七页功能并沿用DSH宿主颜色、字体和透明背景；主动联系开关附日常说明，休息时才显示“现在叫醒”。QQ/微信已有兼容桥的高级配置默认折叠，真实使用仍需用户已有桥和账号，尚未实现扫码或接管桌面登录；Windows本机声音入口保留。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
 
 修订日期：2026-10-26。适用设计：`persona-memory/3`。本文件替代旧版按多租户隐私与人格硬闸门组织的缺口表；不把已撤回的建议继续写成待办。字段以 `persona-schema.md` 为准，流程以 `architecture.md` 为准。
 

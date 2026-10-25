@@ -97,9 +97,9 @@ C:\Users\Administrator\DSH\backup\persona-plan-latest\
 
 原14方案与docs/plan镜像同步，仓库内链接自包含，独立clone不依赖C盘reports或本机证据目录。五份研究资料的历史数据与阅读深度保留，没有重新联网冒充更新。无人格行为配额、强制睡眠、主观印象支持次数门槛或承诺执行器。
 
-## 9. 当前渠道、声音与主题同步（0.4.0）
+## 9. 当前渠道、声音与主题同步（0.4.1）
 
-当前实现（0.4.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置现为七页，增加QQ/微信兼容桥的普通私聊/群聊与Windows本机声音入口；真实使用仍需用户已有桥和账号。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
+当前实现（0.4.1）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生设置保留七页功能并沿用DSH宿主颜色、字体和透明背景；主动联系开关附日常说明，休息时才显示“现在叫醒”。QQ/微信已有兼容桥的高级配置默认折叠，真实使用仍需用户已有桥和账号，尚未实现扫码或接管桌面登录；Windows本机声音入口保留。当前实现及证据见[管理界面与验收](../../management-ui.md)与[渠道接入](../../channel-integration.md)。研究和旧版本数字保留各自历史范围，不提升为本版验收。
 
 本轮用户明确移动端指现有聊天软件；当前QQ OneBot11、微信OneBot12兼容桥走原生私聊/群聊与同一个人格，个人网页只预留。五工具含persona_voice；Windows本机语音生成与平台音频交付分别报告，rate近似、pitch:false、无专属音色克隆。空scope未接入与显式*是用户选择的技术连接范围，不增加人格回应资格。
 

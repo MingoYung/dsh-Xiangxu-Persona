@@ -22,10 +22,27 @@ const frameBridge = `(function(){
   const connect=function(event){
     if(event.source!==parent||event.data?.type!=='persona-management-connect'||event.data.nonce!==nonce||port||!event.ports?.[0])return;
     port=event.ports[0];port.onmessage=function(message){const reply=message.data;
+      if(reply?.type==='persona-viewport'){
+        if(Number.isFinite(reply.top)&&Number.isFinite(reply.height)&&reply.top>=0&&reply.top<=60000&&reply.height>=0&&reply.height<=60000){document.documentElement.style.setProperty('--host-visible-top',reply.top+'px');document.documentElement.style.setProperty('--host-visible-height',Math.max(160,reply.height)+'px')}
+        return;
+      }
+      if(reply?.type==='persona-host-theme'){
+        const root=document.documentElement,theme=reply.theme;
+        if(theme&&typeof theme==='object'){
+          for(const key of ['--bg','--surface','--surface-soft','--line','--line-strong','--ink','--muted','--faint','--accent','--accent-hover','--accent-soft','--accent-ink','--red','--red-soft','--red-line','--amber','--amber-soft','--amber-line','--host-font-family','--host-font-size'])if(typeof theme[key]==='string'&&theme[key].length<512)root.style.setProperty(key,theme[key]);
+          if(['light','dark'].includes(theme.colorScheme))root.style.colorScheme=theme.colorScheme;
+          root.dataset.hostTheme='1';
+        }
+        return;
+      }
       if(!reply||typeof reply.id!=='string')return; const request=pending.get(reply.id);if(!request)return;pending.delete(reply.id);
       if(reply.ok)request.resolve(reply.value);else{const error=new Error(reply.error?.message||'请求失败');error.code=reply.error?.code;request.reject(error)}
     };port.start();window.removeEventListener('message',connect);readyResolve();
     window.dispatchEvent(new Event('persona-bridge-ready'));
+    let previousHeight=0,scheduled=false;
+    const reportHeight=function(){if(scheduled||closed)return;scheduled=true;requestAnimationFrame(function(){scheduled=false;const height=Math.ceil(document.body.getBoundingClientRect().height);if(height>0&&height!==previousHeight){previousHeight=height;port.postMessage({type:'persona-layout',height})}})};
+    const resize=new ResizeObserver(reportHeight);resize.observe(document.body);reportHeight();
+    window.addEventListener('pagehide',function(){resize.disconnect()},{once:true});
   };
   window.addEventListener('message',connect);
   window.addEventListener('pagehide',function(){closed=true;port?.close();for(const request of pending.values())request.reject(new Error('管理页面已关闭'));pending.clear()},{once:true});
@@ -43,38 +60,50 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
   function apply(ctx){
     function PersonaManagementPage(){
       const frame=React.useRef(null);
+      const [frameHeight,setFrameHeight]=React.useState(420);
       const nonce=React.useMemo(()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,'0')).join(''),[]);
       React.useEffect(()=>{
         const element=frame.current;let channel=null,disposed=false;
+        function hostTheme(){
+          const base=getComputedStyle(element.parentElement||document.documentElement);
+          const value=function(names,fallback){for(const name of names){const result=base.getPropertyValue(name).trim();if(result)return result}return fallback};
+          const foreground=value(['--dsw-alias-label-primary','--dsw-alias-text-primary'],base.color||'#202124');
+          let scheme=base.colorScheme==='dark'?'dark':base.colorScheme==='light'?'light':null;
+          if(!scheme&&/^rgba?\\(/.test(base.color)){const rgb=base.color.match(/[\\d.]+/g).slice(0,3).map(Number);scheme=rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722>150?'dark':'light'}
+          if(!scheme)scheme=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+          const brand=value(['--dsw-alias-brand-primary'],foreground);let brandText=scheme==='dark'?'#181818':'#ffffff';
+          const swatch=document.createElement('canvas');swatch.width=swatch.height=1;const color=swatch.getContext('2d');if(color){color.fillStyle=brand;color.fillRect(0,0,1,1);const rgb=color.getImageData(0,0,1,1).data;brandText=rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722>150?'#181818':'#ffffff'}
+          return {'--bg':'transparent','--surface':value(['--dsw-alias-bg-base'],'transparent'),'--surface-soft':value(['--dsw-alias-bg-layer-1'],'transparent'),'--line':value(['--dsw-alias-border-l2','--dsw-alias-border-secondary'],'#80808040'),'--line-strong':value(['--dsw-alias-border-l1','--dsw-alias-border-primary'],'#80808070'),'--ink':foreground,'--muted':value(['--dsw-alias-label-secondary','--dsw-alias-text-secondary'],foreground),'--faint':value(['--dsw-alias-label-tertiary','--dsw-alias-text-tertiary'],foreground),'--accent':brand,'--accent-hover':brand,'--accent-soft':value(['--dsw-alias-interactive-bg-hover'],'#80808020'),'--accent-ink':value(['--dsw-alias-label-onbrand'],brandText),'--red':value(['--dsw-alias-status-error'],'#d35353'),'--red-soft':value(['--dsw-alias-error-bg'],'#d3535314'),'--red-line':value(['--dsw-alias-error-border'],'#d3535350'),'--amber':value(['--dsw-alias-status-warning'],'#a97e22'),'--amber-soft':value(['--dsw-alias-warning-bg'],'#a97e2214'),'--amber-line':value(['--dsw-alias-warning-border'],'#a97e2250'),'--host-font-family':base.fontFamily,'--host-font-size':base.fontSize,colorScheme:scheme};
+        }
+        function sendTheme(){if(!disposed&&channel)channel.port1.postMessage({type:'persona-host-theme',theme:hostTheme()})}
+        function sendViewport(){
+          if(disposed||!channel)return;const rect=element.getBoundingClientRect();let top=Math.max(0,rect.top),bottom=Math.min(innerHeight,rect.bottom);
+          for(let parent=element.parentElement;parent;parent=parent.parentElement){if(/auto|scroll|hidden|clip/.test(getComputedStyle(parent).overflowY)){const bounds=parent.getBoundingClientRect();top=Math.max(top,bounds.top);bottom=Math.min(bottom,bounds.bottom)}}
+          channel.port1.postMessage({type:'persona-viewport',top:Math.max(0,Math.min(60000,top-rect.top)),height:Math.max(0,Math.min(60000,bottom-top))});
+        }
         function connect(){
           channel?.port1.close();channel?.port2.close();channel=new MessageChannel();
           channel.port1.onmessage=async event=>{
             const message=event.data;
+            if(!disposed&&message?.type==='persona-layout'&&Number.isFinite(message.height)&&message.height>0){setFrameHeight(Math.max(120,Math.min(60000,Math.ceil(message.height)+2)));return}
             if(disposed||!message||typeof message.id!=='string'||message.id.length>100||typeof message.action!=='string'||!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(message.action))return;
             const current=channel;
             try{
-              if(message.action==='ui.theme.get'||message.action==='ui.theme.set'){
-                let theme='system',persisted=true;
-                try{theme=localStorage.getItem('xiangxu.theme')||'system'}catch{persisted=false}
-                if(message.action==='ui.theme.set'){
-                  theme=message.args?.theme;if(!['system','light','dark'].includes(theme))throw new Error('无效的外观主题');
-                  try{localStorage.setItem('xiangxu.theme',theme)}catch{persisted=false}
-                }
-                if(!['system','light','dark'].includes(theme))theme='system';
-                if(!disposed&&current===channel)channel.port1.postMessage({id:message.id,ok:true,value:{theme,persisted}});return;
-              }
               const result=await ctx.connection.rpc.call('/api','persona-memory.manage',{action:message.action,args:message.args??{}});
               if(!disposed&&current===channel)channel.port1.postMessage(result?.ok?{id:message.id,ok:true,value:result.value}:{id:message.id,ok:false,error:result?.error??{code:'UI_TRANSPORT_RESPONSE',message:'宿主返回了无效结果'}});
             }catch(error){if(!disposed&&current===channel)channel.port1.postMessage({id:message.id,ok:false,error:{code:error?.code??'UI_TRANSPORT_FAILED',message:String(error?.message??'连接失败')}})}
           };
-          channel.port1.start();element.contentWindow.postMessage({type:'persona-management-connect',nonce},'*',[channel.port2]);
+          channel.port1.start();element.contentWindow.postMessage({type:'persona-management-connect',nonce},'*',[channel.port2]);sendTheme();sendViewport();
         }
         element.addEventListener('load',connect);
         // srcDoc is installed after the listener, so no initial load can be lost.
         element.srcdoc=documentSource.replaceAll('__PERSONA_FRAME_NONCE__',nonce);
-        return()=>{disposed=true;element.removeEventListener('load',connect);channel?.port1.close();channel?.port2.close()};
+        const observer=new MutationObserver(sendTheme);observer.observe(document.documentElement,{attributes:true});if(document.body)observer.observe(document.body,{attributes:true});if(document.head)observer.observe(document.head,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['href','media','disabled']});
+        const scheme=matchMedia('(prefers-color-scheme:dark)');scheme.addEventListener('change',sendTheme);
+        window.addEventListener('scroll',sendViewport,true);window.addEventListener('resize',sendViewport);const frameSize=new ResizeObserver(sendViewport);frameSize.observe(element);
+        return()=>{disposed=true;observer.disconnect();frameSize.disconnect();scheme.removeEventListener('change',sendTheme);window.removeEventListener('scroll',sendViewport,true);window.removeEventListener('resize',sendViewport);element.removeEventListener('load',connect);channel?.port1.close();channel?.port2.close()};
       },[nonce]);
-      return React.createElement('iframe',{ref:frame,title:'相续人格管理',sandbox:'allow-scripts',style:{display:'block',width:'100%',height:'min(78vh,1000px)',minHeight:'540px',border:0,borderRadius:'12px',background:'transparent'}});
+      return React.createElement('iframe',{ref:frame,title:'相续人格管理',sandbox:'allow-scripts',style:{display:'block',width:'100%',height:frameHeight+'px',minHeight:0,border:0,background:'transparent'}});
     }
     ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'persona-memory',order:70,label:()=> '相续人格'},PersonaManagementPage));
   }

@@ -1,6 +1,6 @@
 # 人格与记忆字段契约：persona-memory/3
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.4.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.4.1 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -619,9 +619,11 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 有限存储不能保证无限原文永不丢失。保真指真实来源/角色/主体、未读不冒充已读、失败不冒充提交、未消费尾部可续、容量不足可见、仍可用原件可回查。摘要不是原文的可逆编码，原件和外部日志均淘汰后不得声称还能完整还原。[自主整理、容量与补充唤醒验证](../../evolution-and-wake-validation.md)提供本轮实测边界。
 
-## 13. 原生管理界面与操作契约（0.4.0，0.3.0引入）
+## 13. 原生管理界面与操作契约（0.4.1，0.3.0引入）
 
 管理界面以DSH现有Connection的owner认证载体调用persona-memory.manage，不新建网络服务或读取模型密钥。参数action与args使用明确动作白名单；前端七页、主协议、页面/收据上限与操作边界见[相续人格管理界面与验收](../../management-ui.md)。产品与包名改为dsh-Xiangxu-Persona / dsh-xiangxu-persona，预设展示名相续人格；内部presetId persona-memory、schemaVersion persona-memory/3和既有来源ID保留。
+
+主动联系开关只切换用户是否允许主动联系，不规定人格必须主动或回复；“现在叫醒”仅睡眠时显示，沿既有explicit_wake路径执行。界面沿用DSH宿主颜色、字体和透明背景，不另设独立主题；内容高度由宿主协调。
 
 管理读取列表最多100条，明细默认16000个Unicode字符、返回片段与真实nextCursor；完整浏览不受模型search的1000条上限冒充全量。界面明确显示未读部分，已失效游标重新查询。操作回执不使用导致副作用重执行的详情游标。
 
@@ -631,13 +633,13 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 实例登记采用persona-instances/1，与人格数据schema分开，最多16个登记实例、登记文件64KiB；只一个活动写者，忙碌时拒绝切换。停止实例释放相关工具/监听/计时器与写锁；失败不假装成功。启动以存量技术配置为准，不用bundle初值覆盖用户已保存设置。备份/校验暂时关闭当前写者后可恢复原实例；恢复/恢复中断完成后保持停用，防止悄悄释放旧计时任务。
 
-## 14. 聊天渠道与本机声音技术契约（0.4.0）
+## 14. 聊天渠道与本机声音技术契约（0.4.1，0.4.0引入）
 
 这是DSH适配配置；核心schema仍为persona-memory/3，不改变人格决定与成长频率。当前工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice。专用IM会话只挂这五个人格能力，不暴露Harness控制或编码工具，不改变用户其它DSH会话的工具配置。
 
 ### 14.1 平台配置、环境与owner管理
 
-owner管理action为channels.status/configure/start/stop/probe/rotateIngress，以及voice.inspect/registerCatalog/configure/preview。主界面第七页为“聊天渠道与语音”；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
+owner管理action为channels.status/configure/start/stop/probe/rotateIngress，以及voice.inspect/registerCatalog/configure/preview。主界面第七页为“聊天渠道与语音”，已有兼容桥参数默认折叠为高级配置，扫码或接管桌面登录未实现；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
 
 ChannelProfile固定两项：{id/platform:'qq',protocol:'onebot11'}和{id/platform:'wechat',protocol:'onebot12'}。config={apiUrl:string,accountId:string,accessToken:string,allowedPrivateIds:string[],allowedGroupIds:string[],voiceMode:'text'|'both'|'voice',allowRemote:boolean}。初值disabled，接入列表空、voiceMode:text、allowRemote:false。空API令牌配置保留旧值；clearAccessToken:true明确清除，不能同时提交新值。status只返回hasAccessToken/hasIngressToken，不回显令牌。
 

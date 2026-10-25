@@ -1,0 +1,76 @@
+{
+  "version": "0.4.1",
+  "status": "passed",
+  "checkedAt": "2026-10-25T19:28:19.736Z",
+  "host": "Installed DSH NEXT 0.2.1-rc.2; isolated owner-authenticated web profile",
+  "sourceDigests": {
+    "package.json": "619bc7014265491f21afc25d94b226949694a9f21f3e6f1b310f70ac48fe3bd6",
+    "scripts/build-ui.mjs": "b9bb59ed892cc575d4ca51b483ffce1b730561dedb1290d64bbe7e9ff7b64f56",
+    "ui/index.html": "636a2b22bc477593005681946fb4861cca23ff61ba14b8fa623cb76ec8520e46",
+    "ui/style.css": "91c14ec3813278a8a047a425cd06d113962afc0ac1b89d50efc0871f3e72d108",
+    "ui/app.js": "ae6ad6a73886b17bffd9ddddbc62e28a9587f1287b3fde65424d7a838028b5ca",
+    "ui/client.js": "69549cdcc90276ebb8935a0d37140c34ffefaca672ad85f17aaff5ddf2f323dc"
+  },
+  "finalClientVerifiedAfterReload": true,
+  "changedAfterHostStart": [
+    "scripts/build-ui.mjs",
+    "ui/client.js"
+  ],
+  "checks": {
+    "sevenPagesOpened": true,
+    "independentBrandAndThemeRemoved": true,
+    "hostDarkThemeObserved": true,
+    "hostLightThemeObserved": true,
+    "transparentFrameAndNativeTypography": true,
+    "tabsWithoutHorizontalScrollbarAtObservedViewport": true,
+    "activeSwitchOffReadBack": true,
+    "activeSwitchOnReadBack": true,
+    "activeSwitchHasNoConfirmationDialog": true,
+    "awakeHasNoWakeButton": true,
+    "advancedBudgetInitiallyCollapsed": true,
+    "unchangedSettingsDoesNotWrite": true,
+    "changedBudgetConfirmationVisibleAfterDeepOuterScroll": true,
+    "changedBudgetConfirmationCancelled": true,
+    "advancedQqBridgeFieldsAccessible": true,
+    "unconfiguredPlatformControlsRemainDisabled": true,
+    "localVoiceCatalogStillVisible": true,
+    "unsupportedPitchRemainsDisabled": true
+  },
+  "sourceInspectionOnly": {
+    "wakeButtonConditionIsSleeping": true
+  },
+  "scope": "Only settings UI, host styling, action labels and bridge layout changed. No real model prompt, QQ/WeChat login, new social capability, subagent restriction or image/video generation performed.",
+  "runtimeVerification": {
+    "repeatedLocally": false,
+    "unchangedSourceFilesCompared": 29,
+    "reference": "0.4.0-tests.json",
+    "previousPassed": 336
+  },
+  "modelPromptSubmitted": false,
+  "modelRequestLogMarkers": 0,
+  "screenshots": [
+    {
+      "path": "docs/images/0.4.1-host-overview-dark.png",
+      "bytes": 48762,
+      "sha256": "2d3a65ac1ad6c8e77290784ebbba46d30781dbb267defed1d58e29aae8046983"
+    },
+    {
+      "path": "docs/images/0.4.1-host-overview-light.png",
+      "bytes": 50180,
+      "sha256": "26236327d439bbb5edb02daf7627155ff4272823b3fc5d2a657192da78a3de20"
+    },
+    {
+      "path": "docs/images/0.4.1-scrolled-dialog.png",
+      "bytes": 47547,
+      "sha256": "3373e507149667cf78c95e7975cd28838d39b24e6c2e42ee754d04ddd84ed96a"
+    }
+  ],
+  "cleanup": {
+    "instanceUnloadedBeforeStop": true,
+    "writerLocksRemaining": 0,
+    "dedicatedHostRemaining": 0,
+    "hostTerminatedAfterAuthenticatedUnload": true,
+    "hostTerminationExitCode": 1,
+    "productionForceRestarted": false
+  }
+}

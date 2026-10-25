@@ -1,6 +1,6 @@
 # 十四模块实现映射
 
-本表说明代码落点；0.4.0的具体测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
+本表说明代码落点；0.4.1当前管理界面及0.4.0历史测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |
 |---|---|---|
@@ -37,7 +37,7 @@
 
 ## 0.4.0 聊天渠道、声音与主题
 
-当前原生管理界面为七页，新增“聊天渠道与语音”，配色可跟随系统或手动选浅/深色。channels/service.js维护本机桥回调、范围、真实actor/房间路由、有限回执及恢复代次；channels/native.js把来信接入原生inbox，并使不同发言者/房间通道共用同一个人格；channels/onebot.js执行QQ OneBot11与微信OneBot12数据规范化和实际HTTP动作。外发只有平台桥明确消息回执才投影为实际assistant对话，unknown不假清用户pending、不自动重放。
+0.4.0引入第七页“聊天渠道与语音”；0.4.1保留七页功能并改为沿用DSH宿主颜色、字体和透明背景，以可换行页签、设置分隔行与自适应内容高度呈现。总览以日常说明解释主动联系开关，休息时才显示“现在叫醒”；已有OneBot桥的参数默认折叠为高级配置。channels/service.js维护本机桥回调、范围、真实actor/房间路由、有限回执及恢复代次；channels/native.js把来信接入原生inbox，并使不同发言者/房间通道共用同一个人格；channels/onebot.js执行QQ OneBot11与微信OneBot12数据规范化和实际HTTP动作。外发只有平台桥明确消息回执才投影为实际assistant对话，unknown不假清用户pending、不自动重放。
 
 voice.js保存有界技术偏好，persona_voice由人格按需选择实际音色；channels/windows-speech.js/.ps1把已安装Windows声音生成实际WAV，渠道音频另取平台ack。语速是近似SAPI音级，pitch:false；voice-only缺能力明确失败，both可保留真实文字ack并标语音不可用。没有性格标签硬映射、每轮选声或新的成长阈值。
 

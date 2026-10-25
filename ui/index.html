@@ -10,33 +10,27 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar" aria-label="管理导航">
-      <button class="brand" type="button" data-page="overview"><span class="brand-mark" aria-hidden="true">✳</span><span>相续人格<small>XIANGXU PERSONA</small></span></button>
-      <div class="sidebar-caption">工作空间</div>
-      <nav class="navigation">
-        <button type="button" data-page="overview"><span aria-hidden="true">◫</span>运行总览</button>
-        <button type="button" data-page="persona"><span aria-hidden="true">✳</span>共同人格</button>
-        <button type="button" data-page="memory"><span aria-hidden="true">▤</span>记忆与关系</button>
-        <button type="button" data-page="evolution"><span aria-hidden="true">⌁</span>进化与变更</button>
-        <button type="button" data-page="settings"><span aria-hidden="true">⚙</span>设置与加载</button>
-        <button type="button" data-page="chat"><span aria-hidden="true">☷</span>聊天渠道与语音</button>
-        <button type="button" data-page="maintenance"><span aria-hidden="true">◇</span>维护与诊断</button>
-      </nav>
-      <div class="sidebar-note"><span class="live-dot" aria-hidden="true"></span><strong>一个持续成长的人格</strong><p>这里查看真实状态、管理资源和执行你的操作。交流与成长的判断仍由人格自己选择。</p></div>
-      <div class="sidebar-footer"><span>独立核心 · DSH 适配</span><span id="build-version">—</span></div>
-    </aside>
+    <nav class="navigation" aria-label="相续人格设置分类">
+      <button type="button" data-page="overview">运行总览</button>
+      <button type="button" data-page="persona">共同人格</button>
+      <button type="button" data-page="memory">记忆与关系</button>
+      <button type="button" data-page="evolution">进化与变更</button>
+      <button type="button" data-page="settings">设置与加载</button>
+      <button type="button" data-page="chat">聊天渠道与语音</button>
+      <button type="button" data-page="maintenance">维护与诊断</button>
+    </nav>
     <div class="workspace">
-      <header class="topbar"><div class="breadcrumb">插件 / <strong>相续人格管理</strong></div><div class="topbar-actions"><label class="theme-picker"><span>外观</span><select id="theme-choice" aria-label="外观主题"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><span id="connection-state" class="status-pill neutral" role="status">正在连接</span><button id="refresh-button" class="button subtle compact" type="button" disabled>↻ 刷新</button></div></header>
+      <div class="page-tools"><span id="connection-state" class="status-pill neutral" role="status">正在连接</span><button id="refresh-button" class="button subtle compact" type="button" disabled>刷新</button></div>
       <main id="main" tabindex="-1">
-        <div class="page-header"><div><div class="eyebrow" id="page-eyebrow">PERSONA / OVERVIEW</div><h1 id="page-title">运行总览</h1><p id="page-description">连接后显示当前实例的真实运行状态与容量。</p></div><div id="page-actions" class="page-actions"></div></div>
+        <div class="page-header"><div><h1 id="page-title">运行总览</h1><p id="page-description">连接后显示当前实例的真实运行状态。</p></div><div id="page-actions" class="page-actions"></div></div>
         <div id="global-error" class="notice error" role="alert" hidden></div>
-        <div id="instance-bar" class="instance-bar"><span class="instance-icon" aria-hidden="true">◉</span><label for="active-instance">当前实例</label><select id="active-instance" disabled><option value="">等待连接</option></select><span id="instance-root" class="path">尚未读取记忆目录</span></div>
-        <section id="page-content" aria-live="polite"><div class="connection-card"><div class="connection-symbol" aria-hidden="true">✳</div><h2>连接相续人格管理服务</h2><p>页面会读取已接入 DSH 的真实实例，不使用示例数据。</p><p class="muted" id="connection-detail">正在等待 DSH 页面桥接……</p><button id="connect-retry" class="button secondary" type="button">重新连接</button></div></section>
-        <footer class="page-footer"><span id="last-updated">尚未读取数据</span><span>来源、角色与关系归属分别保留</span></footer>
+        <div id="instance-bar" class="instance-bar"><label for="active-instance">当前人格</label><select id="active-instance" disabled><option value="">等待连接</option></select><details class="instance-location"><summary>数据位置</summary><span id="instance-root" class="path">尚未读取记忆目录</span></details></div>
+        <section id="page-content" aria-live="polite"><div class="connection-card"><h2>正在读取相续人格</h2><p class="muted" id="connection-detail">正在等待 DSH 管理连接……</p><button id="connect-retry" class="button secondary" type="button">重新连接</button></div></section>
+        <footer class="page-footer"><span id="last-updated">尚未读取数据</span><span id="build-version">DSH 插件</span></footer>
       </main>
     </div>
   </div>
-  <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><div class="dialog-header"><div><div class="eyebrow" id="detail-eyebrow">DETAIL</div><h2 id="detail-title">详情</h2></div><button id="close-detail" class="icon-button" type="button" aria-label="关闭详情">×</button></div><div id="detail-content" class="dialog-body"></div><div id="detail-footer" class="dialog-footer"></div></dialog>
+  <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><div class="dialog-header"><div><span id="detail-eyebrow" hidden></span><h2 id="detail-title">详情</h2></div><button id="close-detail" class="icon-button" type="button" aria-label="关闭详情">×</button></div><div id="detail-content" class="dialog-body"></div><div id="detail-footer" class="dialog-footer"></div></dialog>
   <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title"><div><div class="dialog-header"><h2 id="confirm-title">确认操作</h2><button id="confirm-close" type="button" class="icon-button" aria-label="取消">×</button></div><div class="dialog-body"><p id="confirm-description"></p><pre id="confirm-preview" class="data-preview" hidden></pre><label id="confirm-reason-label" class="field" hidden><span>操作说明</span><textarea id="confirm-reason" rows="3" placeholder="记录这次明确操作的原因"></textarea></label></div><div class="dialog-footer"><button id="confirm-cancel" type="button" class="button secondary">取消</button><button id="confirm-accept" type="button" class="button primary">确认执行</button></div></div></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
