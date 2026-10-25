@@ -40,7 +40,10 @@ async function nativeCommand(options, args, label, entry = options.cli) {
   return { ...result, stdout: redact(stdout), stderr: redact(stderr) };
 }
 
-async function prepareProfile(options) {
+export async function prepareProfile(options) {
+  const packageName = JSON.parse(await readFile(join(projectRoot, 'package.json'), 'utf8')).name;
+  if (typeof packageName !== 'string' || !packageName) throw Object.assign(new Error('The project package name is missing'), { code: 'PACKAGE_NAME_INVALID' });
+  const legacyName = '@local/persona-memory', allowedPackages = new Set([packageName, legacyName]);
   const profileDir = join(options.home, 'profiles', options.profile);
   let manifest = await readJson(join(profileDir, 'package.json'));
   if (!manifest) {
@@ -49,14 +52,29 @@ async function prepareProfile(options) {
     manifest = await readJson(join(profileDir, 'package.json'));
   }
   const bundles = manifest?.dsh?.profile?.bundles ?? [];
-  if (!bundles.includes('@deepseek-ai/dsh-sdk-app')) throw Object.assign(new Error('The named validation profile is not a dedicated SDK profile; refusing replacement'), { code: 'PROFILE_CONFLICT' });
-  const unexpected = Object.keys(manifest.dependencies ?? {}).filter(x => x !== '@local/persona-memory');
-  if (unexpected.length) throw Object.assign(new Error('Validation profile contains unrelated dependencies; refusing package changes'), { code: 'PROFILE_CONFLICT' });
+  const allowedBundles = new Set(['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app', ...allowedPackages]);
+  const dependencies = value => ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].flatMap(field => Object.keys(value?.[field] ?? {}));
+  if (!Array.isArray(bundles) || !bundles.includes('@deepseek-ai/dsh-sdk-app') || bundles.some(name => !allowedBundles.has(name))) {
+    throw Object.assign(new Error('The named validation profile is not a dedicated SDK profile; refusing replacement'), { code: 'PROFILE_CONFLICT' });
+  }
+  if (dependencies(manifest).some(name => !allowedPackages.has(name))) throw Object.assign(new Error('Validation profile contains unrelated dependencies; refusing package changes'), { code: 'PROFILE_CONFLICT' });
   if (!options.baseOnly) {
     if (!existsSync(join(projectRoot, 'adapters', 'dsh', 'index.js'))) throw Object.assign(new Error('DSH adapter entry is not ready; no package operation started'), { code: 'ADAPTER_NOT_READY' });
-    // This is the installed Desktop package-operation carrier, not a handwritten profile edit.
+    // Migrate only this dedicated SDK profile through the native package owner.
+    // Removing the old declaration before add avoids two copies of its bundle.
+    if (packageName !== legacyName && (dependencies(manifest).includes(legacyName) || bundles.includes(legacyName))) {
+      const removed = await nativeCommand(options, [options.profile, 'remove', legacyName], 'plugin-remove-legacy', options.pluginCli);
+      if (removed.code !== 0) throw Object.assign(new Error('Native legacy test-plugin removal failed; current plugin was not added'), { code: 'PLUGIN_MIGRATION_FAILED' });
+      manifest = await readJson(join(profileDir, 'package.json'));
+      if (dependencies(manifest).includes(legacyName) || manifest?.dsh?.profile?.bundles?.includes(legacyName)) throw Object.assign(new Error('Legacy test-plugin declaration remains after native removal'), { code: 'PLUGIN_MIGRATION_FAILED' });
+    }
     const install = await nativeCommand(options, [options.profile, 'add', projectRoot], 'plugin-install', options.pluginCli);
     if (install.code !== 0) throw Object.assign(new Error('Native plugin installation failed; inspect plugin-install diagnostics'), { code: 'PLUGIN_INSTALL_FAILED' });
+    const after = await readJson(join(profileDir, 'package.json')), afterBundles = after?.dsh?.profile?.bundles ?? [];
+    if (!after?.dependencies?.[packageName] || afterBundles.filter(name => name === packageName).length !== 1 ||
+      dependencies(after).some(name => !allowedPackages.has(name) || (name === legacyName && packageName !== legacyName)) ||
+      afterBundles.some(name => !allowedBundles.has(name) || (name === legacyName && packageName !== legacyName)) ||
+      !afterBundles.includes('@deepseek-ai/dsh-sdk-app')) throw Object.assign(new Error('Native package operation did not reconcile the dedicated test profile'), { code: 'PLUGIN_MIGRATION_FAILED' });
   }
   return profileDir;
 }
@@ -119,7 +137,7 @@ export function apply(ctx, config) {
         const refs=currentRefs.length?currentRefs:(increment.input?.context?.persona?.anchor?.srcRefs??[]);
         block={type:'text',text:JSON.stringify({entries:[{documentKey:'persona',expectedVersion:increment.inputVersions?.persona??0,operation:'upsert',recordId:'anchor',value:{text:'PM_GROWN_FIXTURE I retain the lavender-tea interaction as part of this test personality.',srcRefs:refs}}]})};
       }
-      else if (joined.includes('Express a JSON decision using optional identityPlan')) {
+      else if (messages[0]?.role === 'system' && txt(messages[0]).startsWith('You are the same continuing personality across people and settings.')) {
         let context;try{context=JSON.parse(txt(messages.at(-1)));}catch{context={};}
         const env=context.environment||{};
         block={type:'text',text:JSON.stringify({replyPlan:{action:'reply',target:{channelId:env.channelId||'dsh:'+env.sessionId,sessionId:env.sessionId||'',personId:null},pendingEventIds:[],replyAt:null,reason:'fixture chooses to reply'},nextCheckAt:null})};
@@ -130,7 +148,7 @@ export function apply(ctx, config) {
         const recent=messages.slice(start+1),calls=recent.flatMap(m=>(m.content||[]).filter(b=>b.type==='tool-call'));
         const has=name=>calls.some(c=>c.name===name);
         const target={channelId:'dsh:'+sid,sessionId:sid,personId:null};
-        if(which==='sleep'&&!has('persona_decide')) block=tool('persona_decide',{sleepPlan:{action:'sleep',wakeCondition:'at_time',wakeAt:Date.now()+5000,reason:'fixture model chooses five second sleep'},nextCheckAt:null});
+        if(which==='sleep'&&!has('persona_decide')) block=tool('persona_decide',{consolidationPlan:{action:'run'},sleepPlan:{action:'sleep',wakeCondition:'at_time',wakeAt:Date.now()+5000,reason:'fixture model chooses five second sleep'},nextCheckAt:null});
         else if(which==='event_sleep'&&!has('persona_decide')) block=tool('persona_decide',{sleepPlan:{action:'sleep',wakeCondition:'explicit_wake',wakeAt:null,reason:'fixture chooses event-based sleep'},nextCheckAt:null});
         else if(which.startsWith('queued')||which==='sleep'||which==='event_sleep') block={type:'text',text:'PM_WAKE queued messages received after fixture sleep'};
         else if(which==='inactive'&&!has('persona_decide')) block=tool('persona_decide',{replyPlan:{action:'listen',target,pendingEventIds:[],replyAt:null,recheckOn:['explicit_wake'],reason:'fixture chooses a timer across process restart'},nextCheckAt:Date.now()+6000});

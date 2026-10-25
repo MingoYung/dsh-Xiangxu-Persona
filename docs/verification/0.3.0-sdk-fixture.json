@@ -1,0 +1,129 @@
+{
+  "status": "passed",
+  "checkedAt": "2026-10-25T16:19:59.324Z",
+  "sourceDigests": {
+    "scripts/dsh-integration.mjs": "b4405b72dfeae652c655003f2054eb59acb1a83e21d54e44a6b9b3c8e366a8a8",
+    "scripts/dsh-real-lifecycle.mjs": "510d0a3662d3b97990d61a08da591a9eb4bb018443d851fdbf05e63a6905c464"
+  },
+  "fixture": {
+    "checks": {
+      "initialized": true,
+      "personaDecideCalled": true,
+      "memorySearchCalled": true,
+      "visibleFinal": true,
+      "personaToolsInActualRequest": true,
+      "personaTextInActualRequest": true,
+      "sleepHasNoVisibleOutput": true,
+      "wokeAndReplied": true,
+      "awakeRestored": true,
+      "singleWakeVisibleReply": true,
+      "nonemptyConsolidationCommitted": true,
+      "queuedInputsRecorded": true,
+      "listenRejectedBeforeRecheck": true,
+      "rejectedOriginalInProviderRequest": true,
+      "timedRecheckProducedVisibleReply": true,
+      "operatorStatus": true,
+      "operatorMute": true,
+      "operatorResume": true,
+      "eventSleepNeedsNoWallClock": true,
+      "operatorExplicitWake": true,
+      "resumeDoesNotDuplicateDialogue": true,
+      "resumedAgentUsesPersonaTools": true,
+      "resumedAgentReplies": true,
+      "inactiveTargetAutoResumed": true,
+      "inactiveResumePersonaRequest": true,
+      "completedReplyIsNotPendingAgain": true
+    },
+    "passed": 26,
+    "status": "passed",
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "observedHostLlmRequests": 17,
+    "observedFixtureProviderRequests": 17,
+    "observedProviderRoutes": [
+      "persona-fixture-validation/fixture-v1"
+    ],
+    "realProviderDispatchesObserved": 0,
+    "qualification": "Deterministic fixture responses through the native DSH engine; not real-model personality evidence or external HTTP wire capture."
+  },
+  "profileGuards": {
+    "passed": 8,
+    "cases": [
+      {
+        "case": "new-name-prepare-again",
+        "passed": true,
+        "dependencies": [
+          "dsh-xiangxu-persona"
+        ],
+        "bundles": [
+          "@deepseek-ai/dsh-base",
+          "@deepseek-ai/dsh-sdk-app",
+          "dsh-xiangxu-persona"
+        ]
+      },
+      {
+        "case": "current-base-only",
+        "passed": true,
+        "profileFilesUnchanged": true
+      },
+      {
+        "case": "legacy-base-only",
+        "passed": true,
+        "profileFilesUnchanged": true
+      },
+      {
+        "case": "legacy-native-remove-before-add",
+        "passed": true,
+        "dependencies": [
+          "dsh-xiangxu-persona"
+        ],
+        "bundles": [
+          "@deepseek-ai/dsh-base",
+          "@deepseek-ai/dsh-sdk-app",
+          "dsh-xiangxu-persona"
+        ]
+      },
+      {
+        "case": "foreign-dependency",
+        "passed": true,
+        "errorCode": "PROFILE_CONFLICT",
+        "profileFilesUnchanged": true
+      },
+      {
+        "case": "foreign-optional-dependency",
+        "passed": true,
+        "errorCode": "PROFILE_CONFLICT",
+        "profileFilesUnchanged": true
+      },
+      {
+        "case": "wrong-web-profile",
+        "passed": true,
+        "errorCode": "PROFILE_CONFLICT",
+        "profileFilesUnchanged": true
+      },
+      {
+        "case": "mixed-app-profile",
+        "passed": true,
+        "errorCode": "PROFILE_CONFLICT",
+        "profileFilesUnchanged": true
+      }
+    ],
+    "additionalFinalFixturePrepareAgain": true,
+    "finalDependencies": [
+      "dsh-xiangxu-persona"
+    ],
+    "finalBundles": [
+      "@deepseek-ai/dsh-base",
+      "@deepseek-ai/dsh-sdk-app",
+      "dsh-xiangxu-persona"
+    ]
+  },
+  "process": {
+    "checkedAt": "2026-10-25T16:21:30.3956389Z",
+    "dedicatedSdkCount": 0,
+    "productionProfileChanged": false
+  },
+  "correction": "The fixture explicitly selects consolidationPlan.action=run for its growth scenario. Ordinary production sleep still permits rest/defer; production autonomy rules were unchanged. Initial stale-fixture timeout was retained in the local work evidence, not represented as a pass."
+}

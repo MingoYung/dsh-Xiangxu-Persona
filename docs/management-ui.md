@@ -55,6 +55,8 @@ Git安装见[README](../README.md)。正常重载DSH后打开设置中的“相�
 
 最终完整本地回归 **229/229通过**，0失败、0取消、0跳过，耗时92522.8601ms。核心与适配层18份运行源码在这次冷回归前后SHA一致。语法/独立核心/包入口检查57个JS/MJS通过；14份自包含方案与14份实现文档检查通过。可复核摘要见[完整回归JSON](verification/0.3.0-tests.json)与[图形验收范围](verification/0.3.0-ui.json)。
 
+改名后的原生SDK确定性流程 **26/26通过**，8项profile安装/迁移保护检查全部通过，成功profile再次准备可复用。实际17个宿主模型请求均送往测试专用persona-fixture-validation/fixture-v1，观察到真实provider派发0次，退出码0，专用SDK进程0；这属于真实宿主加模拟模型响应的集成验收，不充当真实模型人格质量证据。详见[SDK流程与安装兼容摘要](verification/0.3.0-sdk-fixture.json)。原fixture把普通睡眠误当必定整理，首次等待超时的证据保留在本地工作目录；测试场景现明确选择整理run，生产仍由人格选择run/defer/rest，没有改成强制进化。
+
 使用安装版DSH NEXT 0.2.1-rc.2的独立web profile、localhost owner认证和原生设置slot做真实浏览器验收；未发送模型请求，未访问正式记忆根。原生Connection探针实际验证owner成功、非owner拒绝；真实HTTP验证认证交换、客户端boot graph、未认证401及认证管理RPC200。浏览器从DSH设置进入，而不是仅打开独立静态页面。
 
 实际观察：六页导航；未加载状态→明确加载；recentPreferredDays从3改4保存，卸载/重载仍为4；主动暂停/恢复；非空人格、人物、用户/助手/unknown原件与实际来源；prepared/committed批次；有限人格v1到v2前后对比；共同人格与未知标签分开；选择相续人格预设而不发prompt后设置仍可使用。所有非空数据明确标人工界面样本，不称真实模型成长。

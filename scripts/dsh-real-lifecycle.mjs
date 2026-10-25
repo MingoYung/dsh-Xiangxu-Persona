@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile, appendFile, readdir } from 'node:fs/promise
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { optionsFrom } from './dsh-integration.mjs';
+import { optionsFrom, prepareProfile } from './dsh-integration.mjs';
 
 // Importing the earlier harness does not run its guarded main. Its fixture,
 // scenarios and model outputs are never invoked by this independent runner.
@@ -94,19 +94,10 @@ export function apply(ctx,config){
 }
 `;
 
-async function native(options,args,label,entry=options.cli){
-  const child=spawn(options.exe,[entry,...args],{cwd:projectRoot,windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',DSH_HOME:options.home},stdio:['ignore','pipe','pipe']});
-  let stdout='',stderr='';child.stdout.on('data',x=>stdout+=x);child.stderr.on('data',x=>stderr+=x);
-  const result=await new Promise((done,reject)=>{const timer=setTimeout(()=>{child.kill();reject(new Error('Native package operation timed out'));},180000);child.once('error',reject);child.once('close',(code,signal)=>{clearTimeout(timer);done({code,signal});});});
-  await writeFile(join(options.artifacts,label+'.stdout.txt'),clean(stdout));await writeFile(join(options.artifacts,label+'.stderr.txt'),clean(stderr));
-  if(result.code!==0)throw Object.assign(new Error('Native operation failed: '+label),{code:'NATIVE_OPERATION_FAILED',data:result});return result;
-}
 async function install(options){
-  const profileDir=join(options.home,'profiles',options.profile);let manifest=await json(join(profileDir,'package.json'));
-  if(!manifest){await native(options,['--profile',options.profile,'--from-default-profile','sdk','--help'],'profile-init');manifest=await json(join(profileDir,'package.json'));}
-  if(!manifest?.dsh?.profile?.bundles?.includes('@deepseek-ai/dsh-sdk-app')||Object.keys(manifest.dependencies??{}).some(x=>x!=='@local/persona-memory'))throw Object.assign(new Error('Dedicated real-test profile conflicts with unrelated profile contents'),{code:'PROFILE_CONFLICT'});
-  await native(options,[options.profile,'add',projectRoot],'plugin-install',options.pluginCli);
+  await prepareProfile(options);
 }
+
 class Engine{
   constructor(options,dir,root,overlay){
     this.options=options;this.dir=dir;this.root=root;this.frames=[];this.pending=new Map();this.counter=0;this.log=Promise.resolve();this.closed=false;this.ready=false;let out='',err='';
