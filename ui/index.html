@@ -10,24 +10,22 @@
 </head>
 <body>
   <div class="app-shell">
-    <nav class="navigation" aria-label="相续人格设置分类">
-      <button type="button" data-page="overview">运行总览</button>
-      <button type="button" data-page="persona">共同人格</button>
-      <button type="button" data-page="memory">记忆与关系</button>
-      <button type="button" data-page="evolution">进化与变更</button>
-      <button type="button" data-page="settings">设置与加载</button>
-      <button type="button" data-page="chat">聊天渠道与语音</button>
-      <button type="button" data-page="media">形象与创作</button>
-      <button type="button" data-page="tasks">任务与资料</button>
-      <button type="button" data-page="maintenance">维护与诊断</button>
+    <nav class="navigation" aria-label="相续人格">
+      <button type="button" data-page="overview">相处</button>
+      <button type="button" data-page="memory">记忆</button>
+      <button type="button" data-page="chat">连接</button>
+      <button type="button" data-page="media">创作</button>
+      <button type="button" data-page="settings">设置</button>
     </nav>
     <div class="workspace">
-      <div class="page-tools"><span id="connection-state" class="status-pill neutral" role="status">正在连接</span><button id="refresh-button" class="button subtle compact" type="button" disabled>刷新</button></div>
+      <div class="workspace-topbar">
+        <div id="instance-bar" class="instance-bar"><label for="active-instance">当前人格</label><select id="active-instance" disabled><option value="">等待连接</option></select><span id="instance-root" class="path" hidden>尚未读取记忆目录</span></div>
+        <div class="page-tools"><span id="connection-state" class="status-pill neutral" role="status">正在连接</span><button id="refresh-button" class="button subtle compact" type="button" disabled>刷新</button></div>
+      </div>
       <main id="main" tabindex="-1">
-        <div class="page-header"><div><h1 id="page-title">运行总览</h1><p id="page-description">连接后显示当前实例的真实运行状态。</p></div><div id="page-actions" class="page-actions"></div></div>
+        <div class="page-header"><div class="page-heading"><button id="page-back" class="button link page-back" type="button" hidden>返回相处</button><h1 id="page-title">相处</h1><p id="page-description">连接后显示近况和常用操作。</p></div><div id="page-actions" class="page-actions"></div></div>
         <div id="global-error" class="notice error" role="alert" hidden></div>
-        <div id="instance-bar" class="instance-bar"><label for="active-instance">当前人格</label><select id="active-instance" disabled><option value="">等待连接</option></select><details class="instance-location"><summary>数据位置</summary><span id="instance-root" class="path">尚未读取记忆目录</span></details></div>
-        <section id="page-content" aria-live="polite"><div class="connection-card"><h2>正在读取相续人格</h2><p class="muted" id="connection-detail">正在等待 DSH 管理连接……</p><button id="connect-retry" class="button secondary" type="button">重新连接</button></div></section>
+        <section id="page-content" aria-live="polite"><div class="connection-card"><h2>正在连接</h2><p class="muted" id="connection-detail">连接后可以查看这个人格的近况。</p><button id="connect-retry" class="button secondary" type="button">重新连接</button></div></section>
         <footer class="page-footer"><span id="last-updated">尚未读取数据</span><span id="build-version">DSH 插件</span></footer>
       </main>
     </div>

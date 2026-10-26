@@ -1,15 +1,15 @@
 /* The management page talks only to the DSH bridge. It never creates a writer or a model call by itself. */
 const $ = id => document.getElementById(id);
-const state = { connected: false, instanceId: null, instances: [], people: [], status: null, page: 'overview', generation: 0, detailGeneration: 0 };
+const state = { connected: false, instanceId: null, instances: [], people: [], status: null, page: 'overview', view: null, trail: [], budgetDraft: null, configGroup: '0', memoryPerson: null, generation: 0, detailGeneration: 0 };
 const pages = {
-  overview: ['运行总览', 'OVERVIEW', '日常可在这里控制主动聊天，查看相续是否正在休息。'],
-  persona: ['共同人格', 'PERSONA', '查看持续积累的身份、性格与习惯。这里展示当前数据，不替人格设定成长指标。'],
-  memory: ['记忆与关系', 'MEMORY', '按关系与来源浏览原件、提炼和编码，保留实际发言者与未知归属。'],
-  evolution: ['进化与变更', 'EVOLUTION', '跟踪已选整理作业、未完成进度和已保留的变更历史。'],
-  settings: ['设置与加载', 'SETTINGS', '管理实例、加载状态和技术资源；保存配置不会要求人格必须改变。'],
-  chat: ['聊天渠道与语音', 'CHANNELS & VOICE', '在熟悉的聊天软件里继续交流，让同一个人格走进私聊和群聊。'],
+  overview: ['相处', 'OVERVIEW', '查看相续的近况，按自己的需要管理日常交流。'],
+  persona: ['了解相续', 'PERSONA', '查看持续积累的身份、性格与习惯。这里展示当前数据，不替人格设定成长指标。'],
+  memory: ['记忆', 'MEMORY', '查找相续留下的记忆、重要经历，以及认识的人。'],
+  evolution: ['成长记录', 'EVOLUTION', '跟踪已选整理作业、未完成进度和已保留的变更历史。'],
+  settings: ['设置', 'SETTINGS', '管理人格、记忆库与可选功能。'],
+  chat: ['连接', 'CHANNELS & VOICE', '在熟悉的聊天软件里继续交流，让同一个人格走进私聊和群聊。'],
   tasks: ['任务与资料', 'TASKS', '查看独立任务、按需读取完整资料；记什么仍由相续自己决定。'],
-  media: ['形象与创作', 'IDENTITY & MEDIA', '保存同一个形象，选择性接入图片和视频创作服务。'],
+  media: ['创作', 'IDENTITY & MEDIA', '保存同一个形象，选择性接入图片和视频创作服务。'],
   maintenance: ['维护与诊断', 'MAINTENANCE', '查看可用诊断、校验和备份恢复结果。写入操作都作用于明确选择的实例。'],
 };
 const labels = { starting: '准备启动', awake: '清醒', sleeping: '休息中', queued: '待执行', running: '执行中', paused: '已暂停', committed: '已提交', completed: '已完成', prepared: '已准备', failed: '失败', invalidated: '已失效', no_work: '无工作', delivered: '已交付', pending: '待处理', cancelled: '已取消', unknown: '结果未知', deferred: '已暂缓', submitted: '已提交到服务', revoked: '来源已撤销' };
@@ -23,6 +23,7 @@ const memoryScopeLabel = record => record.scope === 'global'
   ? (record.recordType === 'deep' ? '深刻记忆 · 共同参考' : ['facet', 'signature', 'habit'].includes(record.recordType) ? '共同人格' : '共同记忆')
   : record.personId != null ? '关系：' + personName(record.personId) : '未知归属';
 function element(tag, attrs = {}, ...children) {
+  if (tag === 'details') return disclosure(attrs, ...children);
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
     if (value == null) continue;
@@ -43,12 +44,37 @@ function button(text, action, kind = 'secondary', attrs = {}) {
     try { await action(); } catch (error) { showError(error); } finally { if (target.isConnected) target.disabled = false; }
   } }, text);
 }
+
+let disclosureSequence = 0;
+function disclosure(attrs = {}, ...children) {
+  const { open = false, ...rest } = attrs, group = element('section', { ...rest, class: 'disclosure ' + (rest.class ?? '') });
+  const panel = element('div', { class: 'disclosure-content', id: 'extra-' + (++disclosureSequence), hidden: !open });
+  let expanded = Boolean(open), title = '更多信息';
+  const toggle = button(title, () => { group.open = !group.open; }, 'link disclosure-toggle', { 'aria-expanded': String(expanded), 'aria-controls': panel.id });
+  group.append(toggle, panel); group.disclosureButton = toggle;
+  Object.defineProperty(group, 'open', { get: () => expanded, set: value => { expanded = Boolean(value); panel.hidden = !expanded; toggle.setAttribute('aria-expanded', String(expanded)); toggle.textContent = expanded ? '收起' + title : title; } });
+  group.append = (...items) => { for (const item of items.flat(Infinity)) { if (item?.tagName?.toLowerCase() === 'summary') { title = item.textContent; toggle.textContent = expanded ? '收起' + title : title; } else if (item != null) panel.append(item); } };
+  group.append(...children); return group;
+}
+function destination(title, description, action, status = '') {
+  const node = button('', action, 'destination', { class: 'destination', 'aria-label': title }); node.append(
+    element('span', { class: 'destination-copy' }, element('span', { class: 'destination-title' }, title), element('span', { class: 'destination-description' }, description)),
+    element('span', { class: 'destination-action' }, status || '打开')); return node;
+}
+function destinations(...items) { return element('div', { class: 'destination-list' }, ...items); }
+function sectionTabs(items) { return element('nav', { class: 'module-tabs', 'aria-label': '当前页面内容' }, items.map(([view, label]) => button(label, () => openSection(view, false), 'module-tab', { class: 'module-tab' + ((state.view ?? '') === view ? ' active' : ''), 'aria-current': (state.view ?? '') === view ? 'page' : 'false' }))); }
+let pageScrollRequested = false;
+const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overview', maintenance: 'settings' };
+const viewTitles = { startup: '启动时加载', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格与记忆库', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
+async function openSection(view, remember = true) { pageScrollRequested = true; if (remember) state.trail.push({ page: state.page, view: state.view }); state.view = view || null; await renderPage(); }
+async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? null; await renderPage(); }
+
 function notice(text, kind = '') { return element('div', { class: `notice ${kind}` }, text); }
 function pill(value) { return element('span', { class: 'status-pill ' + (['failed', 'invalidated', 'error'].includes(value) ? 'error' : ['paused', 'pending', 'unknown', 'prepared'].includes(value) ? 'warning' : '') }, labels[value] ?? value ?? '未知'); }
 function tag(text, kind = '') { return element('span', { class: `tag ${kind}` }, text); }
 function empty(title, detail, symbol = '◇') { return element('div', { class: 'empty-state' }, element('div', { class: 'empty-symbol', 'aria-hidden': true }, symbol), element('h3', {}, title), element('p', {}, detail)); }
 function card(title, subtitle, ...content) { return element('section', { class: 'card' }, element('div', { class: 'card-header' }, element('div', {}, element('h2', {}, title), subtitle ? element('p', {}, subtitle) : null)), content); }
-function kv(items) { return element('dl', { class: 'kv-list' }, Object.entries(items).map(([name, value]) => element('div', { class: 'kv-row' }, element('dt', {}, name), element('dd', {}, value instanceof Node ? value : value == null ? '—' : String(value))))); }
+function kv(items) { return element('dl', { class: 'kv-list' }, Object.entries(items).map(([name, value]) => element('div', { class: 'kv-row' }, element('dt', {}, name), element('dd', {}, value instanceof Node ? value : value == null ? '—' : typeof value === 'boolean' ? value ? '是' : '否' : typeof value === 'object' ? disclosure({}, element('summary', {}, '查看内容'), data(value)) : String(value))))); }
 function data(value) { return element('pre', { class: 'data-preview' }, pretty(value) ?? '无数据'); }
 function showError(error) { $('global-error').hidden = false; $('global-error').textContent = errorText(error); toast(errorText(error), true); }
 function clearError() { $('global-error').hidden = true; $('global-error').textContent = ''; }
@@ -64,22 +90,23 @@ function getItems(result) { return Array.isArray(result) ? result : result?.item
 function instanceItems(result) { return getItems(result).map(item => ({ ...item, id: item.id ?? item.instanceId, active: item.active ?? item.selected ?? false })); }
 function documentView(value) {
   if (value && typeof value === 'object' && Array.isArray(value.changes) && value.fromVersion != null) {
-    return element('div', {}, kv({ '起点版本': 'v' + value.fromVersion, '终点版本': 'v' + value.toVersion }), value.changes.length ? value.changes.map(change => card(({ anchor: '身份基调', axes: '人格坐标', facets: '倾向与边界', signatures: '签名', habits: '习惯', retired: '已退役条目' })[change.field] ?? change.field, '', element('div', { class: 'diff-grid' }, element('div', {}, element('div', { class: 'section-label' }, '修改前'), data(change.before)), element('div', {}, element('div', { class: 'section-label' }, '修改后'), data(change.after))))) : empty('所选版本没有模块变化', '这是实际对比结果，不要求为了进化而产生变更。'));
+    return element('div', {}, kv({ '起点版本': 'v' + value.fromVersion, '终点版本': 'v' + value.toVersion }), value.changes.length ? value.changes.map(change => card(({ anchor: '身份基调', axes: '性格维度', facets: '性格与偏好', signatures: '常见反应', habits: '习惯', retired: '过去的描述' })[change.field] ?? change.field, '', element('div', { class: 'diff-grid' }, element('div', {}, element('div', { class: 'section-label' }, '修改前'), data(change.before)), element('div', {}, element('div', { class: 'section-label' }, '修改后'), data(change.after))))) : empty('所选版本没有模块变化', '这是实际对比结果，不要求为了进化而产生变更。'));
   }
   if (value && typeof value === 'object' && value.recordType) {
     const refs = value.srcRefs ?? (value.sourceEventId ? [{ sourceSessionId: value.sourceSessionId, sourceEventId: value.sourceEventId, sourceRole: value.role }] : []);
-    return element('div', {}, kv({ '类型': value.recordType, '记忆归属': memoryScopeLabel(value), '实际角色': value.recordType === 'deep' ? '人格记忆（非对话原件）' : value.role ?? value.sourceRole ?? '提炼/解释', '实际发言者': value.speakerId ?? '未知 / 未提供独立标识', '发生时间': value.sourceAt ? date(value.sourceAt) : '未提供', '条目 ID': element('code', {}, value.id) }),
-      value.recordType === 'deep' ? element('div', {}, notice('这是人格保留的参考，不表示本轮已经回忆或产生反应。联想、触发情境、重释、淡化与修剪由人格自己决定。'),
-        kv({ '标题': value.title, '人格留下的参考': value.reference, '相关联想描述': (value.cues ?? []).join('、') || '尚未描述' }),
-        ...[['experience', '经历'], ['feltThen', '当时的感受'], ['meaningNow', '现在的理解']].map(([key, title]) => card(title, '', element('p', { class: 'detail-value' }, value[key] || '尚未描述'))))
-        : value.text || value.meaning || value.desc ? element('div', { class: 'detail-value' }, element('h3', {}, '已保留内容'), value.text ?? value.meaning ?? value.desc) : null,
-      refs.length ? element('div', {}, element('h3', {}, '实际来源'), element('div', { class: 'record-list' }, refs.map(ref => element('div', { class: 'record' }, kv({ '会话': element('code', {}, ref.sourceSessionId), '来源根': element('code', {}, ref.sourceEventId), '来源角色': ref.sourceRole ?? '未提供', '可用性': ref.available === false ? '原件不可用' : '按实际原件查询' }), button('查询仍可用的原件', () => inspectDocument('sources.read', { sourceRefs: [ref] }, '来源原件', { eyebrow: 'SOURCE / ORIGINAL' }), 'link'))))) : null,
-      element('details', {}, element('summary', { class: 'small muted' }, '查看完整字段'), data(value)));
+    const label = value.recordType === 'deep' ? value.title ?? '深刻经历' : ({ chat: '对话原文', memory: '保留的记忆', code: '记忆短语' })[value.recordType] ?? '已保留内容';
+    const metadata = disclosure({}, element('summary', {}, '查看来源与记录信息'), kv({ '类型': value.recordType, '记忆归属': memoryScopeLabel(value), '实际角色': value.role ?? value.sourceRole ?? '人格的记忆与理解', '实际发言者': value.speakerId ?? '未提供', '发生时间': value.sourceAt ? date(value.sourceAt) : '未提供', '记录编号': value.id }),
+      refs.map(ref => element('div', { class: 'source-reference' }, kv({ '会话': ref.sourceSessionId, '来源': ref.sourceEventId, '角色': ref.sourceRole ?? '未提供', '原件': ref.available === false ? '已不可用' : '可查询' }), button('查看这份原件', () => inspectDocument('sources.read', { sourceRefs: [ref] }, '来源原件'), 'link'))), disclosure({}, element('summary', {}, '原始字段'), data(value)));
+    const content = value.recordType === 'deep'
+      ? element('div', {}, element('p', { class: 'subtle-note' }, '这是人格留下的参考。是否想起、怎样理解与修剪，由它自己决定。'),
+        ...[['experience', '经历'], ['feltThen', '当时的感受'], ['meaningNow', '现在的理解']].map(([key, title]) => element('section', { class: 'reading-section' }, element('h3', {}, title), element('p', { class: 'detail-value' }, value[key] || '尚未描述'))), value.reference ? element('p', { class: 'subtle-note' }, '留下的参考：' + value.reference) : null)
+      : element('div', { class: 'detail-value' }, value.text ?? value.meaning ?? value.desc ?? value.reference ?? '本条目没有正文。');
+    return element('div', { class: 'reading-view' }, element('h2', {}, label), element('p', { class: 'record-meta' }, memoryScopeLabel(value) + ' · ' + ({ assistant: 'AI 助手', user: '用户原话', system: '程序材料' }[value.role ?? value.sourceRole] ?? '人格的记忆与理解')), content, metadata);
   }
   if (value && typeof value === 'object' && value.runId && value.status) {
     const entries = value.validatedPatch ?? value.candidatePatch?.entries ?? (Array.isArray(value.candidatePatch) ? value.candidatePatch : []);
     return element('div', {}, kv({ '批次': element('code', {}, value.runId), '状态': labels[value.status] ?? value.status, '关系归属': personName(value.personId), '实际调用尝试': number(value.reviewState?.modelCalls), '暂停原因': value.reviewState?.pauseReason ?? value.validationError?.code ?? '无', '提交标记': value.commitMarker ?? '尚未提交' }),
-      element('h3', {}, value.status === 'committed' ? '已提交变更' : '尚未提交的提案'), entries.length ? element('div', { class: 'record-list' }, entries.map(entry => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, entry.documentKey), tag(entry.operation === 'remove' ? '删除' : '更新')), element('code', {}, entry.recordId), entry.operation === 'upsert' ? data(entry.value) : element('p', { class: 'small muted' }, '明确移除此记录')))) : empty('当前没有变更条目', '空变更有效；仅提交状态才表示完成对应消费。'),
+      element('h3', {}, value.status === 'committed' ? '已提交变更' : '尚未提交的提案'), entries.length ? element('div', { class: 'record-list' }, entries.map(entry => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, entry.documentKey), tag(entry.operation === 'remove' ? '删除' : '更新')), element('code', {}, entry.recordId), entry.operation === 'upsert' ? element('div', {}, element('p', { class: 'detail-value' }, typeof entry.value === 'string' ? entry.value : entry.value?.text ?? entry.value?.desc ?? entry.value?.reference ?? entry.value?.meaning ?? '这项描述的结构已更新。'), disclosure({}, element('summary', {}, '查看原始变更'), data(entry.value))) : element('p', { class: 'small muted' }, '明确移除此记录')))) : empty('当前没有变更条目', '空变更有效；仅提交状态才表示完成对应消费。'),
       element('details', {}, element('summary', { class: 'small muted' }, '查看输入范围、读取进度与完整字段'), data(value)));
   }
   return data(value);
@@ -115,7 +142,7 @@ async function inspectDocument(action, args, title, { actions = [], eyebrow } = 
       accumulated += result.text; cursor = result.nextCursor; total = fragment.total; complete = fragment.complete;
       try { view = complete ? JSON.parse(accumulated) : accumulated; } catch { view = accumulated; }
     } else { view = result; cursor = null; }
-    replace(body, !complete ? notice(`目前读取 ${number(Array.from(accumulated).length)} / ${number(total)} 字符；未读尾部仍保留，继续读取后才是完整详情。`, 'warning') : null, complete ? documentView(view) : data(view));
+    replace(body, !complete ? element('div', {}, element('h3', {}, '内容较长，正在按页读取'), element('p', { class: 'muted' }, `已读取 ${number(Array.from(accumulated).length)} / ${number(total)} 字符。原文完整保留，继续读取后展示全文。`), disclosure({}, element('summary', {}, '查看当前原始片段'), data(view))) : documentView(view));
     replace(footer, actions.map(item => button(item.label, () => item.run(view), item.kind ?? 'secondary')),
       cursor != null ? button('继续读取下一页', load, 'primary', { dataset: { action: 'detail-next' } }) : element('span', { class: 'small muted' }, '已读取可用详情'),
       button('关闭', () => $('detail-dialog').close(), 'secondary'));
@@ -150,22 +177,29 @@ function updateInstanceBar() {
   const selected = state.instances.find(item => item.id === state.instanceId); $('instance-root').textContent = selected?.memoryRoot ?? state.status?.memoryRoot ?? '未配置目录'; $('instance-root').title = $('instance-root').textContent;
   $('build-version').textContent = state.status?.version ?? state.status?.pluginVersion ?? 'DSH 插件';
 }
-async function navigate(page) { state.page = pages[page] ? page : 'overview'; await renderPage(); }
+async function navigate(page, view = null) {
+  pageScrollRequested = true;
+  if (routeParents[page]) state.trail.push({ page: state.page, view: state.view }); else state.trail = [];
+  state.page = pages[page] ? page : 'overview'; state.view = view;
+  state.detailGeneration++; if ($('detail-dialog').open) $('detail-dialog').close();
+  await renderPage();
+}
 async function renderPage() {
   for (const cleanup of [...pageCleanups]) cleanup();
   const [title, , description] = pages[state.page];
-  $('page-title').textContent = title; $('page-description').textContent = description;
-  document.querySelectorAll('[data-page]').forEach(node => { node.classList.toggle('active', node.dataset.page === state.page); if (node.dataset.page === state.page) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current'); });
+  $('page-title').textContent = viewTitles[state.view] ?? title; $('page-description').textContent = state.view ? ({ chat: '选择连接方式后，按步骤完成接入。', media: '设置只作用于当前人格；创作使用已保存的服务。', settings: '按需要调整这一项，保存后生效。', memory: '查看已保留的内容，回忆与记忆变化仍由人格自己决定。' }[state.page] ?? description) : description;
+  const back = $('page-back'); back.hidden = !state.view && !routeParents[state.page]; back.textContent = '返回' + (viewTitles[state.trail.at(-1)?.view] ?? pages[state.trail.at(-1)?.page ?? routeParents[state.page] ?? state.page]?.[0] ?? '上一页');
+  document.querySelectorAll('[data-page]').forEach(node => { node.classList.toggle('active', node.dataset.page === (routeParents[state.page] ?? state.page)); if (node.dataset.page === (routeParents[state.page] ?? state.page)) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current'); });
   replace($('page-actions'));
   if (!state.connected) return;
   clearError(); const generation = ++state.generation; $('page-content').classList.add('loading');
   try {
     state.status = await request('status'); updateInstanceBar();
     let content;
-    if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('前往设置与加载', () => navigate('settings'), 'primary'));
+    if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('启用或选择人格', () => navigate('settings', 'instances'), 'primary'));
     else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage, tasks: tasksPage })[state.page]();
     if (generation !== state.generation) return;
-    replace($('page-content'), content); $('last-updated').textContent = '上次读取 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    replace($('page-content'), content); if (pageScrollRequested) { document.querySelector?.('.app-shell')?.scrollIntoView?.({ block: 'start', behavior: 'instant' }); pageScrollRequested = false; } $('last-updated').textContent = '上次读取 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
   } catch (error) { if (generation === state.generation) { showError(error); replace($('page-content'), card('暂时无法读取', '', notice(errorText(error), 'error'), button('重新读取', renderPage, 'secondary'))); } }
   finally { if (generation === state.generation) $('page-content').classList.remove('loading'); }
 }
@@ -201,7 +235,7 @@ async function showOperation(receipt, { retry } = {}) {
   async function update(query = true) {
     const item = query && id ? await request('operations.get', { id }) : receipt;
     if (generation !== state.detailGeneration) return;
-    replace($('detail-content'), notice('查询状态不会重新执行操作。即使关闭此面板，也不要因等待时间较长而重复提交。'), kv({ '操作编号': id ?? '未返回编号', '状态': labels[item?.status] ?? item?.status ?? '已收到回执', '实际提交': item?.result?.committed == null ? '以回执为准' : item.result.committed ? '已提交' : '尚未提交', '暂停原因': item?.result?.pauseReason ?? item?.error?.code ?? '无' }), data(item));
+    replace($('detail-content'), notice('查询状态不会重新执行操作。即使关闭此面板，也不要因等待时间较长而重复提交。'), kv({ '操作编号': id ?? '未返回编号', '状态': labels[item?.status] ?? item?.status ?? '已收到回执', '实际提交': item?.result?.committed == null ? '以回执为准' : item.result.committed ? '已提交' : '尚未提交', '暂停原因': item?.result?.pauseReason ?? item?.error?.code ?? '无' }), disclosure({}, element('summary', {}, '查看技术回执'), data(item)));
     replace($('detail-footer'), id ? button('查询最新状态', () => update(), 'primary') : null, retry && item.status === 'unknown' ? button('使用原编号重试请求', async () => { const confirmation = await confirmOperation({ title: '恢复原请求的回执', description: '使用相同请求编号和参数重发。服务端若已经接收，只返回原回执，不重复执行。不会生成新的付费操作编号。', preview: { requestId: id, action: receipt.action } }); if (!confirmation) return; receipt = await retry(); await update(false); }, 'secondary') : null, button('关闭', () => $('detail-dialog').close(), 'secondary'));
   }
   await update(false);
@@ -225,24 +259,24 @@ async function overviewPage() {
   } });
   const daily = element('section', { class: 'daily-controls', 'aria-label': '日常交流设置' },
     element('div', { class: 'setting-row' }, element('div', { class: 'setting-copy' }, element('h2', {}, '当前状态：' + (labels[runtime.sleep?.state] ?? '尚未读取')),
-      element('p', {}, sleeping ? '相续正在休息，期间的来信会保留。叫醒后，由它决定如何回应。' : '相续目前清醒，可以处理来信；是否回应仍由它自己判断。')),
+      element('p', {}, sleeping ? '相续正在休息，期间的来信会保留。叫醒后，由它决定如何回应。' : '可以接收来信，是否回应由相续决定。')),
       sleeping ? button('现在叫醒', () => control('wake'), 'secondary') : null),
     element('div', { class: 'setting-row' }, element('div', { class: 'setting-copy' }, element('label', { class: 'setting-title', for: 'proactive-allowed' }, '允许主动找我聊天'),
-      element('p', {}, '开启后，相续可以在你没有发消息时主动开口，时机由它自己决定。关闭后仍接收来信并保留记忆。')), proactive));
+      element('p', {}, '允许相续自主选择时机开口；关闭后仍可接收来信。')), proactive));
   replace($('page-actions'));
   const controls = element('div', { class: 'row-actions' }, button('查看完整运行态', () => inspectDocument('state.get', {}, '完整运行状态'), 'secondary compact'), button('整理一批', () => control('consolidate'), 'secondary compact'));
-  return element('div', {}, daily, element('details', { class: 'advanced-section' }, element('summary', {}, '高级：记忆用量与运行详情'), element('div', { class: 'advanced-body' }, element('div', { class: 'stats-grid' },
-    stat('当前状态', labels[runtime.sleep?.state] ?? '未知', runtime.globalMuted ? '主动行为已由用户暂停' : '主动行为由人格自行选择', '◉'),
-    stat('长期记忆', number(persistent), `目标 ${number(persistentLimit)} 字符`, '▤', persistent != null && persistentLimit != null ? { used: persistent, limit: persistentLimit } : null),
-    stat('临时过程', number(hot), `目标 ${number(hotLimit)} 字符`, '⌁', hot != null && hotLimit != null ? { used: hot, limit: hotLimit } : null),
-    stat('未解决缺口', number(gaps), '仅显示真实记录的来源缺口', '◇')),
-    element('div', { class: 'two-column' }, card('此刻的运行状态', '时间、信号和回执来自当前实例。', kv({ '睡眠状态': labels[runtime.sleep?.state] ?? '未知', '唤醒条件': ({ at_time: '人格选择的时间', consolidation_complete: '所选整理提交完成', explicit_wake: '等待明确唤醒' })[runtime.sleep?.wakeCondition] ?? '当前未选择', '计划唤醒': date(runtime.sleep?.wakeAt), '下次判断': date(runtime.schedule?.nextCheckAt), '事件等待': runtime.schedule?.recheckOn?.join('、') || '无', '主动控制': runtime.globalMuted ? '用户已暂停' : '允许人格自主选择' }), controls),
-      card('存储与接入', '容量限制保护数据写入，不替人格决定睡眠或成长。', kv({ '物理占用': capacity.physicalBytes != null ? number(capacity.physicalBytes) + ' bytes' : '未知', '已接入会话': number(status.agents?.length), '排队作业': number(jobs.queued ?? 0), '执行中': number(jobs.running ?? 0), '暂停作业': number(jobs.paused ?? 0) }), button('查看容量设置', () => navigate('settings'), 'link'))),
-    card('接入的会话', '关系归属用于记忆和路由；它不改变实际发言者。', status.agents?.length ? element('div', { class: 'record-list' }, status.agents.map(agent => element('div', { class: 'record' }, kv({ '会话': element('code', {}, agent.sessionId), '关系归属': personName(agent.personId), '通道': element('code', {}, agent.channelId) })))) : empty('当前没有已接入会话', '在 DSH 中选择“相续人格”预设后，对应会话会出现在这里。人格实例的加载状态与会话接入分别显示。')))));
+  if (state.view === 'runtime') return element('div', {}, element('div', { class: 'stats-grid' }, stat('长期记忆', number(persistent), '上限 ' + number(persistentLimit) + ' 字符'), stat('临时资料', number(hot), '上限 ' + number(hotLimit) + ' 字符')),
+    kv({ '当前状态': labels[runtime.sleep?.state] ?? '未知', '唤醒方式': ({ at_time: '相续选择的时间', consolidation_complete: '所选整理完成后', explicit_wake: '等你叫醒' })[runtime.sleep?.wakeCondition] ?? '尚未选择', '计划唤醒': date(runtime.sleep?.wakeAt), '下次判断': date(runtime.schedule?.nextCheckAt), '来源缺口': number(gaps), '接入会话': number(status.agents?.length), '排队整理': number(jobs.queued ?? 0), '物理占用': number(capacity.physicalBytes) + ' bytes' }), controls,
+    status.agents?.length ? card('已接入的会话', '', status.agents.map(agent => kv({ '会话': agent.sessionId, '关系': personName(agent.personId), '渠道': agent.channelId }))) : empty('还没有接入人格会话', '回到 DSH 对话，选择“相续人格”预设即可开始。'));
+  return element('div', {}, daily,
+    !status.agents?.length ? element('p', { class: 'getting-started' }, '在 DSH 对话中选择“相续人格”预设，即可开始聊天。') : null,
+    destinations(destination('了解相续', '它如何描述自己，以及留下的性格与习惯。', () => navigate('persona')),
+      destination('独立任务与资料', '查看委派出去的任务和完整结果。', () => navigate('tasks')),
+      destination('运行与用量', '查看记忆容量、会话接入和当前运行状态。', () => openSection('runtime'))));
 }
 async function personaPage() {
   let section = 'anchor', personaGeneration = 0;
-  const content = element('div'), modules = [['anchor', '身份基调'], ['axes', '人格坐标'], ['facets', '倾向与边界'], ['signatures', '签名'], ['habits', '习惯'], ['retired', '已退役条目']];
+  const content = element('div'), modules = [['anchor', '身份基调'], ['axes', '性格维度'], ['facets', '性格与偏好'], ['signatures', '常见反应'], ['habits', '习惯'], ['retired', '过去的描述']];
   const tabs = element('div', { class: 'module-tabs' });
   async function load(selected) {
     const generation = ++personaGeneration;
@@ -255,8 +289,9 @@ async function personaPage() {
     const module = value?.section === section ? value.value : value?.[section] ?? value;
     const title = modules.find(item => item[0] === section)[1], node = card(title, '这些是已保存的人格描述，不是要求每次交流都满足的行为规则。');
     if (section === 'anchor') { const text = module?.text ?? (typeof module === 'string' ? module : ''); node.append(text ? element('div', { class: 'persona-anchor' }, text) : empty('尚未形成身份基调', '人格可以暂时保留空白，不要求为了填满面板而生成内容。', '✳')); if (module?.changedAt) node.append(element('p', { class: 'subtle-note' }, '更新于 ' + date(module.changedAt))); }
-    else if (Array.isArray(module)) node.append(module.length ? element('div', { class: 'record-list' }, module.map(item => element('article', { class: 'record' }, element('h3', { class: 'record-title' }, item.name ?? item.label ?? item.id ?? '条目'), element('p', { class: 'record-text' }, item.text ?? item.description ?? item.if ?? item.cue ?? short(item, 600)), element('div', { class: 'record-meta' }, item.scope ? tag(item.scope === 'global' ? '共同人格' : personName(item.personId)) : null, item.epistemic ? tag(item.epistemic) : null, item.observations != null ? tag('描述性观察 ' + number(item.observations)) : null), button('查看完整字段与来源', () => { const id = startDetail('人格条目', 'PERSONA'); replace($('detail-content'), data(item)); replace($('detail-footer'), button('关闭', () => $('detail-dialog').close(), 'secondary')); return id; }, 'link')))) : empty('当前没有条目', '本模块可以保持不变，空白不是异常。'));
-    else node.append(data(module));
+    else if (Array.isArray(module)) node.append(module.length ? element('div', { class: 'record-list' }, module.map(item => element('article', { class: 'record' }, element('h3', { class: 'record-title' }, item.name ?? item.label ?? item.id ?? '条目'), element('p', { class: 'record-text' }, item.text ?? item.desc ?? item.description ?? (item.if ? '情境：' + item.if + (item.then ? '\n倾向：' + item.then : '') : item.cue ?? item.entry?.desc ?? '尚未描述')), element('div', { class: 'record-meta' }, item.scope ? tag(item.scope === 'global' ? '共同人格' : personName(item.personId)) : null, item.epistemic ? tag(item.epistemic) : null, item.observations != null ? tag('描述性观察 ' + number(item.observations)) : null), button('查看完整字段与来源', () => { const id = startDetail('人格条目', 'PERSONA'); replace($('detail-content'), data(item)); replace($('detail-footer'), button('关闭', () => $('detail-dialog').close(), 'secondary')); return id; }, 'link')))) : empty('当前没有条目', '本模块可以保持不变，空白不是异常。'));
+    else if (module && typeof module === 'object') node.append(...Object.entries(module).map(([name, item]) => element('section', { class: 'reading-section' }, element('h3', {}, name), element('p', { class: 'detail-value' }, typeof item === 'string' ? item : item?.desc ?? item?.text ?? item?.description ?? '尚未描述'))));
+    else node.append(element('p', { class: 'muted' }, typeof module === 'string' ? module : '尚未形成描述。'));
     node.append(button('查看当前模块原始字段', () => inspectDocument('persona.get', { section }, title), 'link')); replace(content, node);
   }
   for (const [key, label] of modules) tabs.append(button(label, () => load(key), 'module-tab', { class: `module-tab${key === section ? ' active' : ''}`, dataset: { section: key } }));
@@ -267,14 +302,14 @@ function memoryRecord(record, open) {
   const text = record.recordType === 'deep' ? record.reference ?? record.textPreview ?? record.experience ?? '' : record.text ?? record.textPreview ?? record.summary ?? record.expansion ?? record.meaning ?? record.preview ?? record.anchorPreview ?? record.title ?? '';
   return element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, record.label ?? record.name ?? (record.recordType === 'deep' ? record.title : null) ?? ({ chat: '对话原件', memory: '记忆提炼', deep: '深刻记忆', code: '编码', relation_signature: '关系签名', relation_event: '关系事件', interpretation: '待解释', facet: '人格倾向', signature: '共同签名', habit: '习惯' })[record.recordType] ?? record.recordType ?? '记忆条目'), element('time', { class: 'record-time' }, record.sourceAt || record.createdAt || record.updatedAt ? date(record.sourceAt ?? record.createdAt ?? record.updatedAt) : '时间未提供')),
     element('p', { class: 'record-text' }, short(text, 360)), element('div', { class: 'record-meta' }, tag(({ assistant: 'AI 助手', user: '用户原话', system: '程序材料' })[role] ?? role ?? '提炼/解释', role === 'assistant' ? 'ai' : role === 'user' ? 'human' : ''), tag(memoryScopeLabel(record)), record.speakerId ? tag('发言者：' + record.speakerId) : null, record.epistemic ? tag(record.epistemic) : null),
-    element('div', { class: 'record-footer' }, element('code', { class: 'muted' }, short(record.id ?? record.recordId ?? '', 55)), button('查看详情 →', open, 'link')));
+    element('div', { class: 'record-footer' }, button('查看详情 →', open, 'link')));
 }
 async function memoryPage() {
   const container = element('div'), filters = element('div', { class: 'toolbar', role: 'search' }), resultArea = element('div');
   const query = field('memory-query', '搜索线索', '', { placeholder: '原话、记忆或编码中的文字', class: 'search' });
   const scope = field('memory-scope', '查询范围', 'all', { choices: [['all', '全部关系'], ['person', '指定人物'], ['global', '共同记忆'], ['unknown', '未知暂存']] });
   const person = field('memory-person', '关系人物', '', { choices: [['', '请选择人物'], ...state.people.map(item => [item.personId ?? item.id, item.displayName ?? item.personId ?? item.id])] });
-  const type = field('memory-type', '条目类型', '', { choices: [['', '全部类型'], ['chat', '对话原件'], ['memory', '记忆索引'], ['deep', '深刻记忆（人格参考）'], ['code', '编码'], ['relation_signature', '关系签名'], ['relation_event', '关系事件'], ['interpretation', '待解释'], ['facet', '人格倾向'], ['signature', '共同签名'], ['habit', '习惯']] });
+  const type = field('memory-type', '条目类型', state.view === 'deep' ? 'deep' : '', { choices: [['', '全部类型'], ['chat', '对话原件'], ['memory', '记忆索引'], ['deep', '深刻记忆（人格参考）'], ['code', '编码'], ['relation_signature', '关系签名'], ['relation_event', '关系事件'], ['interpretation', '待解释'], ['facet', '人格倾向'], ['signature', '共同签名'], ['habit', '习惯']] });
   let args = {}, pageNumber = 1, listGeneration = 0;
   async function openRecord(item) {
     const id = item.id ?? item.recordId;
@@ -300,7 +335,8 @@ async function memoryPage() {
   scope.input.addEventListener('change', () => { person.input.disabled = scope.input.value !== 'person'; if (scope.input.value === 'person' && !person.input.value) { listGeneration++; replace(resultArea, notice('请选择关系人物后查询。')); } else load().catch(showError); }); person.input.disabled = true;
   person.input.addEventListener('change', () => { if (scope.input.value === 'person') load().catch(showError); });
   type.input.addEventListener('change', () => { if (scope.input.value !== 'person' || person.input.value) load().catch(showError); });
-  query.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); load().catch(showError); } }); filters.append(query.wrapper, scope.wrapper, person.wrapper, type.wrapper, button('搜索', () => load(), 'primary'));
+  query.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); load().catch(showError); } }); filters.append(query.wrapper, button('搜索', () => load(), 'primary'));
+  const advancedFilters = disclosure({}, element('summary', {}, '筛选范围与类型'), element('div', { class: 'form-grid' }, scope.wrapper, person.wrapper, type.wrapper));
   const peopleQuery = field('people-query', '搜索已知人物', '', { placeholder: '姓名、别名或人物 ID' }), peopleResults = element('div');
   let peopleArgs = {}, peoplePage = 1, peopleGeneration = 0;
   async function loadPeople(cursor) {
@@ -308,14 +344,17 @@ async function memoryPage() {
     if (!cursor) { peopleArgs = { query: peopleQuery.input.value.trim(), pageSize: 15 }; peoplePage = 1; } else peoplePage++;
     const result = await request('people.list', { ...peopleArgs, ...(cursor ? { cursor } : {}) }); if (generation !== peopleGeneration) return;
     const rows = getItems(result), known = new Map([...state.people, ...rows].map(item => [item.personId ?? item.id, item])); state.people = [...known.values()].slice(-200);
-    replace(peopleResults, rows.length ? element('div', { class: 'people-list' }, rows.map(item => element('div', {}, button(item.displayName ?? item.personId, () => inspectDocument('relation.get', { personId: item.personId ?? item.id, section: 'all' }, '关系 · ' + (item.displayName ?? item.personId), { eyebrow: 'RELATIONSHIP' }), 'person-button', { class: 'person-button' }), button('筛选此人的记忆', async () => { const id = item.personId ?? item.id; if (![...person.input.options].some(option => option.value === id)) person.input.append(element('option', { value: id }, item.displayName ?? id)); person.input.value = id; person.input.disabled = false; scope.input.value = 'person'; await load(); }, 'link')))) : empty('没有匹配的已知人物', '这里不会按姓名自动创建或合并人物。'), paginator(result, loadPeople, { pageNumber: peoplePage }));
+    replace(peopleResults, rows.length ? element('div', { class: 'people-list' }, rows.map(item => element('div', {}, button(item.displayName ?? item.personId, () => inspectDocument('relation.get', { personId: item.personId ?? item.id, section: 'all' }, '关系 · ' + (item.displayName ?? item.personId), { eyebrow: 'RELATIONSHIP' }), 'person-button', { class: 'person-button' }), button('筛选此人的记忆', async () => { const id = item.personId ?? item.id; if (![...person.input.options].some(option => option.value === id)) person.input.append(element('option', { value: id }, item.displayName ?? id)); state.memoryPerson = { id, name: item.displayName ?? id }; await openSection('', false); }, 'link')))) : empty('没有匹配的已知人物', '这里不会按姓名自动创建或合并人物。'), paginator(result, loadPeople, { pageNumber: peoplePage }));
   }
   peopleQuery.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadPeople().catch(showError); } });
   const relations = card('人物与关系', '按真实人物列表分页。查看主观印象、编码与相处状态。', peopleQuery.wrapper, button('搜索人物', () => loadPeople(), 'secondary compact'), peopleResults);
-  const deepReference = card('深刻记忆', '重要经历保留在同一个模块中，痛苦、感动、快乐或矛盾都可以由人格自主理解。',
-    element('p', {}, '它是参考，不是自动触发器。是否想起、什么情境会勾起回忆以及怎样反应，由人格自己决定；也可以自主重释、淡化、合并、替换或修剪。'),
-    element('div', { class: 'row-actions' }, button('查看深刻记忆条目', async () => { query.input.value = ''; scope.input.value = 'all'; person.input.disabled = true; type.input.value = 'deep'; await load(); }, 'secondary'), button('查看深刻记忆模块', () => inspectDocument('persona.get', { section: 'deep' }, '深刻记忆 · 人格参考'), 'link')));
-  await Promise.all([load(), loadPeople()]); container.append(deepReference, filters, element('div', { class: 'two-pane' }, relations, resultArea)); return container;
+  const tabs = sectionTabs([['', '全部记忆'], ['deep', '深刻经历'], ['people', '认识的人']]);
+  container.append(tabs);
+  if (state.view === 'people') { await loadPeople(); container.append(relations); return container; }
+  if (state.memoryPerson) { const selected = state.memoryPerson; scope.input.value = 'person'; person.input.disabled = false; if (![...person.input.options].some(item => item.value === selected.id)) person.input.append(element('option', { value: selected.id }, selected.name)); person.input.value = selected.id; container.append(element('div', { class: 'active-filter' }, element('span', {}, '正在看：' + selected.name), button('查看所有人的记忆', async () => { state.memoryPerson = null; await openSection('', false); }, 'link'))); }
+  if (state.view === 'deep') container.append(element('p', { class: 'subtle-note' }, '人格保留的重要经历。是否回忆、怎样理解和修剪，仍由它自己决定。'), button('查看深刻记忆模块', () => inspectDocument('persona.get', { section: 'deep' }, '深刻记忆'), 'link'));
+  await load(); container.append(filters, advancedFilters, resultArea,
+    destinations(destination('成长记录', '查看已发生的整理与人格变化。', () => navigate('evolution')))); return container;
 }
 async function evolutionPage() {
   const content = element('div'), list = element('div'), filter = field('job-status', '作业状态', '', { choices: [['', '全部状态'], ['queued', '待执行'], ['running', '执行中'], ['paused', '已暂停'], ['prepared', '已准备'], ['committed', '已提交'], ['completed', '已完成'], ['failed', '失败'], ['invalidated', '已失效']] });
@@ -347,7 +386,10 @@ async function evolutionPage() {
   const to = field('history-to', '对比终点', '', { choices: [['', '当前人格'], ...versions.map(item => [String(item.version), `v${item.version}`])] });
   const comparison = card('已保留的人格历史', '历史容量有限；明确遗忘后的旧内容不会通过回滚恢复。', versions.length ? element('div', {}, element('div', { class: 'form-grid' }, from.wrapper, to.wrapper), element('div', { class: 'row-actions' }, button('查看前后对比', async () => { if (!from.input.value) throw new Error('请选择已保留的起点版本。'); await inspectDocument('history.diff', { fromVersion: Number(from.input.value), ...(to.input.value ? { toVersion: Number(to.input.value) } : {}) }, '人格历史前后对比', { eyebrow: 'EVOLUTION / DIFF' }); }, 'secondary'), button('回滚到起点版本', async () => { if (!from.input.value) throw new Error('请选择已保留版本。'); const result = await mutate('persona.rollback', { version: Number(from.input.value) }, { title: '回滚共同人格', description: '把所选已保留人格版本应用为一个新版本。只回滚支持的人格历史，不会撤销明确遗忘，也不等于整个记忆库恢复。', preview: { version: Number(from.input.value) }, danger: true, accept: '确认回滚' }); if (result) toast('回滚已返回实际结果。'); }, 'danger'))) : empty('尚无可对比的历史版本', '共同人格发生变更并保存历史后，这里才会出现真实版本。'));
   filter.input.addEventListener('change', () => load().catch(showError));
-  await load(); content.append(element('div', { class: 'toolbar' }, filter.wrapper, button('明确整理一批', () => control('consolidate'), 'primary')), notice('“已暂停”或“已准备”不等于完成。这里的执行段预算限制资源，不规定人格每天必须进化几次。'), list, card('管理操作回执', '已接收、执行中、已返回和结果未知分别显示。', operationArea), comparison); return content;
+  const tabs = sectionTabs([['', '整理进度'], ['history', '人格变化'], ['receipts', '手动操作']]);
+  if (state.view === 'history') return element('div', {}, tabs, comparison);
+  if (state.view === 'receipts') return element('div', {}, tabs, operationArea);
+  await load(); content.append(tabs, element('div', { class: 'toolbar' }, filter.wrapper, button('整理这批资料', () => control('consolidate'), 'secondary')), element('p', { class: 'subtle-note' }, '相续可以暂缓整理，也可以选择不改变任何内容。这里显示真实进度。'), list); return content;
 }
 const configGroups = [
   ['记忆与存储', [['longTermTargetChars', '长期文本总目标', '字符'], ['recentTargetChars', '近期视图目标', '字符'], ['recentPreferredDays', '近期优先天数', '天；不是永久保留保证'], ['tempTargetChars', '临时过程目标', '字符'], ['diskReserveBytes', '磁盘保留空间', 'bytes']]],
@@ -355,38 +397,65 @@ const configGroups = [
   ['整理输入与输出', [['processingLimits.consolidationInputChars', '新批每目标增量', '字符；不重切旧批'], ['processingLimits.consolidationContextChars', '旧记忆每页', '字符'], ['processingLimits.consolidationRequestTokens', '核心完整请求预算', '计数单位；缺 tokenizer 时标估算'], ['processingLimits.consolidationOutputTokens', '整理输出预留', 'tokens'], ['processingLimits.controlOutputTokens', '控制输出预留', 'tokens'], ['processingLimits.replyOutputTokens', '回复输出预留', 'tokens']]],
   ['作业执行容量', [['processingLimits.consolidationCallsPerSegment', '单执行段调用尝试', '跨全部子批共享；不是每日频率'], ['processingLimits.maxQueuedConsolidations', '最大排队作业', '个'], ['processingLimits.maxTargetsPerJob', '每作业最多目标', '个']]],
   ['普通注入预算', [['contextBudget.totalTokens', '动态人格材料总预算', '计数单位'], ['contextBudget.environmentTokens', '环境', '计数单位'], ['contextBudget.anchorTokens', '身份基调', '计数单位'], ['contextBudget.personaTokens', '人格', '计数单位'], ['contextBudget.habitTokens', '习惯', '计数单位'], ['contextBudget.relationTokens', '关系', '计数单位'], ['contextBudget.retrievalTokens', '检索', '计数单位'], ['contextBudget.deepMemoryTokens', '深刻记忆参考', '计数单位；仍受总预算约束，不表示已触发回忆']]],
-  ['条目容量', [['artifactLimits.axes', '人格坐标', '个'], ['artifactLimits.tendencyFacets', '倾向', '个'], ['artifactLimits.boundaryFacets', '软边界', '个'], ['artifactLimits.signatures', '共同签名', '个'], ['artifactLimits.habits', '习惯', '个'], ['artifactLimits.impressionSignaturesPerPerson', '每人印象签名', '个'], ['artifactLimits.indexItemsPerPerson', '每人索引', '个'], ['artifactLimits.codesPerScope', '每范围编码', '个'], ['artifactLimits.interpretationsPerPerson', '每人待解释', '个'], ['artifactLimits.relationEventsPerPerson', '每人关系事件', '个'], ['artifactLimits.deepMemories', '深刻记忆条目', '个；满容量不自动替人格选取舍'], ['artifactLimits.deepMemoryChars', '深刻记忆文本总量', '字符；仍受实例容量约束']]],
+  ['条目容量', [['artifactLimits.axes', '性格维度', '个'], ['artifactLimits.tendencyFacets', '倾向', '个'], ['artifactLimits.boundaryFacets', '软边界', '个'], ['artifactLimits.signatures', '共同签名', '个'], ['artifactLimits.habits', '习惯', '个'], ['artifactLimits.impressionSignaturesPerPerson', '每人印象签名', '个'], ['artifactLimits.indexItemsPerPerson', '每人索引', '个'], ['artifactLimits.codesPerScope', '每范围编码', '个'], ['artifactLimits.interpretationsPerPerson', '每人待解释', '个'], ['artifactLimits.relationEventsPerPerson', '每人关系事件', '个'], ['artifactLimits.deepMemories', '深刻记忆条目', '个；满容量不自动替人格选取舍'], ['artifactLimits.deepMemoryChars', '深刻记忆文本总量', '字符；仍受实例容量约束']]],
   ['有限历史与诊断', [['retention.snapshotMaxRequests', '快照保留数量', '条'], ['retention.personaHistoryMaxVersions', '人格历史版本', '个'], ['retention.journalMaxBytes', '运行日志与工作区', 'bytes'], ['retention.backupMaxBytes', '维护备份容量', 'bytes']]],
 ];
 const getPath = (object, path) => path.split('.').reduce((value, key) => value?.[key], object);
 function setPath(object, path, value) { const keys = path.split('.'); let node = object; for (const key of keys.slice(0, -1)) node = node[key] ??= {}; node[keys.at(-1)] = value; }
 async function settingsPage() {
+  const instanceId = state.instanceId, generation = state.generation, alive = () => state.instanceId === instanceId && state.page === 'settings' && state.generation === generation;
   const container = element('div'), current = state.status.available ? await request('config.get') : null;
+  if (!state.view) return element('div', {}, destinations(
+    destination('人格与记忆库', '启用或切换人格，设置启动时的加载方式。', () => openSection('instances')),
+    destination('交流与时间', '时区，以及整理机会的呈现方式。', () => openSection('general')),
+    destination('整理资料助手', '可选的资料保真建议，由人格决定是否采纳。', () => openSection('assistant'), current ? current.reviewAssistant?.enabled ? '已开启' : '已关闭' : '加载后查看'),
+    destination('容量与模型预算', '按需要调整资源上限，通常保持默认即可。', () => openSection('budgets')),
+    destination('数据维护与诊断', '备份、恢复、校验以及运行诊断。', () => navigate('maintenance'))));
+  if (state.view === 'assistant') return current ? reviewAssistantSettings(current) : empty('先启用当前人格', '启用后即可保存这套人格的助手设置。');
   const instances = await request('instances.list', { instanceId: undefined }); state.instances = instanceItems(instances); updateInstanceBar();
-  const instanceCards = state.instances.map(item => element('article', { class: `record instance-card${item.id === state.instanceId ? ' active' : ''}` }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.name ?? item.id), pill(item.loaded ? 'running' : 'paused')), element('div', { class: 'record-meta' }, tag(item.id), item.active ? tag('新会话默认实例') : null, item.id === state.instanceId ? tag('正在查看') : null), element('div', { class: 'instance-path' }, item.memoryRoot), element('div', { class: 'row-actions' },
+  const instanceCards = state.instances.map(item => element('article', { class: `record instance-card${item.id === state.instanceId ? ' active' : ''}` }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.name ?? item.id), pill(item.loaded ? 'running' : 'paused')), element('div', { class: 'record-meta' }, item.active ? tag('新会话默认实例') : null, item.id === state.instanceId ? tag('正在查看') : null), element('div', { class: 'instance-path' }, item.memoryRoot), element('div', { class: 'row-actions' },
     button(item.loaded ? '停用实例' : '加载实例', async () => { const result = await mutate(item.loaded ? 'instances.unload' : 'instances.load', { instanceId: item.id }, { title: item.loaded ? '停用这个人格实例' : '加载这个人格实例', description: item.loaded ? '停止此实例的接收、调度和写入，释放写者；保留原记忆目录。进行中的对话或整理会阻止切换。' : '从已登记目录加载实例，恢复其真实持久状态，并停用当前其他实例。一个目录只允许一个活动写者。', preview: { instanceId: item.id, memoryRoot: item.memoryRoot }, refresh: false }); if (result) { if (!item.loaded) state.instanceId = result.activeInstanceId ?? item.id; await connect(); } }, item.loaded ? 'secondary compact' : 'primary compact'),
     !item.active ? button('切换到此实例', async () => { const result = await mutate('instances.select', { instanceId: item.id }, { title: '切换人格实例', description: '停用当前实例并加载所选目录，作为后续人格会话使用的实例。不迁移或合并旧记录；对话或整理执行中会拒绝切换。', preview: { instanceId: item.id, memoryRoot: item.memoryRoot }, refresh: false }); if (result) { state.instanceId = result.activeInstanceId ?? item.id; await connect(); } }, 'secondary compact') : null)));
   const newName = field('instance-new-name', '显示名称', '', { placeholder: '例如 日常相续' }), newRoot = field('instance-new-root', '记忆目录绝对路径', '', { placeholder: 'C:\\Users\\...\\persona-new', hint: '使用独立目录。更换实例不等于移动、合并或覆盖旧数据；实例编号由服务生成。' });
   const autoLoad = element('input', { type: 'checkbox', id: 'instance-auto-load', checked: Boolean(instances.autoLoad) });
-  container.append(card('加载与实例', '实例决定使用哪一套持久记忆；预设决定哪些 DSH 会话接入。', notice('暂停主动只停止主动机制；停用实例才停止此实例的接收、调度和写入。同一时间只加载一个实例；切换 DSH 预设不会自动删除人格数据。'), element('div', { class: 'record-list' }, instanceCards), element('hr', { class: 'divider' }), element('h3', {}, '启动时的加载方式'), element('label', { class: 'field-checkbox' }, autoLoad, 'DSH 下次启动时自动加载已选实例'), button('应用加载方式', async () => { const target = instances.selectedInstanceId ?? instances.activeInstanceId; if (!target) throw new Error('请先登记并选择实例。'); const result = await mutate('instances.load', { instanceId: target, autoLoad: autoLoad.checked }, { title: '应用启动加载方式', description: '本次会重新加载已选实例，并保存下次启动是否自动加载的选择。关闭自动加载不会删除数据，当前这次仍会加载。', preview: { instanceId: target, autoLoad: autoLoad.checked }, refresh: false }); if (result) { state.instanceId = target; await connect(); } }, 'secondary'), element('hr', { class: 'divider' }), element('h3', {}, '从独立目录加载一个实例'), newName.wrapper, newRoot.wrapper, button('登记并加载', async () => { if (!newRoot.input.value.trim()) throw new Error('请填写绝对记忆目录。'); const result = await mutate('instances.load', { name: newName.input.value.trim() || '相续人格', memoryRoot: newRoot.input.value.trim() }, { title: '登记并加载实例', description: '打开所选目录的记忆，或在不存在数据的独立目录初始化新实例；当前其他实例会停用。不复制测试经历，也不自动合并已有记忆。', preview: { name: newName.input.value || '相续人格', memoryRoot: newRoot.input.value }, refresh: false }); if (result) { state.instanceId = result.activeInstanceId ?? result.selectedInstanceId; await connect(); } }, 'primary')));
+  if (['instances', 'startup', 'new-instance'].includes(state.view)) {
+    if (state.view === 'instances') container.append(card('已保存的人格', '启用决定哪套记忆实际运行；查看不会自动切换。', element('div', { class: 'record-list' }, instanceCards)), destinations(
+      destination('启动时加载', '设置下次启动是否自动启用已选人格。', () => openSection('startup')),
+      destination('使用其他记忆库', '打开已有的独立目录，或新建一套人格数据。', () => openSection('new-instance'))));
+    if (state.view === 'startup') container.append(card('启动时加载', '保存时会重新加载已选人格，并记住下次启动的选择；不会删除或合并记忆。', element('label', { class: 'field-checkbox' }, autoLoad, '下次启动 DSH 时自动启用已选人格'), button('保存并加载', async () => { const target = instances.selectedInstanceId ?? instances.activeInstanceId; if (!target) throw new Error('请先登记并选择实例。'); const result = await mutate('instances.load', { instanceId: target, autoLoad: autoLoad.checked }, { title: '应用启动加载方式', description: '本次会重新加载已选实例，并保存下次启动是否自动加载的选择。关闭自动加载不会删除数据，当前这次仍会加载。', preview: { instanceId: target, autoLoad: autoLoad.checked }, refresh: false }); if (result) { state.instanceId = target; await connect(); } }, 'secondary')));
+    if (state.view === 'new-instance') container.append(card('使用其他记忆库', '选择独立目录。已有数据会加载；空目录会初始化新的人格，不合并旧记忆。', newName.wrapper, newRoot.wrapper, button('登记并加载', async () => { if (!newRoot.input.value.trim()) throw new Error('请填写绝对记忆目录。'); const result = await mutate('instances.load', { name: newName.input.value.trim() || '相续人格', memoryRoot: newRoot.input.value.trim() }, { title: '登记并加载实例', description: '打开所选目录的记忆，或在不存在数据的独立目录初始化新实例；当前其他实例会停用。不复制测试经历，也不自动合并已有记忆。', preview: { name: newName.input.value || '相续人格', memoryRoot: newRoot.input.value }, refresh: false }); if (result) { state.instanceId = result.activeInstanceId ?? result.selectedInstanceId; await connect(); } }, 'primary')));
+    return container;
+  }
   if (!current) { container.append(notice('当前查看的实例未加载，加载后可修改其技术配置。', 'warning')); return container; }
-  const form = element('div', { role: 'form', 'aria-label': '技术设置' }), inputs = new Map(), timezone = field('settings-timezone', '现实时间的时区', current.timezone, { required: true, placeholder: 'Asia/Shanghai', hint: 'IANA 时区名称；不从目录名推测。' }), mode = field('settings-mode', '整理机会的呈现方式', current.consolidationMode, { choices: [['sleep', 'sleep · 睡眠整理方式'], ['on_write', 'on_write · 写后合并机会']] });
-  form.append(notice('人格自行选择必要时 run / defer，各模块都允许不变。这里不设置主动次数、最小社交间隔、印象门槛、强制睡眠或固定进化周期。'), element('div', { class: 'form-grid' }, timezone.wrapper, mode.wrapper), notice('sleep：人格选择本次整理与睡眠，也可以只休息或清醒整理。on_write：写后合并机会，在正常人格轮由它选择，不是每写一条自动付费。两种方式沿用已有来源与消费游标。'));
-  for (const [title, definitions] of configGroups) {
+  const form = element('div', { role: 'form', 'aria-label': '技术设置' }), inputs = new Map(), timezone = field('settings-timezone', '现实时间的时区', current.timezone, { required: true, placeholder: 'Asia/Shanghai', hint: '例如 Asia/Shanghai（中国标准时间），或 UTC。' }), mode = field('settings-mode', '什么时候提供整理机会', current.consolidationMode, { choices: [['sleep', '休息时为主，也可清醒整理'], ['on_write', '有新资料时提供机会']] });
+  form.append(element('p', { class: 'subtle-note' }, '这里只设置时间与整理机会。什么时候真正整理、记住什么、是否改变，由相续自己决定。'), element('div', { class: 'form-grid' }, timezone.wrapper, mode.wrapper), element('p', { class: 'subtle-note' }, '提供机会不等于立即整理，也不会因为新增一条资料就自动付费调用。'));
+  if (state.budgetDraft?.instanceId !== state.instanceId) state.budgetDraft = { instanceId: state.instanceId, values: {} };
+  const budgetDraft = state.budgetDraft.values;
+  const captureBudgetDraft = () => { for (const [path, input] of inputs) { if (input.value !== String(getPath(current, path))) budgetDraft[path] = input.value; else delete budgetDraft[path]; } };
+  const groupChoice = field('settings-budget-group', '要调整哪一类', state.configGroup, { choices: configGroups.map(([title], index) => [String(index), title]) });
+  groupChoice.input.addEventListener('change', async () => { if (!alive()) return; captureBudgetDraft(); state.configGroup = groupChoice.input.value; await renderPage(); });
+  if (state.view === 'budgets') { replace(form, groupChoice.wrapper, element('p', { class: 'subtle-note' }, '只显示所选类别。切换类别会保留未保存值；保存提交所有已改动类别，不自动裁剪记忆。')); }
+  for (const [index, [title, definitions]] of configGroups.entries()) {
+    if (state.view !== 'budgets' || String(index) !== state.configGroup) continue;
     const group = element('fieldset', { class: 'form-section' }, element('legend', {}, title)), grid = element('div', { class: 'form-grid wide' });
-    for (const [path, label, hint] of definitions) { const input = field('config-' + path.replaceAll('.', '-'), label, getPath(current, path), { type: 'number', min: /^(capacityLimits|processingLimits)\./.test(path) ? 1 : 0, hint }); inputs.set(path, input.input); grid.append(input.wrapper); }
+    for (const [path, label, hint] of definitions) { const input = field('config-' + path.replaceAll('.', '-'), label, budgetDraft[path] ?? getPath(current, path), { type: 'number', min: /^(capacityLimits|processingLimits)\./.test(path) ? 1 : 0, hint }); inputs.set(path, input.input); grid.append(input.wrapper); }
     group.append(grid); form.append(group);
   }
   async function saveSettings() {
+    if (!alive()) return;
     const partial = {};
     if (timezone.input.value.trim() !== current.timezone) partial.timezone = timezone.input.value.trim();
     if (mode.input.value !== current.consolidationMode) partial.consolidationMode = mode.input.value;
+    if (state.view === 'budgets') { captureBudgetDraft(); for (const [path, raw] of Object.entries(budgetDraft)) { const value = Number(raw), min = /^(capacityLimits|processingLimits)\./.test(path) ? 1 : 0; if (!raw.trim() || !Number.isSafeInteger(value) || value < min) throw new Error('请修正未保存的容量值：' + path); if (value !== getPath(current, path)) setPath(partial, path, value); } }
     for (const [path, input] of inputs) { const value = Number(input.value); if (!input.value.trim() || !Number.isSafeInteger(value) || value < Number(input.min)) throw new Error('请输入有效整数：' + path); if (value !== getPath(current, path)) setPath(partial, path, value); }
     if (!Object.keys(partial).length) { toast('没有配置变更。'); return; }
-    await mutate('config.update', { config: partial }, { title: '保存技术设置', description: '仅更新列出的技术配置。容量缩小不会自动裁剪记忆或替人格决定遗忘；超限操作会按实际约束拒绝。', preview: partial, success: '配置已返回实际保存结果。' });
+    await request('config.update', { instanceId, config: partial });
+    if (!alive()) return;
+    if (state.view === 'budgets') state.budgetDraft = null;
+    toast('设置已保存。'); await renderPage();
   }
   form.append(element('div', { class: 'form-footer' }, element('p', {}, '设置作用于当前选定实例。请求预算估算不等于供应商精确 token 计费。'), button('保存设置', saveSettings, 'primary', { dataset: { action: 'save-settings' } })));
-  container.append(reviewAssistantSettings(current), element('details', { class: 'advanced-section' }, element('summary', {}, '高级：容量与模型预算'), element('div', { class: 'advanced-body' }, card('技术设置', '资源边界有明确上限，改变配置不等于改变人格观点。', form)))); return container;
+  container.append(form); return container;
 }
 
 function reviewAssistantSettings(config) {
@@ -401,8 +470,7 @@ function reviewAssistantSettings(config) {
     if (!output.input.value || !Number.isSafeInteger(values.maxOutputTokens) || values.maxOutputTokens < 1 || values.maxOutputTokens > 8192 || !report.input.value || !Number.isSafeInteger(values.maxReportChars) || values.maxReportChars < 1 || values.maxReportChars > 16000) throw new Error('请输入有效的助手输出与建议容量。');
     const changed = Object.fromEntries(Object.entries(values).filter(([key, value]) => value !== current[key]));
     if (!Object.keys(changed).length) return toast('整理助手设置没有变化。');
-    const confirmed = await confirmOperation({ title: '保存整理资料助手设置', description: '开启后，已选整理可以沿用 DSH 当前模型进行额外调用，只提供资料保真建议；最终怎样理解和记忆仍由人格决定。保存本身不会启动整理。', preview: changed, accept: '保存设置' });
-    if (!confirmed || !alive()) return;
+    if (!alive()) return;
     await request('config.update', { instanceId, config: { reviewAssistant: changed } });
     if (!alive()) return; toast('整理资料助手设置已保存。'); await renderPage();
   }, 'secondary');
@@ -428,9 +496,11 @@ async function copyText(text, message = '内容已复制。') {
 function safeImageData(value) { return typeof value === 'string' && /^data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(value); }
 const capabilityNames = { 'chat.text': '发送文字', 'chat.image': '发送图片', 'chat.video': '发送视频', 'chat.file': '发送文件', 'chat.voice': '发送语音消息', 'chat.sticker': '使用表情与表情包', 'message.reply': '引用消息', 'message.retract': '撤回自己的消息', 'contacts.read': '读取联系人', 'groups.read': '读取群列表', 'friend.manage': '处理好友请求', 'group.manage': '群管理', 'profile.update': '修改账号资料', 'feed.read': '查看动态／朋友圈', 'feed.publish': '发布动态／朋友圈', 'feed.react': '动态点赞与评论', 'call.voice': '实时语音通话', 'call.video': '实时视频通话' };
 async function permissionsPanel(id) {
+  const instanceId = state.instanceId, generation = state.generation, alive = () => state.instanceId === instanceId && state.page === 'chat' && state.generation === generation;
+  const permissionRequest = (action, args = {}) => request(action, { ...args, instanceId });
   const content = element('div');
   try {
-    const result = await request('permissions.inspect', { id });
+    const result = await permissionRequest('permissions.inspect', { id });
     if (!Array.isArray(result.items)) throw new Error('渠道未返回可核对的能力目录。');
     const inputs = new Map(), rows = result.items.map(item => {
       const name = item.label ?? capabilityNames[item.id] ?? item.id;
@@ -439,9 +509,14 @@ async function permissionsPanel(id) {
     });
     content.append(element('p', { class: 'small muted' }, '权限只决定已接入工具能做什么；是否使用、关注谁和怎样交流仍由相续自己选择。平台不支持的能力不会因为勾选而生效。'),
       element('div', { class: 'permission-scroll' }, element('table', { class: 'permission-table' }, element('thead', {}, element('tr', {}, ['能力', '平台支持', '用户许可', '当前可用'].map(text => element('th', { scope: 'col' }, text)))), element('tbody', {}, rows))),
-      button('保存这些权限', async () => { await request('permissions.configure', { id, allowed: [...inputs].filter(([, input]) => input.checked).map(([key]) => key) }); toast('权限已保存。'); await renderPage(); }, 'secondary'));
-    const saved = await request('permissions.list', { id });
-    if (Array.isArray(saved.items) && saved.items.length) content.append(element('details', { class: 'advanced-section' }, element('summary', {}, '已保存账号权限'), element('div', { class: 'advanced-body record-list' }, saved.items.map(item => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.accountId), tag((item.allowed ?? []).length + ' 项已保存许可')), element('p', { class: 'small muted' }, '上次设置 ' + date(item.updatedAt)), button('恢复该账号默认权限', async () => { const confirmation = await confirmOperation({ title: '恢复该账号默认权限', description: '移除该账号在当前人格中的授权选择，恢复渠道默认许可：文字，以及渠道中已开启的语音。不会删除聊天记忆或自动断开账号。', preview: { accountId: item.accountId }, accept: '恢复默认权限' }); if (!confirmation) return; await request('permissions.reset', { id, accountId: item.accountId }); toast('该账号权限已恢复默认。'); await renderPage(); }, 'secondary compact'))))));
+      button('保存这些权限', async () => {
+        if (!alive()) return;
+        const allowed = [...inputs].filter(([, input]) => input.checked).map(([key]) => key), added = allowed.filter(key => !result.items.some(item => item.id === key && item.allowed === true));
+        if (added.length) { const confirmed = await confirmOperation({ title: '允许更多账号操作', description: '以下操作将获得你的许可。平台仍需实际支持；是否使用由相续自己决定。', preview: { 新增许可: added.map(key => capabilityNames[key] ?? key) }, accept: '允许并保存' }); if (!confirmed || !alive()) return; }
+        await permissionRequest('permissions.configure', { id, allowed }); if (!alive()) return; toast('权限已保存。'); await renderPage();
+      }, 'primary'));
+    const saved = await permissionRequest('permissions.list', { id });
+    if (Array.isArray(saved.items) && saved.items.length) content.append(element('details', { class: 'advanced-section' }, element('summary', {}, '已保存账号权限'), element('div', { class: 'advanced-body record-list' }, saved.items.map(item => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.accountId), tag((item.allowed ?? []).length + ' 项已保存许可')), element('p', { class: 'small muted' }, '上次设置 ' + date(item.updatedAt)), button('恢复该账号默认权限', async () => { const confirmation = await confirmOperation({ title: '恢复该账号默认权限', description: '移除该账号在当前人格中的授权选择，恢复渠道默认许可：文字，以及渠道中已开启的语音。不会删除聊天记忆或自动断开账号。', preview: { accountId: item.accountId }, accept: '恢复默认权限' }); if (!confirmation || !alive()) return; await permissionRequest('permissions.reset', { id, accountId: item.accountId }); toast('该账号权限已恢复默认。'); await renderPage(); }, 'secondary compact'))))));
   } catch (error) { content.append(notice(errorText(error), 'warning')); }
   return element('details', { class: 'advanced-section' }, element('summary', {}, '实际能力与权限'), element('div', { class: 'advanced-body' }, content));
 }
@@ -547,8 +622,7 @@ async function socialIdentitiesPanel({ generation = state.generation, connection
     if (!alive()) return;
     const input = { platform: platform.input.value === 'other' ? custom.input.value.trim() : platform.input.value, accountId: account.input.value.trim(), displayName: name.input.value.trim(), accountType: type.input.value, profileUrl: profile.input.value.trim() || null, avatarUrl: avatar.input.value.trim() || null, notes: notes.input.value.trim() };
     if (!input.accountId) throw new Error('请填写平台账号 ID。'); if (!/^[a-z][a-z0-9_-]{0,47}$/.test(input.platform)) throw new Error('请填写有效的平台标识。');
-    const confirmed = await confirmOperation({ title: '保存独立社交账号档案', description: '只登记账号与当前人格的关联；不会自动登录、创建平台账号或获得发布、私信和通话权限。实际连接与能力将另行核实。', preview: input, accept: '保存档案' });
-    if (!confirmed || !alive()) return; await socialRequest('social.upsert', input); if (!alive()) return; formArea.open = false; toast('账号档案已保存，实际能力以连接核实为准。'); await load();
+    if (!alive()) return; await socialRequest('social.upsert', input); if (!alive()) return; formArea.open = false; toast('账号档案已保存，实际能力以连接核实为准。'); await load();
   }, 'secondary', { disabled: !state.status?.available });
   formArea.append(element('summary', {}, '登记或修改独立账号'), element('div', { class: 'advanced-body' }, element('div', { class: 'form-grid' }, platform.wrapper, custom.wrapper, account.wrapper, name.wrapper),
     element('p', { class: 'small muted' }, '账号由你在相应平台注册并完成所需认证。B站、抖音或其他平台没有适配器时，只保存身份参考，不会显示为已连接。'),
@@ -558,7 +632,7 @@ async function socialIdentitiesPanel({ generation = state.generation, connection
     if (!confirmed || !alive()) return; await socialRequest('social.linkCurrent', { platform }); if (!alive()) return; toast('已取得实际账号登记结果。'); await load();
   }, 'secondary', { disabled: !state.status?.available || !connections.some(item => item.id === platform && item.connected) });
   const content = card('账号与社交身份', '让同一个人格关联自己的平台账号；身份登记、连接和能力分别显示。',
-    element('p', {}, 'QQ／微信连接使用上方现有扫码或兼容桥。多个档案不代表同一平台能同时连接多个账号；目前每个平台只有一个活动连接。'),
+    element('p', {}, 'QQ／微信请返回“连接”，选择对应平台完成接入。多个档案不代表同一平台能同时连接多个账号；目前每个平台只有一个活动连接。'),
     element('div', { class: 'row-actions' }, link('qq'), link('wechat'), button('刷新账号实际状态', () => load('social.refresh', currentOffset), 'secondary', { disabled: !state.status?.available })), listing, formArea);
   if (!state.status?.available) { listing.append(notice('先加载人格实例，再查看或登记其社交身份。')); return content; }
   try { await load(); } catch (error) { if (alive()) listing.append(notice(errorText(error), 'warning')); }
@@ -572,13 +646,26 @@ async function chatPage() {
   const connections = Array.isArray(channels.connections) ? channels.connections : [];
   const platformName = value => ({ qq: 'QQ', wechat: '微信' })[value] ?? value;
   const statusName = value => ({ connected: '已连接', ready: '已就绪', connecting: '正在连接', disconnected: '尚未连接', disabled: '已停用', unconfigured: '尚未配置', unavailable: '暂不可用', error: '连接异常' })[value] ?? value;
-  container.append(element('p', { class: 'page-note' }, '选择平台后扫码授权，再选择接入范围。官方账号、个人号兼容桥和实际支持的能力分别显示；高级连接仍可手动配置。'));
+  if (!state.view) return destinations(
+    ...['qq', 'wechat'].map(id => { const item = connections.find(value => value.id === id), authorized = official.connections?.find(value => value.id === id); return destination(id === 'qq' ? 'QQ' : '微信', id === 'qq' ? '扫码连接独立 QQ Bot；个人账号可使用已有兼容桥。' : '官方扫码接入私聊；群聊需已有兼容桥支持。', () => openSection(item?.config?.mode === 'bridge' && item.configured ? id + '-bridge' : id), item?.connected ? '已连接' : authorized?.connected ? '已授权，待启用' : '未连接'); }),
+    destination('声音', '选择音色、试听，以及由谁决定声音。', () => openSection('voice')),
+    destination('社交身份', '登记人格的平台账号，核对连接与可用能力。', () => openSection('accounts')));
+  if (state.view === 'accounts') return socialIdentitiesPanel({ generation, connections });
+  if (['qq', 'wechat', 'qq-permissions', 'wechat-permissions'].includes(state.view)) {
+    const id = state.view.split('-')[0], connection = connections.find(value => value.id === id) ?? { id, enabled: false, connected: false, config: {} };
+    if (state.view.endsWith('-permissions')) { const panel = await permissionsPanel(id); panel.open = true; panel.disclosureButton.hidden = true; return panel; }
+    return element('div', {}, element('ol', { class: 'flow-steps' }, ['扫码授权', '选择私聊或群聊范围', '启用连接'].map(title => element('li', {}, title))),
+      await connectionWizard(id, connection, official.connections?.find(value => value.id === id), generation),
+      destinations(destination('能力与权限', '查看平台支持什么、当前账号允许什么。', () => openSection(id + '-permissions')),
+        destination('使用已有兼容桥', '已经部署 NapCat 或兼容桥时，在这里填写接入配置。', () => openSection(id + '-bridge'))));
+  }
+  if (state.view !== 'voice') {
   const parseIds = input => [...new Set(input.value.split(/[\s,，;；]+/u).map(value => value.trim()).filter(Boolean))];
   async function copyField(input, message) {
     try { await navigator.clipboard.writeText(input.value); toast(message); }
     catch { input.select(); toast('请复制已选中的内容。'); }
   }
-  for (const id of ['qq', 'wechat']) {
+  for (const id of [state.view.split('-')[0]]) {
     const connection = connections.find(value => value.id === id) ?? { id, configured: false, enabled: false, connected: false, status: 'unavailable', capabilities: {}, config: {} };
     const config = connection.config ?? {}, title = platformName(id), isWechat = id === 'wechat';
     const apiUrl = field('channel-' + id + '-url', '本地桥 API 地址', config.apiUrl ?? '', { placeholder: 'http://127.0.0.1:3000', hint: '填写已运行的本地桥地址；保存不会替你登录账号。' });
@@ -596,6 +683,7 @@ async function chatPage() {
       if (clearAccessToken.checked) patch.clearAccessToken = true;
       await request('channels.configure', { id, config: patch }); accessToken.input.value = ''; toast(title + '接入设置已保存。'); await renderPage();
     }, 'primary');
+    save.disabled = connection.enabled === true;
     const controls = element('div', { class: 'row-actions' }, save,
       button(connection.enabled ? '停用接入' : '启用已保存配置', async () => { await request(connection.enabled ? 'channels.stop' : 'channels.start', { id }); await renderPage(); }, 'secondary', { disabled: !connection.configured && !connection.enabled }),
       button('检查连接', async () => { await request('channels.probe', { id }); await renderPage(); }, 'secondary', { disabled: !connection.configured }));
@@ -623,18 +711,18 @@ async function chatPage() {
     const excludedInfo = Array.isArray(excluded) && excluded.length ? element('details', {}, element('summary', { class: 'small muted' }, '最近未接入的对象与群'), element('div', { class: 'record-list channel-details' }, excluded.slice(-10).map(value => element('div', { class: 'record' }, kv({ '对象 ID': value.senderId ?? value.userId ?? '—', '群 ID': value.roomId ?? value.groupId ?? '私聊', '时间': value.at ? date(value.at) : '未提供' }))))) : null;
     container.append(card(title, isWechat ? '私聊、群聊能力由实际接入的连接服务提供。' : '连接服务准备好后，可接入选定的私聊与群聊。',
       element('div', { class: 'row-actions channel-status' }, statusBadge, tag(config.mode === 'official' ? '官方连接' : '兼容桥')),
-      await connectionWizard(id, connection, official.connections?.find(value => value.id === id), generation),
-      await permissionsPanel(id),
+      destination('能力与权限', '核对这个账号实际支持且允许的操作。', () => openSection(id + '-permissions')),
       connection.error ? notice(connection.error.message ?? String(connection.error), 'error') : null,
-      element('details', { class: 'advanced-section' }, element('summary', {}, '高级：已有兼容桥，手动配置'), element('div', { class: 'advanced-body' },
+      element('section', { class: 'setup-form' }, element('h3', {}, '兼容桥设置'), element('div', { class: 'advanced-body' },
       element('p', { class: 'small muted' }, isWechat ? '需要兼容 OneBot 12 的微信连接服务。协议本身不提供账号登录或普通微信群聊。' : '需要 NapCat 等兼容 OneBot 11 的 QQ 连接服务；在该服务中完成账号登录。'),
-      capabilityTags, element('div', { class: 'form-grid' }, apiUrl.wrapper, account.wrapper), accessToken.wrapper,
+      connection.enabled ? notice('连接正在使用。修改前请先点“停用接入”，保存后再启用。') : null, capabilityTags, element('div', { class: 'form-grid' }, apiUrl.wrapper, account.wrapper), accessToken.wrapper,
       connection.hasAccessToken ? element('label', { class: 'field-checkbox' }, clearAccessToken, '明确清除已保存的 API 令牌') : null,
       element('div', { class: 'form-grid' }, privateIds.wrapper, groupIds.wrapper),
       element('p', { class: 'subtle-note' }, '这些列表只确定哪些对象和群接入人格；接入之后，是否回应、关注谁和怎样相处仍由人格自己判断。'),
       element('div', { class: 'channel-details' }, voiceMode.wrapper), controls, element('hr', { class: 'divider' }), bridgeDetails, excludedInfo))));
   }
-  container.append(await socialIdentitiesPanel({ generation, connections }));
+    return container;
+  }
   const voiceArea = element('div');
   try {
     const voice = await request('voice.inspect', { sessionKey: 'channel-voice' });
@@ -663,7 +751,6 @@ async function chatPage() {
   } catch (error) { voiceArea.append(notice(errorText(error), 'warning')); }
   container.append(card('语音与音色', '使用本机语音合成，再由实际支持语音的聊天渠道交付。', voiceArea,
     element('p', { class: 'subtle-note' }, '文字与语音的实际发送能力以渠道桥返回为准。音色由人格自主选择或由你指定；试听不会写入聊天记忆。')));
-  container.append(element('details', { class: 'advanced-section' }, element('summary', {}, '开发信息：后续扩展接口'), element('div', { class: 'advanced-body' }, element('p', { class: 'small muted' }, 'Telegram、个人网页目前仅保留接口，尚未连接或开启服务。'))));
   return container;
 }
 
@@ -673,11 +760,17 @@ async function mediaPage() {
   const mediaRequest = (action, args = {}) => request(action, { ...args, instanceId });
   const view = await mediaRequest('media.inspect', { includeConfiguration: true });
   const identity = view.identity ?? {}, limits = view.limits ?? {}, container = element('div');
-  const assets = await mediaRequest('media.listAssets', { limit: 12 });
+  const providers = Array.isArray(view.providers) ? view.providers : [];
+  if (!state.view) return element('div', {}, element('p', { class: 'page-note' }, identity.primaryAssetId ? '已保存主参考形象，创作时可沿用。' : '先留下形象描述或参考图，让后续作品有一致的形象。'),
+    button(providers.some(item => item.enabled && item.configured && item.capabilities?.generate) ? '开始创作' : '连接图片服务', () => openSection(providers.some(item => item.enabled && item.configured && item.capabilities?.generate) ? 'create' : 'provider-image'), 'primary'),
+    destinations(destination('形象档案', '外貌描述、参考图，以及谁可以修改。', () => openSection('identity')),
+      destination('作品与任务', '查看已保存的作品和生成进度。', () => openSection('gallery')),
+      ...['image', 'video'].map(kind => { const provider = providers.find(item => item.kind === kind); return destination(kind === 'image' ? '图片服务' : '视频服务', kind === 'image' ? '连接 Images API 或 ComfyUI。' : '连接已部署的 ComfyUI 视频工作流。', () => openSection('provider-' + kind), provider?.enabled && provider?.configured ? '已开启' : '未开启'); })));
+  const assets = state.view === 'gallery' ? await mediaRequest('media.listAssets', { limit: 12 }) : { items: [] };
   const description = field('identity-description', '形象描述', identity.description ?? '', { multiline: true, hint: '用于保持角色身份的外貌描述；动作、衣服与场景可以在每次创作时变化。' });
   const locked = element('input', { type: 'checkbox', checked: identity.locked === true });
   const primary = element('div', { class: 'identity-primary' });
-  if (identity.primaryAssetId) {
+  if (identity.primaryAssetId && state.view === 'identity') {
     try { const asset = await mediaRequest('media.getAsset', { assetId: identity.primaryAssetId, preview: true }); primary.append(safeImageData(asset.dataUrl) ? element('img', { src: asset.dataUrl, alt: '当前形象主参考图', class: 'identity-reference' }) : notice('主参考图已保存。原图超过预览容量时，可下载原文件查看。'), element('p', { class: 'small muted' }, '主参考 · ' + (asset.name ?? asset.assetId ?? identity.primaryAssetId)), element('div', { class: 'row-actions' }, button('下载主参考原文件', () => request('ui.asset.download', { assetId: identity.primaryAssetId, instanceId }), 'secondary compact'), button('取消主参考选择，保留图片', async () => { await mediaRequest('media.updateIdentity', { primaryAssetId: null }); if (life.alive()) { toast('已取消主参考选择，图片仍保留在图库。'); await renderPage(); } }, 'subtle compact'))); }
     catch (error) { primary.append(notice(errorText(error), 'warning')); }
   } else primary.append(empty('尚未选择主参考图', '上传一张图，或在生成作品后将其设为主参考。后续创作会沿用所选形象参考。'));
@@ -700,13 +793,14 @@ async function mediaPage() {
       await mediaRequest('media.uploadFinish', { uploadId, setAsPrimary: setAsPrimary.checked }); uploadId = null; if (!life.alive()) return; toast('参考图已保存。'); await renderPage();
     } finally { if (uploadId) { try { await mediaRequest('media.uploadCancel', { uploadId }); } catch {} } }
   }
-  container.append(card('形象档案', '主参考图、描述和版本保存在当前人格实例；图库按需读取，不会每轮全量送入模型。',
+  if (state.view === 'identity') container.append(card('形象档案', '主参考图、描述和版本保存在当前人格实例；图库按需读取，不会每轮全量送入模型。',
     kv({ '当前版本': identity.version == null ? '尚未建立' : 'v' + identity.version, '主参考': identity.primaryAssetId ?? '未选择' }), primary, description.wrapper,
     element('label', { class: 'field-checkbox' }, locked, '锁定形象档案：人格工具不能修改主参考和形象描述（你仍可在这里修改）'),
     button('保存形象设置', async () => { if (Array.from(description.input.value).length > (limits.descriptionChars ?? 2048)) throw new Error('形象描述超过技术容量，请缩短后保存。'); await mediaRequest('media.updateIdentity', { description: description.input.value, locked: locked.checked }); toast('形象设置已保存。'); await renderPage(); }, 'primary'),
-    element('details', { class: 'advanced-section' }, element('summary', {}, '上传参考图片'), element('div', { class: 'advanced-body' }, element('label', { class: 'field' }, element('span', {}, 'PNG / JPEG / WebP 参考图'), upload), element('label', { class: 'field-checkbox' }, setAsPrimary, '保存后设为当前主参考'), button('上传并保存参考图', uploadReference, 'secondary'), uploadProgress))));
-  const providers = Array.isArray(view.providers) ? view.providers : [];
+    element('section', { class: 'upload-section' }, element('h3', {}, '上传参考图片'), element('div', { class: 'advanced-body' }, element('label', { class: 'field' }, element('span', {}, 'PNG / JPEG / WebP 参考图'), upload), element('label', { class: 'field-checkbox' }, setAsPrimary, '保存后设为当前主参考'), button('上传并保存参考图', uploadReference, 'secondary'), uploadProgress))));
+  if (state.view === 'identity') return container;
   for (const kind of ['image', 'video']) {
+    if (state.view !== 'provider-' + kind) continue;
     const current = providers.find(item => item.kind === kind) ?? { kind, enabled: false, type: kind === 'image' ? 'openai-images' : 'comfyui', capabilities: {} }, name = kind === 'image' ? '图片' : '视频';
     const enabled = element('input', { type: 'checkbox', checked: current.enabled === true, disabled: current.configured !== true && current.enabled !== true, role: 'switch', 'aria-label': '启用' + name + '生成', onchange: async event => { const input = event.currentTarget, requested = input.checked; input.checked = current.enabled === true; input.disabled = true; try { await mediaRequest('media.configureProvider', { kind, config: { enabled: requested } }); if (life.alive()) { toast(name + '生成已' + (requested ? '开启。' : '关闭。')); await renderPage(); } } catch (error) { showError(error); } finally { if (input.isConnected) input.disabled = current.configured !== true && current.enabled !== true; } } });
     const type = field('media-' + kind + '-type', '服务类型', current.type, { choices: kind === 'image' ? [['openai-images', '兼容 Images API'], ['comfyui', 'ComfyUI 工作流']] : [['comfyui', 'ComfyUI 视频工作流']] });
@@ -725,14 +819,14 @@ async function mediaPage() {
     const updateType = () => { openaiOptions.hidden = type.input.value !== 'openai-images'; comfyOptions.hidden = type.input.value !== 'comfyui'; }; type.input.addEventListener('change', updateType); updateType();
     const feedback = element('div');
     container.append(card(name + '生成服务', kind === 'video' ? '独立可选；需要已部署并验证可运行的视频工作流。' : '独立可选；开启后相续可按需调用，保存配置不会自动生成。',
-      element('label', { class: 'field-checkbox' }, enabled, '启用' + name + '生成'),
-      !current.configured ? element('p', { class: 'small muted' }, '先在下方配置服务，保存后再开启。未开启时不会向服务提交生成任务。') : null,
+      current.configured ? element('label', { class: 'field-checkbox' }, enabled, '启用' + name + '生成') : null,
+      !current.configured ? element('p', { class: 'small muted' }, '填写服务地址和所需配置，点击“保存并启用”后，相续即可自主使用。实际创作可能产生服务费用。') : null,
       element('p', { class: 'small muted' }, '当前能力：' + (current.capabilities?.generate ? '配置可提交生成' : '尚未就绪') + '；' + (current.capabilities?.reference ? '支持形象参考' : '尚未支持形象参考') + '。实际结果以服务回执为准。'),
-      element('details', { class: 'advanced-section' }, element('summary', {}, current.configured ? '修改已保存的服务配置' : '配置' + name + '服务'), element('div', { class: 'advanced-body' }, type.wrapper, baseUrl.wrapper, apiKey.wrapper,
+      element('section', { class: 'setup-form' }, element('h3', {}, '连接配置'), element('div', { class: 'advanced-body' }, type.wrapper, baseUrl.wrapper, apiKey.wrapper,
       current.hasApiKey ? element('label', { class: 'field-checkbox' }, clearKey, '明确清除已保存的密钥') : null, referenceMode.wrapper, openaiOptions, comfyOptions,
-      element('div', { class: 'row-actions' }, button('保存' + name + '服务', async () => {
+      element('div', { class: 'row-actions' }, button(current.configured ? '保存' + name + '服务' : '保存并启用' + name + '服务', async () => {
         if (apiKey.input.value && clearKey.checked) throw new Error('不能同时填写新密钥并清除密钥。');
-        const config = { enabled: enabled.checked, type: type.input.value, baseUrl: baseUrl.input.value.trim(), referenceMode: referenceMode.input.value, allowRemote: /^https:\/\//i.test(baseUrl.input.value.trim()) };
+        const config = { enabled: current.configured ? enabled.checked : true, type: type.input.value, baseUrl: baseUrl.input.value.trim(), referenceMode: referenceMode.input.value, allowRemote: /^https:\/\//i.test(baseUrl.input.value.trim()) };
         if (apiKey.input.value) config.apiKey = apiKey.input.value; if (clearKey.checked) config.clearApiKey = true;
         if (type.input.value === 'openai-images') { config.model = model.input.value.trim(); config.referenceMode = referenceMode.input.value; config.editTransport = editTransport.input.value; config.downloadOrigins = downloadOrigins.input.value.split(/[\s,，]+/u).filter(Boolean); }
         else { if (workflow.input.value.trim()) { try { config.workflow = JSON.parse(workflow.input.value); } catch { throw new Error('工作流 JSON 格式无效。'); } } config.promptNode = promptNode.input.value.trim(); config.promptInput = promptInput.input.value.trim() || 'text'; config.referenceNode = referenceNode.input.value.trim(); config.referenceInput = referenceInput.input.value.trim() || 'image'; config.outputNodeIds = outputs.input.value.split(/[\s,，]+/u).filter(Boolean); }
@@ -740,6 +834,7 @@ async function mediaPage() {
         await mediaRequest('media.configureProvider', { kind, config }); apiKey.input.value = ''; if (!life.alive()) return; toast(name + '服务配置已保存。'); await renderPage();
       }, 'secondary')))), button('检查已保存的连接', async () => { const result = await mediaRequest('media.probeProvider', { kind }); replace(feedback, kv({ '服务可访问': result.reachable ? '是' : '未确认', '配置有效': result.configurationValid ? '是' : '未确认', '实际生成验证': result.verifiedGeneration ? '已验证' : '未执行生成' }), result.message ? notice(result.message) : null); }, 'secondary', { disabled: !current.configured }), feedback));
   }
+  if (state.view?.startsWith('provider-')) return container;
   const prompt = field('media-create-prompt', '这次想创作什么', '', { multiline: true, hint: '例如：沿用当前形象，在窗边喝茶的半身照。只在点击开始创作后提交任务。' });
   const kind = field('media-create-kind', '创作类型', 'image', { choices: [['image', '图片'], ['video', '视频']] });
   const useReference = element('input', { type: 'checkbox', checked: Boolean(identity.primaryAssetId), disabled: !identity.primaryAssetId });
@@ -784,10 +879,11 @@ async function mediaPage() {
       catch (error) { if (!life.alive()) return; replace(requestFeedback, notice('提交结果未确认时，请先刷新下方原任务列表，避免重新付费提交。请求编号：' + requestId, 'warning')); await loadJobs(); throw error; }
     }, 'primary');
   const providerReady = element('p', { class: 'small muted' });
-  const updateCreationAvailability = () => { const selected = providers.find(value => value.kind === kind.input.value); const ready = selected?.enabled === true && selected?.configured === true && selected?.capabilities?.generate === true; createButton.disabled = !ready; providerReady.textContent = ready ? '使用上方已保存的服务配置。' : '先保存并启用所选类型的生成服务，再开始创作。'; };
+  const updateCreationAvailability = () => { const selected = providers.find(value => value.kind === kind.input.value); const ready = selected?.enabled === true && selected?.configured === true && selected?.capabilities?.generate === true; createButton.disabled = !ready; providerReady.textContent = ready ? '使用已保存的服务配置。' : '先保存并启用所选类型的生成服务，再开始创作。'; };
   kind.input.addEventListener('change', updateCreationAvailability); updateCreationAvailability();
-  container.append(card('开始创作', '任务使用已保存的服务配置，可能产生该服务的费用。相同任务只查询原编号，不因等待时间较长自动重发。', element('div', { class: 'form-grid' }, kind.wrapper), prompt.wrapper, element('label', { class: 'field-checkbox' }, useReference, identity.primaryAssetId ? '沿用当前主参考形象（服务需支持参考图）' : '尚无主参考，本次使用文字描述'),
-    createButton, providerReady, requestFeedback));
+  if (state.view === 'create') container.append(card('开始创作', '任务使用已保存的服务配置，可能产生该服务的费用。相同任务只查询原编号，不因等待时间较长自动重发。', element('div', { class: 'form-grid' }, kind.wrapper), prompt.wrapper, element('label', { class: 'field-checkbox' }, useReference, identity.primaryAssetId ? '沿用当前主参考形象（服务需支持参考图）' : '尚无主参考，本次使用文字描述'),
+    createButton, providerReady, button('配置所选类型的服务', () => openSection('provider-' + kind.input.value), 'link'), requestFeedback));
+  if (state.view === 'create') return container;
   await loadJobs(); await renderAssets(assets);
   container.append(card('最近创作任务', '生成成功、文件保存和平台发送是不同结果。', button('刷新任务列表', loadJobs, 'secondary compact'), jobsArea),
     card('作品与参考图库', '只在查看时读取作品。主参考与临时缓存分开保存，资产容量以实际用量为准。', view.usage ? kv({ '资产用量': view.usage.assetBytes == null ? '按实际清单查看' : number(view.usage.assetBytes) + ' bytes', '总容量': number(limits.assetBytes) + ' bytes' }) : null, gallery,
@@ -804,7 +900,7 @@ async function tasksPage() {
       const result = await request('tasks.read', { instanceId, taskId, documentId: doc.documentId, offset: next, maxChars: 4000, expectedSha256: sha });
       if (generation !== state.detailGeneration || !current()) return; offset = result.offset; sha = result.sha256;
       replace($('detail-content'), kv({ '资料': doc.kind ?? '档案', '指纹': sha, '已读位置': result.encoding === 'utf8' ? `${number(result.offset)} → ${number(result.nextOffset)} / ${number(result.totalChars)} 字符` : `${number(doc.bytes)} bytes` }),
-        result.encoding === 'utf8' ? element('pre', { class: 'data-preview' }, result.text) : notice('这是二进制资料，请下载原文件查看。'),
+        result.encoding === 'utf8' ? element('pre', { class: 'reading-text' }, result.text) : notice('这是二进制资料，请下载原文件查看。'),
         result.complete ? notice('已到原文末尾。') : notice('当前仅显示这一页；完整资料仍保留，下一页继续读取。'));
       replace($('detail-footer'), offset > 0 ? button('上一页', () => page(Math.max(0, offset - 4000)), 'secondary') : null,
         !result.complete && result.encoding === 'utf8' ? button('下一页', () => page(result.nextOffset), 'primary') : null,
@@ -817,10 +913,10 @@ async function tasksPage() {
     const generation = startDetail('独立任务', 'TASK'), result = await request('tasks.get', { instanceId, taskId, documentOffset, documentLimit: 20 });
     if (generation !== state.detailGeneration || !current()) return;
     const summary = typeof result.summary === 'string' ? result.summary : result.summary?.text;
-    replace($('detail-content'), kv({ '任务': result.title || result.taskId, '状态': labels[result.status] ?? result.status, '任务编号': result.taskId, '创建': date(result.createdAt), '资料数': number(result.documentCount), '资料已收齐': result.capture?.complete ? '是' : '尚未确认', '实际错误码': result.capture?.errorCode ?? result.errorCode ?? '无' }),
+    replace($('detail-content'), element('h2', {}, result.title || '独立任务'), pill(result.status),
       summary ? element('div', {}, element('h3', {}, '结果摘要'), element('pre', { class: 'data-preview' }, summary), result.summary?.truncated ? notice('摘要不是完整报告，完整结果在下方资料中。') : null) : null,
       result.capture?.complete === false ? notice('任务状态与资料完整性分别记录；当前仍有未收齐资料或来源缺口。', 'warning') : null,
-      element('h3', {}, '原始任务、过程与产物'), (result.documents ?? []).length ? element('div', { class: 'record-list' }, result.documents.map(doc => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, doc.name ?? doc.documentId), tag(doc.kind)), element('p', { class: 'small muted' }, `${number(doc.bytes)} bytes · ${doc.sha256}`), button('按页查看', () => readDocument(taskId, doc), 'secondary compact'), button('下载原文件', () => request('ui.task.download', { instanceId, taskId, documentId: doc.documentId }), 'secondary compact')))) : empty('暂无已归档资料', '只呈现实际保存的数据。'));
+      element('h3', {}, '原始任务、过程与产物'), (result.documents ?? []).length ? element('div', { class: 'record-list' }, result.documents.map(doc => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, doc.name ?? doc.documentId), tag(doc.kind)), element('p', { class: 'small muted' }, `${number(doc.bytes)} bytes · ${doc.sha256}`), button('按页查看', () => readDocument(taskId, doc), 'secondary compact'), button('下载原文件', () => request('ui.task.download', { instanceId, taskId, documentId: doc.documentId }), 'secondary compact')))) : empty('暂无已归档资料', '只呈现实际保存的数据。'), disclosure({}, element('summary', {}, '任务信息与编号'), kv({ '任务': result.title || result.taskId, '状态': labels[result.status] ?? result.status, '任务编号': result.taskId, '创建': date(result.createdAt), '资料数': number(result.documentCount), '资料已收齐': result.capture?.complete ? '是' : '尚未确认', '实际错误码': result.capture?.errorCode ?? result.errorCode ?? '无' })));
     replace($('detail-footer'), result.nextDocumentOffset != null ? button('下一页资料', () => openTask(taskId, result.nextDocumentOffset), 'secondary') : null,
       documentOffset > 0 ? button('返回首批资料', () => openTask(taskId), 'secondary') : null,
       button('刷新实际状态', () => openTask(taskId, documentOffset), 'secondary'),
@@ -843,31 +939,36 @@ async function tasksPage() {
 
 async function maintenancePage() {
   const container = element('div'), resultArea = element('div'), root = state.status.memoryRoot ?? state.instances.find(item => item.id === state.instanceId)?.memoryRoot;
+  if (!state.view) return destinations(destination('检查数据', '检查格式、文件和恢复状态。', () => openSection('validate')),
+    destination('创建备份', '保存一份经过校验的可恢复副本。', () => openSection('backup')),
+    destination('从备份恢复', '替换当前人格的数据，需要明确确认。', () => openSection('restore')),
+    destination('运行诊断', '查看错误、用量、来源缺口和交付回执。', () => openSection('diagnostics')));
   async function maintenance(action, args, title, description, danger = false) {
     const confirmation = await confirmOperation({ title, description, preview: { instanceId: state.instanceId, memoryRoot: root, ...args }, danger, accept: title }); if (!confirmation) return;
     const result = await request('maintenance.' + action, args); replace(resultArea, card('维护操作结果', '以下是本次真实返回值，失败与结果未知不会显示为完成。', result?.requiresLoad ? notice('操作后实例保持停用。核对结果后，前往“设置与加载”明确加载；加载时才恢复持久调度。', 'warning') : null, data(result))); toast('维护请求已返回。');
     state.status = await request('status'); const instanceResult = await request('instances.list', { instanceId: undefined }); state.instances = instanceItems(instanceResult); updateInstanceBar();
   }
-  const destination = field('backup-destination', '备份目标绝对目录', '', { placeholder: 'C:\\Users\\...\\backup\\persona-data-latest' });
+  const backupDestination = field('backup-destination', '备份目标绝对目录', '', { placeholder: 'C:\\Users\\...\\backup\\persona-data-latest' });
   const source = field('restore-source', '已校验备份的绝对目录', '', { placeholder: 'C:\\Users\\...\\backup\\persona-data-latest' });
   container.append(notice('维护使用现有单写者与恢复流程。需要停机的操作由服务端明确检查，活动实例不会被第二个写者绕过；备份不是无限历史。'), element('div', { class: 'maintenance-grid' },
-    card('数据校验', '检查实际目录的格式、文件与可用恢复状态。', element('p', { class: 'small muted' }, '校验不会把不兼容版本猜测转换成当前格式。'), button('校验当前实例', () => maintenance('validate', {}, '开始校验', '只校验当前实例。活动写者会先安全停用，校验后恢复此前加载状态；正在对话或整理时拒绝切换。'), 'secondary')),
-    card('创建备份', '使用受控目录和校验清单保存可恢复副本。', destination.wrapper, button('创建备份', () => { if (!destination.input.value.trim()) throw new Error('请填写备份目标绝对目录。'); return maintenance('backup', { destination: destination.input.value.trim() }, '创建备份', '复制当前所选实例的可恢复数据并校验 SHA。活动写者会安全停用并在完成后恢复；不覆盖未知的外部目录。'); }, 'secondary')),
-    card('从备份恢复', '恢复会替换当前实例数据，请先核对目录。', source.wrapper, notice('已有较新的明确撤销仍需保持有效。恢复旧备份不能复活已明确遗忘的材料。', 'warning'), button('校验并恢复', () => { if (!source.input.value.trim()) throw new Error('请填写备份来源绝对目录。'); return maintenance('restore', { source: source.input.value.trim() }, '确认恢复备份', '安全停用后校验版本、路径、容量与 SHA，再恢复所选实例。此操作会替换数据；完成后保持停用，需你明确加载。', true); }, 'danger')),
-    card('恢复中断与来源缺口', '区分目录切换中断和宿主原件缺失。', element('div', { class: 'row-actions' }, button('恢复中断的目录切换', () => maintenance('recover', {}, '执行恢复检查', '处理本实例已有的恢复 journal；不会为未知格式删库重建。'), 'secondary'), button('回补可用来源', () => control('backfill'), 'secondary')))), resultArea);
+    state.view === 'validate' ? card('数据校验', '检查实际目录的格式、文件与可用恢复状态。', element('p', { class: 'small muted' }, '校验不会把不兼容版本猜测转换成当前格式。'), button('校验当前实例', () => maintenance('validate', {}, '开始校验', '只校验当前实例。活动写者会先安全停用，校验后恢复此前加载状态；正在对话或整理时拒绝切换。'), 'secondary')) : null,
+    state.view === 'backup' ? card('创建备份', '使用受控目录和校验清单保存可恢复副本。', backupDestination.wrapper, button('创建备份', () => { if (!backupDestination.input.value.trim()) throw new Error('请填写备份目标绝对目录。'); return maintenance('backup', { destination: backupDestination.input.value.trim() }, '创建备份', '复制当前所选实例的可恢复数据并校验 SHA。活动写者会安全停用并在完成后恢复；不覆盖未知的外部目录。'); }, 'secondary')) : null,
+    state.view === 'restore' ? card('从备份恢复', '恢复会替换当前实例数据，请先核对目录。', source.wrapper, notice('已有较新的明确撤销仍需保持有效。恢复旧备份不能复活已明确遗忘的材料。', 'warning'), button('校验并恢复', () => { if (!source.input.value.trim()) throw new Error('请填写备份来源绝对目录。'); return maintenance('restore', { source: source.input.value.trim() }, '确认恢复备份', '安全停用后校验版本、路径、容量与 SHA，再恢复所选实例。此操作会替换数据；完成后保持停用，需你明确加载。', true); }, 'danger')) : null,
+    state.view === 'validate' ? card('恢复中断与来源缺口', '区分目录切换中断和宿主原件缺失。', element('div', { class: 'row-actions' }, button('恢复中断的目录切换', () => maintenance('recover', {}, '执行恢复检查', '处理本实例已有的恢复 journal；不会为未知格式删库重建。'), 'secondary'), button('回补可用来源', () => control('backfill'), 'secondary'))) : null), resultArea);
   const kind = field('diagnostic-kind', '诊断类型', 'errors', { choices: [['errors', '运行错误'], ['gaps', '来源缺口'], ['usage', '实际用量'], ['outbox', '交付回执'], ['snapshots', '请求快照']] }), list = element('div'); let pageNumber = 1, listGeneration = 0;
   async function load(cursor) { const generation = ++listGeneration; pageNumber = cursor ? pageNumber + 1 : 1; const result = await request('diagnostics.list', { kind: kind.input.value, pageSize: 10, ...(cursor ? { cursor } : {}) }); if (generation !== listGeneration) return; replace(list, getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(item => element('article', { class: 'record' }, data(item)))) : empty('当前没有可用诊断', '用量缺失表示未知，不计作零；受保留容量限制，诊断不会无限积累。'), paginator(result, load, { pageNumber })); }
   kind.input.addEventListener('change', () => load().catch(showError));
-  if (state.status.available) { await load(); container.append(card('真实诊断', '仅查看已保留数据，不因打开面板调用模型。', element('div', { class: 'toolbar' }, kind.wrapper, button('刷新诊断', () => load(), 'secondary')), list)); }
+  if (state.status.available && state.view === 'diagnostics') { await load(); container.append(card('真实诊断', '仅查看已保留数据，不因打开面板调用模型。', element('div', { class: 'toolbar' }, kind.wrapper, button('刷新诊断', () => load(), 'secondary')), list)); }
   return container;
 }
+$('page-back').addEventListener('click', () => goBack().catch(showError));
 $('close-detail').addEventListener('click', () => { state.detailGeneration++; $('detail-dialog').close(); });
 $('confirm-accept').addEventListener('click', () => $('confirm-dialog').close('confirm'));
 $('confirm-cancel').addEventListener('click', () => $('confirm-dialog').close('cancel'));
 $('confirm-close').addEventListener('click', () => $('confirm-dialog').close('cancel'));
 $('detail-dialog').addEventListener('cancel', () => { state.detailGeneration++; });
 $('refresh-button').addEventListener('click', () => { if (state.connected) renderPage().catch(showError); else connect(); });
-$('active-instance').addEventListener('change', async event => { state.instanceId = event.target.value; try { state.status = await request('status'); state.people = state.status.available ? getItems(await request('people.list', { pageSize: 100 })) : []; await renderPage(); } catch (error) { showError(error); } });
+$('active-instance').addEventListener('change', async event => { state.instanceId = event.target.value; state.budgetDraft = null; state.memoryPerson = null; state.trail = []; try { state.status = await request('status'); state.people = state.status.available ? getItems(await request('people.list', { pageSize: 100 })) : []; await renderPage(); } catch (error) { showError(error); } });
 $('connect-retry').addEventListener('click', connect);
 document.querySelectorAll('[data-page]').forEach(node => node.addEventListener('click', event => { event.preventDefault(); navigate(node.dataset.page).catch(showError); }));
 window.addEventListener('persona-bridge-ready', () => { if (!state.connected) connect(); });

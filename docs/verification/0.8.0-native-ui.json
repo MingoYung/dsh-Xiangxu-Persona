@@ -1,0 +1,106 @@
+{
+  "version": "0.8.0",
+  "status": "passed",
+  "checkedAt": "2026-10-26T10:57:33.711Z",
+  "scope": "Actual installed DSH web settings in a dedicated isolated profile. Product and tests use task-based child views. No production profile, account or paid model used.",
+  "sourceDigests": {
+    "package.json": "0bd67dc0fa9b6a34910ceff47794032439a1f4a957607dc5a1c88f9b9155a492",
+    "scripts/build-ui.mjs": "7ec4a665bdfcb83d78acae50ad031cbbcb9f45fbcd744b790eee3c6f923f7113",
+    "ui/index.html": "bd60884dc27ecc4e6d89bdb12631706a0ca23f9b9556dcb5bfe9c97a7b6998ff",
+    "ui/style.css": "40248aec214d3fab5e80a9542149f2be18405fcfd29b83447e86926dbcd47ce6",
+    "ui/app.js": "335dee50effbd99eb96f1f7b9247ffe2b2a752d89b31485af995402b540da48c",
+    "ui/client.js": "99fbe14856f9cb4e6683a9efbb1fb0511df033357c6d286a0ff17330e6a0dd26"
+  },
+  "observed": {
+    "checkedAt": "2026-10-26T10:56:50.870Z",
+    "primaryEntrances": 5,
+    "journeys": [
+      "deep-content-first-and-source-hidden",
+      "connection-platform-permission-back-path",
+      "instance-startup-and-new-root-separated",
+      "assistant-single-save-on-off-no-extra-confirmation",
+      "budget-cross-category-draft-preserved-and-saved-once",
+      "budget-saved-readback-and-restored",
+      "opened-了解相续",
+      "opened-独立任务与资料",
+      "opened-运行与用量",
+      "growth-separate-progress-history-receipts",
+      "wechat-bridge-permissions-and-voice-separated",
+      "creation-identity-provider-library-separated",
+      "host-light-theme-inherited",
+      "maintenance-four-pages-final-build-no-execution",
+      "social-metadata-single-save-unverified-zero-capabilities",
+      "plain-language-settings-no-internal-mode-keys"
+    ],
+    "syntheticData": true,
+    "actualHostVersion": "0.2.1-rc.2",
+    "iterationNotes": [
+      "The native UI revealed a maintenance landing name collision; it was fixed and the four child pages were rechecked on the final build.",
+      "Navigation now returns to the beginning of the embedded page; ordinary saves preserve editing position."
+    ],
+    "realModelCalls": 0,
+    "realSocialLogins": 0,
+    "maintenanceMutationsExecuted": 0
+  },
+  "ownerReadback": {
+    "helperEnabled": false,
+    "budgetValuesRestored": true,
+    "socialUnverified": true,
+    "availableSocialCapabilities": 0,
+    "deepPreserved": true,
+    "automaticRecall": false,
+    "modelUsageRows": 0
+  },
+  "cleanup": {
+    "stoppedAt": "2026-10-26T10:57:08.561Z",
+    "instanceUnloadedBeforeStop": true,
+    "actualHostPluginDisabled": true,
+    "writerLocksRemaining": 0,
+    "mediaWriterLocksRemaining": 0,
+    "taskWriterLocksRemaining": 0,
+    "socialWriterLocksRemaining": 0,
+    "dedicatedHostRemaining": false,
+    "manualLockDeletion": false,
+    "productionForceRestarted": false,
+    "dedicatedHostTermination": "SIGTERM after actual instance unload and host plugin disposal",
+    "dedicatedHostExit": {
+      "code": 1,
+      "signal": null
+    }
+  },
+  "images": {
+    "docs/images/0.8.0-home.png": {
+      "bytes": 55860,
+      "sha256": "caedd8e0e4fd11de0f116b2b4f025b0ce3ddfdc19bca12a790eac595b9e0c89a"
+    },
+    "docs/images/0.8.0-connections.png": {
+      "bytes": 49405,
+      "sha256": "4d7bdbc43b3f7f23eb0472de1c8ecaa21e90281a3ca603e49192c1ea64e8d566"
+    },
+    "docs/images/0.8.0-settings.png": {
+      "bytes": 52662,
+      "sha256": "0bfa8e85a15e1b03ae84db21d852431d6c9c4473f01d29e687dfbb5df5d75145"
+    },
+    "docs/images/0.8.0-memory.png": {
+      "bytes": 62341,
+      "sha256": "100d0709229dc17cf78c3d3af9070f51bc2a9c153d4fbb284d70fc9768d5d06a"
+    },
+    "docs/images/0.8.0-creation.png": {
+      "bytes": 48035,
+      "sha256": "a1d13ed6334310cb9d687aec3a2ede6f2a5915f0b0888db173484867a35912d1"
+    },
+    "docs/images/0.8.0-light-theme.png": {
+      "bytes": 50167,
+      "sha256": "fd2044d718b22a42d3783c69676c609cdf7468eb6da2bdf0c71ab5a33292bafe"
+    },
+    "docs/images/0.8.0-budgets.png": {
+      "bytes": 41283,
+      "sha256": "908bb9d2f7c74801a07d26b7f46804c3a14cae35317cca8da4232d456746e6b7"
+    }
+  },
+  "limitations": [
+    "No real QR authorization or platform messages were performed.",
+    "No paid image/video generation was submitted.",
+    "The screenshot and native navigation evidence is UI validation; unchanged backend SDK coverage is inherited separately."
+  ]
+}
