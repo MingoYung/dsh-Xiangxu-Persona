@@ -45,12 +45,17 @@ export function normalizeDshEvent(session, event, options = {}) {
     const sourceKind = message.source?.kind ?? 'unknown';
     const classification = sourceClassification(sourceKind, options.participantSourceKinds);
     const actorBase = classification === 'participant_dialogue' ? base : { ...base, speakerId: null };
-    const text = textOf(message.content);
+    const structured = classification === 'participant_dialogue' && message.source?.xiangxuChannel && message.source?.xiangxuStructured;
+    const text = structured && typeof structured.originalText === 'string' ? structured.originalText : textOf(message.content);
+    if (structured?.rich?.hasStructuredContent) {
+      const detail = JSON.stringify({ structured: structured.rich, derived: structured.derived ?? [], interpretation: 'platform structured data; not typed original or confirmed subjective recollection' });
+      hot.push({ ...base, speakerId: null, blockIndex: 1000, sourceKind: 'platform-structured', sourceRef: sourceRef('platform-structured','system','system'), origin: 'system', kind: 'plugin_state', content: { mode:'cached',text:detail,chars:[...detail].length }, navigationSummary:null });
+    }
     if (text) hot.push({ ...actorBase, sourceKind, sourceRef: sourceRef(sourceKind, 'user', classification === 'participant_dialogue' ? 'user' : 'system'),
       origin: classification === 'participant_dialogue' ? 'user' : 'system', kind: classification === 'participant_dialogue' ? 'dialogue' : classification,
       content: { mode: 'cached', text, chars: [...text].length }, navigationSummary: null });
     return {
-      dialogue: classification === 'participant_dialogue' && text
+      dialogue: classification === 'participant_dialogue' && (text || structured?.rich?.hasStructuredContent)
         ? { ...actorBase, sourceKind, contentClass: 'participant_dialogue', role: 'user', origin: 'user', text,
           chars: [...text].length, proactiveId: null, reactionTo: null }
         : null,

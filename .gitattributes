@@ -3,3 +3,5 @@
 
 # Preserve the existing CRLF package manifest while checking real whitespace.
 package.json whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+docs/delegation-and-task-archives.md whitespace=cr-at-eol

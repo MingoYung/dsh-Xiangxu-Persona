@@ -1,0 +1,321 @@
+{
+  "version": "0.10.0",
+  "status": "passed",
+  "checkedAt": "2026-10-26T19:45:16.723Z",
+  "sourceDigests": {
+    "package.json": "6ceb0913d0bcd8bce9c63febe5248e6296070da0d2047bc06d949182c242b261",
+    "core/capacity.js": "45dee565e61664cd3ce202b182bde7326e2835c7fc7966452f26dd340fe610eb",
+    "core/deep-memory.js": "7ac1484d29acd422dc68ece68c1a5b3ff59e37ff10a5ce8c8df60a73da26910f",
+    "core/index.js": "615589c82ad6b165991d00ea7c4b0e1ec8d7a2d6230a91d84cdfb9a0efebf668",
+    "core/maintenance.js": "b02e32fa050e4b2fd33052ab098f997a88e9de99d45cb6dadde680cf810a4265",
+    "core/onboarding.js": "dcd9b203ff79cbbcbdb5ebf3e93dc4663fbf45c151b1f645fd6a768aa83540da",
+    "core/prompts.js": "ed5ec858d7091d170d9fe3de9d4de21c946ce72fb8b9c43a38ea918a3a978acb",
+    "core/repository.js": "a34b6abfd4e5948079b161eb3a5bad7d16efe524d76810d6334c799c5c90b07a",
+    "core/retrieval-config.js": "ee1b8bd9843434d187dd4bb739696e70cded2a6e9b177a7027aa2c8d6f45b547",
+    "core/retrieval-semantic.js": "e87aeb5dff86fe3bc3a81bd97f9cfa796b85c0f344305d58fa71dbe0ca9cecdd",
+    "core/retrieval.js": "5e67cc0fa40bf9d9afc39b5f18c45136f5295b47689799f2cdf3007564488751",
+    "core/review-assistant.js": "d70aa895bccb7e162d965795e3c723b8344eecbf6d4ff51a939a09cbd4dcfd5c",
+    "core/runtime.js": "e0e6a4d12cf8c61c5e94ead3a57cf41bf153d40671cde40926aebb24c1dc0239",
+    "core/schema.js": "89b567d62c4d3028529a8fdb74d2cfd66e078e54960f1a9f45d428bdd250160a",
+    "core/self-profile.js": "e540fd42d87c08f62334787b0533dcfc9802a8eb6b33a920e9e9116b7dc3e5bb",
+    "core/source-dependencies.js": "28dca0a54da8eef9c5d0a37d5f2ad098d05cf3aff2eb75280a54660cbf96a13d",
+    "core/store.js": "a70629b8e8f5a32b6b6b17f6c9afe87849bee4745f9bb6aa8e3a7288f6bd9008",
+    "adapters/dsh/bilibili/client.js": "e11f2e31de2553c03ba8db1900c28b064f54160a43f7589f6788debb8623fd37",
+    "adapters/dsh/bilibili/common.js": "9a2af97b6e32c3ed389586bf9c910a0d232f7a7a7471afdee62a52eb0f9b64f9",
+    "adapters/dsh/bilibili/service.js": "f36e6645a82fad66639773c4860a3f53b55fcd3f4a2d49c418f00d5cfa96c6df",
+    "adapters/dsh/bilibili/storage.js": "574c69f42f03c62d015c5fe129696dff45370b39c2579623b30717a3f00daa2f",
+    "adapters/dsh/channels/audio-transfers.js": "f45e7b6b54d8459b6e3d5452789d75e199f65e393f754bc5ea02495d994bb7b3",
+    "adapters/dsh/channels/incoming-media.js": "618efe0d135f405c6e485e46818b1ea6c616d3f2cca8a5a77bcc051f4d0bced3",
+    "adapters/dsh/channels/native.js": "11231bda7e65c12ce6d6c7f67a97c5d302d24d3059c06db88767d7db044b8817",
+    "adapters/dsh/channels/onebot.js": "4151aa191af05d182e8e51058aea34bbca7bd64682dd8ad422bb3bff2c61f2d3",
+    "adapters/dsh/channels/rich-media.js": "1594579cc4b701f116cf1e5d8ddf17e3e2ee21584f26022bf1c94304486a658d",
+    "adapters/dsh/channels/service.js": "d1851302f3a00662585a3f2bdff0c35e238475a6bbb739db0ee1acbbf22c5606",
+    "adapters/dsh/channels/social-provider.js": "f05fc5eed1a9d693a85d3ca158ab7d7ab838f2537c43e318c704488b4e39b0fe",
+    "adapters/dsh/channels/windows-speech.js": "87761504da11c1fdc47b3d5124cacf9785a13eb14ec0f477734a1b6052ec13f7",
+    "adapters/dsh/companion-scope.js": "79a6e218191cbdae3595ebe12d0336ee6630de5c1a21456e25c1fc55a0515934",
+    "adapters/dsh/connections/bridge.js": "2b9ea9d3696df7424fd6f6400176555559e13d8fe2b769e8c0a2b4fddbd1a49f",
+    "adapters/dsh/connections/common.js": "8e5cd37d8b92fdd3207c89222d36f6e060bfcbc823d9294a857d9b9ce88e68f5",
+    "adapters/dsh/connections/qq.js": "d45cb5cf9e2a2e03ab083fed60cdc54ef2e20786635cf5dcd5ffc9ee16631287",
+    "adapters/dsh/connections/service.js": "0e2e0f4187d5feb7e31406ead09adbcdc52a16e1ed25bb1bface21b57f761fb0",
+    "adapters/dsh/connections/wechat.js": "063b5fb49324c28ae4352f27f07666e04a44264b3231f7a5d3d84065e94d4f29",
+    "adapters/dsh/control.js": "99c2827a108566433b6b8b9d566c27afd0c6c7865e23516b8cb4ef9e46800a63",
+    "adapters/dsh/delegation/archive.js": "353ea8ada6fce877f42f52a4b9b3e3ba1932f69c318dff3130f963f0c227071e",
+    "adapters/dsh/delegation/isolation.js": "5038c4d1c61d8b5b39e4525b6199aad27c34005c95d5ba4165062ff78a6a1562",
+    "adapters/dsh/delegation/native.js": "74127d4d8a71940aec56323a91383ad97118a6c6103dc4a508e11f1a9d163665",
+    "adapters/dsh/delegation/service.js": "a62198c8f29121bc4ebcf884c583131fa11bad5b65d53b1c6ee5037ac0b7bac5",
+    "adapters/dsh/delegation/worker.js": "ce46a2a9ba9e4736b6973db8f0d98beb8db4e855f2a8d010c891349c78aa8785",
+    "adapters/dsh/index.js": "7c62ed88c423654b054bf4732b3f64e3efa53757987675544cea2b246d3dfb6a",
+    "adapters/dsh/instance-lifecycle.js": "82328cb6ec0315811ca5908afccfa9b0c9087ce9755cad176f81178f94d4a58b",
+    "adapters/dsh/instances.js": "945e69c7df68a22fb06e01bce3762c3661961cf3eae7fd4776c761a1d0b7dc48",
+    "adapters/dsh/login-qr.js": "5fbdc6b3475832cb60a213adaadb3335d93b17e9c05cd2b48f7da6e6d9e4e4c7",
+    "adapters/dsh/management.js": "fb8b82da9463b8dfa88079b20a30ae220aafff32d4646948b506be65cd7d3a2b",
+    "adapters/dsh/media/index.js": "f7fbe92d650a612d9f015dfcee7dafe5659b93fb30c078155f0feaf36440be45",
+    "adapters/dsh/media/io.js": "82a081c5bbd16b9ac2bec7850680746758e93deb6577403850dd58dd4529bbd9",
+    "adapters/dsh/media/providers.js": "7af30f6ddd8b7855da0bec5da0f9e0f0220fe5845451425e947a3e41d042c3c1",
+    "adapters/dsh/media/service.js": "3ca33b66375813d0c1ca8f4cdefe83ba210e8ebf15325b09dc7ec8dda75188af",
+    "adapters/dsh/mobile-host.js": "811e4e1ee37cd58c9d2da9ba18fe7f5401c38d3f97fcf70c666e2c4441a45a00",
+    "adapters/dsh/mobile.js": "093f78dcf10cd56aa44c79b81c198df95038d44f6256f359272270833906743b",
+    "adapters/dsh/model.js": "a16810aa9499242ef8935f3382e57a680698df74483538629b01634abecdcb9b",
+    "adapters/dsh/normalize.js": "f0db94dfb03d3e51da4fc4beacf4c58e2cee64d6b413b0e4b222247ecd3f1fad",
+    "adapters/dsh/owner-assets.js": "86177619e525ebd6e4c4022ab1f9a906651101343228c346ba525b1a2f42afaa",
+    "adapters/dsh/permissions.js": "30804171ce1f91f1e5e3e9bca7b43a9c3008355cbf3cc151493d5c1611773be4",
+    "adapters/dsh/platform-images.js": "06f14d12669e6949344757de71b3c50aea6d36b6ce93fe9b5a0daf3649f572c6",
+    "adapters/dsh/qr.js": "2583e25d03365e50498252457c502e1b3ec5147794d812bd0ee505f2b36b4673",
+    "adapters/dsh/retrieval-provider.js": "1af04080cdaabfe23a6af643ead47d4e716ae49d9bdc3318d51a3b0b3f01a2f6",
+    "adapters/dsh/social-identities.js": "ef0308fd51d5de83f71ea53001198cede018149d90c70dd8d989bf189b8e72fc",
+    "adapters/dsh/surfaces.js": "157e54870de1e87e76bfb09faee1007da194bb9b150ae7fa31dff3d63b2de6a3",
+    "adapters/dsh/tool-output.js": "628fdbe3d7ad8d5b6808aef6c3ad804abefc15a5337d193225cc2f023ddab106",
+    "adapters/dsh/tool-schema.js": "cf0878468692ade273e5092f25f11c1792fdeedad09bc39f9d5d403fedd8713e",
+    "adapters/dsh/ui-host.js": "6df209d25a1938454659f3b9aca0a123d233a28b950b95cd605343eca2268fd6",
+    "adapters/dsh/vendor/qrcode.mjs": "ea91d7118a5395289170da848b7c6758b996163bfbccf312591ab65a4911b7c0",
+    "adapters/dsh/voice.js": "040b5ffbdf222ada8cb66ae9f8f9ca37f6f36ba53b69d74b8e65f66a132e22a2",
+    "test/autonomy.test.js": "a44dd3092651b7e44c25eb7c7fbb4c05d9dfc4eed2f51b602fd7f4591c86c474",
+    "test/bilibili-adapter.test.js": "ee7829108e435e58ec31b7a27bb2fc6ab2e7e7c6133eb8a14b9d177702766b3b",
+    "test/bilibili-lock-recovery.test.js": "981c4f5b02044a8b5049ae1350cad5137e5ff3c838b780bae929634e175da42f",
+    "test/bilibili-permissions.test.js": "a31967ca42f58201c71b552bf6bf32345f3891125966103446dafe40b6a99bd6",
+    "test/channels-audio.test.js": "103c254357e64063750c17ff013afd236ae7ed5f00b208e5c1bd07eb5528d2af",
+    "test/channels-onebot.test.js": "67fa9df5c94d48741143952734d9181d08109b1cd8359bf01a1142992d4a6438",
+    "test/channels-service.test.js": "ba11faffc4622f20116441718a9c3563f0fe5d5cd9acdd40ce41fbbf1e08f01b",
+    "test/companion-scope.test.js": "bd8638f076e7707ee9430427e1c554947707cadf3c85107d6dfafdf349a6b294",
+    "test/connections-official.test.js": "0ff6752542e2c8880698f937381dc7f8cf60e3adf875093382e0a5989fb3fff8",
+    "test/consolidation-context-complete.test.js": "737dd068c361725d4a2d0ec065497b4c30b98141095b66a65adfb3495f967905",
+    "test/consolidation-feedback.test.js": "70a0b95c8ecbe418b3edefb73c920f3d2204d5ad8e13a017d204928c8323cbac",
+    "test/consumer-integration-regressions.test.js": "235aa1b611942a56fc9f2883d92a506413ff6ad2f4ac7e6d2d4f98a40a129dfd",
+    "test/conversation-rhythm.test.js": "ad63ac508f015f0d1981924db45816d57006da7dee9f96e5757f7ff87a60ce42",
+    "test/deep-memory-maintenance.test.js": "dac881f58b21cb02f8f6a1a3b7463b510c6d6575ab91d94cf715dcaa62a14d19",
+    "test/deep-memory.test.js": "d404dc67365f256765d52745893a2a29c6bd66a2befcf817a95ae656a8a26133",
+    "test/delegation-archive.test.js": "e731a35fdd62fdcdb702c2b203ede3fdd443894aae081f3f6824cea197f3f939",
+    "test/delegation-consumers.test.js": "a36fd64e92f0dd72c287002fed4c171b7824e1c50c704acd21d6cd2df145220c",
+    "test/delegation-isolation.test.js": "5cb72521bee8b2d2f15c05fd15cac0c678e92591c20a18a829ef61be95685e41",
+    "test/delegation-native.test.js": "95df817db4ac315a27f09e12076c913c6be9baaeab66ea30fb095c7f896c60c2",
+    "test/delegation-service.test.js": "253a00c09ccda7884ac34f6900f4124b34056216c9d43458c44e5380978b7e7b",
+    "test/dsh-cold-recovery.test.js": "617eb44f4591db31fe6bed013d87712f33f87c628c67126d23b1f24cf5f87692",
+    "test/dsh-envelope-dependencies.test.js": "1128b103d8916676ee7c14b9b0706b42655c550fed0f8bf3cca72fddf948a4f2",
+    "test/dsh-instance-lifecycle.test.js": "0e0baac8a5cc4cfbe323a9555c5d3dd0c0272f879cbe34925b8f1a4b29d7fcc5",
+    "test/dsh-lifecycle.test.js": "df712b91ae50fcd32f31b5154306f2ade00d0d78e4ca7579ed6acd07de8df3a1",
+    "test/dsh-model.test.js": "38bdf2efd424f840c60a5cbbc618242327f4db94aa58e7dcac365a13fa9cfb26",
+    "test/dsh-normalize.test.js": "c6a908ebd573dda331239853bb40328b310fe8e338817d16582a9377cd5e1d8c",
+    "test/dsh-process-dependencies.test.js": "99d2daf33634cde2b91026c1b57b14c2d77a57cb3be04c9d7ba19a8ebcc1f769",
+    "test/dsh-source-pages.test.js": "4f2ab061b5677321f8661376f7d18108405f989b04f13a9c12cf3d2a260b4835",
+    "test/dsh-surfaces.test.js": "d05f78108acbed746e4b5eefa11023581c0dd8ee2f8e0c9b825321d3119789da",
+    "test/dsh-tool-output.test.js": "d2d998a2850e752bd1cdea11612820e192d80cada30bafb90a922c4e7602ef36",
+    "test/dsh-ui-host.test.js": "b6c1f47a9e7aa1f294d4ed16460baca11b3a0ee098181a181b4a2cc6550ed841",
+    "test/evolution-capacity.test.js": "4e40633150c3417e271df1027389ce1033c13e965d0de9e92abf46f8d1e241b3",
+    "test/evolution-protocol.test.js": "d795cec8ae878c1eb33ef039aadbc280ffaefe4fa90cb28d8b7be20d6f6531bf",
+    "test/external-channel-context.test.js": "c25d51ec089a87587ac9a0b5036df185ed9dc450753f1acd35e9601e8aada36d",
+    "test/instance-lifecycle.test.js": "ef50c080ce1b61ba744fd5d1cb5afc9be018d3a3f9ff9e9da5432a6b03ddf770",
+    "test/instances.test.js": "d007adb2efdf1af08a2586389ef898c1ecb20e7b59afd62c4773ab72e7890f67",
+    "test/integrations-flow.test.js": "0b7bc7d0599f420aef0c510d304dc47759e904d193c89501a9ca59e1e3d4c846",
+    "test/introspection-state.test.js": "0accfa7b71abac03aabaff32ad16a5fe85cf969ca94d47653b7273a8930f1a2e",
+    "test/maintenance.test.js": "a83f6eeb8645b082eda2fb2e1746311d9151a2ae54f67f46dd24c2ae8faee270",
+    "test/management-repository.test.js": "fda04baffe6cc48bfec5130842bde7c330ca7fc54ff58814c38a099c04ade311",
+    "test/management.test.js": "2618b842bfca22ccec16a984d0dde867b765a69d32df3d782042791b2b6c5240",
+    "test/media-service.test.js": "dede9070f0862973dfd8ecc38324d020abf18d79034cc6daa0de4b074219b82f",
+    "test/memory.test.js": "bc097f599a41894c82a2b3a6a145d45b253f9d6c220c1c5b46dfbaf8affb0910",
+    "test/mobile-host.test.js": "0c997197659be5ecd07c05455c4c6f3404acc8e5b985072f01736fdb17b18360",
+    "test/mobile-qr.test.js": "9dff88f407570df88e7c060907a76e6fa5e5e1659d18fa262a6b0bebcc7cdb09",
+    "test/mobile.test.js": "96b38d971cf98aa768b89d23117b48cb5dc352e3277bdf5df8c037894a2a67cc",
+    "test/observation-plan.test.js": "f376bceebcc0bccb1b7ad67c1413ff0bc2c749313a3694147f55347c9241ad42",
+    "test/onboarding-context.test.js": "f9c6c3387fd196bdbbf9b7b58c6804738c26038b851487b365c158eef6bc3893",
+    "test/onboarding-input-budget.test.js": "1f382283deebe8fe8fd00096f7843837e3a906afe4f1f6e3ddbb2e68f0f59671",
+    "test/operator.test.js": "0d7c2667956e835b45a7a2a932a1159cf3ecf32a9f1e56984675940ba0e79ef7",
+    "test/owner-assets.test.js": "0fff6af39691c0f1af6fe7bcc804bfd0e865609998f04327ec8896e83276e932",
+    "test/permissions.test.js": "5224fab3252433a047cb3de4d5a95a4442ac4b102dae9fb18a5b607936b062c9",
+    "test/qq-message-policy.test.js": "22ffa1fdb48b52e087269fa1fcc81eb7a8fad227081134266b7779aff1f19848",
+    "test/retrieval-core.test.js": "82acab7ae8e4135d71f0e820917277eb1abdc904c764e9c49bdbcbbc57fb1460",
+    "test/retrieval-memory.test.js": "c86dbdd39db14f2f8ecb270b78a21db4486d7e154583c4ec1c2a992a03e38e61",
+    "test/retrieval-provider.test.js": "7c1d60afe81e7065bd8f614fdc7fc39d0b140ce59180b744c0f7f332fbe64348",
+    "test/review-assistant.test.js": "bfe6bf0ce4141a8fd9af3c966ba954db090351302bc411b57f11ffc5285e75d2",
+    "test/rich-audio-transfers.test.js": "ae3e45f895f88531022084569ae8ae09a1f696b04658318861a78dadfb946a55",
+    "test/rich-onebot.test.js": "c005e8f0531c4716f73cf2faf2d13752bf029ad3efc51e415e73e9c99797f7ce",
+    "test/rich-social-provider.test.js": "f1ce992e5e768976925626f2e53ddf675b8eb03ff2316437a1685c0198e5d5e7",
+    "test/runtime-consolidation-feedback.test.js": "1eb64162c38da05d14c50e104c9fd8ab89e5673930f409e64dbd92314ca13b98",
+    "test/runtime-consolidation-jobs.test.js": "b1ccae6ee32fb5b35544a96a66a326d8827a39b8601ee2874780ca109589366d",
+    "test/runtime-identity-scope.test.js": "86344a103c6af0699134df0048b31d256cd31e81758c097574e08d2048060019",
+    "test/runtime-review-assistant.test.js": "63bb489c9184a2d5856723845052f1457825ee7ff0219064b2118f1050b400a1",
+    "test/runtime-routing.test.js": "14a74625a83af0f74736b10117bbe2d5011236a84c9dc5c54a0fb7b639a66c00",
+    "test/runtime.test.js": "94c4792200d9701ff13e18079aa80a8abc4b671111b6602999e59294fb1cf3b5",
+    "test/self-context-budget.test.js": "9d76f55070a385335de7643dca3196c4948504a82e695d7628986fdb3beb7b7d",
+    "test/self-profile-dsh.test.js": "12d4934b190d7ae2aed4e953519b2f7293217ddafd93661850df0acab03fd3b0",
+    "test/self-profile.test.js": "6c59a656819542c7f36092dc006853e1609797ae8f0d9f76d42f59d71ed9a17b",
+    "test/social-connection-consumers.test.js": "aeab16b7dce001c5fa0821adfc16c1dd2f07e5557aaea1d575fa2b5a06a057ee",
+    "test/social-identities.test.js": "d558d4ac83acd5aeaac09d6e6e6ac64fc20fe0d20278e4d315117fbea244670c",
+    "test/source-dependencies.test.js": "4ee37a5bbf0dcdc891b9f02137a3ec4506b618566bb2ad5133b8fb3bae573b0e",
+    "test/speaker-identity.test.js": "18ff3712b9452084547b9ffed0b8cc68fadf865af264381314712feed790762a",
+    "test/storage.test.js": "91d5056829719c7fb5414f9e358e1c9c04c308cdd4578063081b4848a0f6365c",
+    "test/ui-expansion.test.js": "609a5d3c2ad98793694d08e91a822b71d312ddae23423baaba289de909ae113c",
+    "test/ui-integrations.test.js": "e57b81596646083abfeb50e9c879cb1a7c1903c64e3128c35488ab04b896ec81",
+    "test/ui-onboarding.test.js": "9dac6d5065c2b3a8200517338d62796ddca3567a7269288de6329ecb8622fe3e",
+    "test/ui-persona-lifecycle.test.js": "ff1358860d3cf3ed3738cd19c2a74ff569688c978a70747b98239b3c8171beec",
+    "test/voice.test.js": "e5abe144d03557e8352487e13519728884d5501334dc8e1fade952b0471dfcdf",
+    "test/windows-speech.test.js": "3651a6ce5fdfb93666ded137873dd051879ba978afe91fb2c8475e6efd215197",
+    "ui/app.js": "899c1d41fab41a5bd80b31c96b6897b36b80d15350ee9bf81f28d2edf62dfa44",
+    "ui/chat/app.js": "8cc898937b38a67ba9c224c6652b981aafc0d469e97c28de7b49c785d5bef0ed",
+    "ui/chat/speech.js": "4c7acecbaf76107a1a669f2f2fd34fd9a5dc18e4741d29a48918dfd56c4ac183",
+    "ui/client.js": "0d6f4a15bb1a3b4d8086f8be5c5467601d5f325d411d34c21c93a7e8ab4827e9",
+    "scripts/build-ui.mjs": "19ca824096449c5ef8456a89cd1b0aa102ee87a1d74cfd893f972932d3de7514",
+    "scripts/check.mjs": "2d0b7724f035ed20e0d0eec47f371ba3a65674d9eeb15cf8e205e1f6e7461e27",
+    "cordis.patch.yml": "1993456329bc4ac46973168ff77c8f358ab89e4abd567bb8924cf7c5e16bfd2d"
+  },
+  "tests": {
+    "full": {
+      "tests": 875,
+      "passed": 875,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "durationMs": 151936,
+      "logSha256": "fd436ef372640224a01aa7e931a7276a3fcefa7d9253ca54c939e6560a077147",
+      "changedDuringRun": []
+    },
+    "ui": {
+      "tests": 20,
+      "includedInFull": true,
+      "scope": "actual ui/app.js and build-ui download handler against isolated deterministic fixtures"
+    },
+    "bilibili": {
+      "tests": 36,
+      "includedInFull": true,
+      "scope": "protocol, permission queue, dead-PID recovery; no real account"
+    },
+    "firstAttempt": {
+      "tests": 868,
+      "passed": 867,
+      "failed": 1,
+      "correction": "missing host exec.callId no longer breaks memory-search exposure; full suite rerun passed"
+    }
+  },
+  "staticChecks": {
+    "status": "passed",
+    "syntaxFiles": 164,
+    "portableCoreImports": "passed",
+    "packageTargets": "passed"
+  },
+  "nativeSdk": {
+    "checks": 40,
+    "passed": 40,
+    "model": "deterministic local fixture",
+    "scope": "installed DSH SDK onboarding, delegation, persona lifecycle and media regression",
+    "sourceDigestsMatch": true,
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "locks": {
+      "core": {
+        "remaining": false
+      },
+      "media": {
+        "remaining": false
+      },
+      "tasks": {
+        "remaining": false
+      },
+      "social": {
+        "remaining": false
+      },
+      "secondaryCore": {
+        "remaining": false
+      }
+    }
+  },
+  "gui": {
+    "status": "passed",
+    "host": "installed DSH NEXT 0.2.1-rc.2 isolated web profile",
+    "pages": [
+      "overview",
+      "creation",
+      "cover-unconfigured",
+      "audio-library",
+      "connections-six-entries",
+      "bilibili-unbound-default-disabled",
+      "bilibili-permissions-four-off",
+      "hybrid-search-empty-result",
+      "retrieval-diagnostics-default-disabled",
+      "inline-user-guide-sixteen-topics"
+    ],
+    "audio": {
+      "status": "passed",
+      "checkedAt": "2026-10-26T19:40:18.461Z",
+      "fixture": {
+        "synthetic": true,
+        "containsSpeech": false,
+        "bytes": 65580,
+        "sha256": "5e7bb740a2503b77fceb9513428bb1fd66b3c7943e8c750fb75bd199538bd107"
+      },
+      "actualDshManagementTransport": true,
+      "uploadChunks": 3,
+      "downloadChunks": 3,
+      "assetId": "cover-5e7bb740a2503b77fceb9513428bb1fd",
+      "providerEnabled": false,
+      "externalRequests": 0,
+      "browserFileChooser": "attempted twice; IAB chooser event unavailable; no browser upload success claimed",
+      "helperCorrection": "read used actual assetId after first helper incorrectly used id",
+      "browserDownload": {
+        "passed": true,
+        "bytes": 65580,
+        "sha256": "5e7bb740a2503b77fceb9513428bb1fd66b3c7943e8c750fb75bd199538bd107",
+        "actualClick": true
+      }
+    },
+    "deadPidRecoveryVerified": true,
+    "shutdown": {
+      "coreUnloaded": true,
+      "ownedHostStopped": true,
+      "bilibiliLockCleanedThroughAcquireRelease": true,
+      "locksRemaining": 0
+    },
+    "fileChooserLimitation": "attempted twice; IAB chooser event unavailable; no browser upload success claimed"
+  },
+  "images": {
+    "docs/images/integrations-0.10.0/audio-download-final.png": {
+      "bytes": 37981,
+      "sha256": "6535a8a57d5a69348fdc8f3fd9bc01bdb8583887571c67071a14cde65cc40635"
+    },
+    "docs/images/integrations-0.10.0/bilibili-final.png": {
+      "bytes": 30398,
+      "sha256": "22a6b70a7c6b62ff958514036f829d95166172aca7419217ecf012d946288ef3"
+    },
+    "docs/images/integrations-0.10.0/retrieval-diagnostics-final.png": {
+      "bytes": 36511,
+      "sha256": "efcce5adb55875e6ff4b7c23102cafa5facb5b61408ae6d578aeca36ee151c0b"
+    }
+  },
+  "autonomy": {
+    "noPersonaBehaviorRulesAdded": true,
+    "corePromptsUnchanged": true,
+    "choicesRemainWithPersona": [
+      "what to remember",
+      "interpretation and growth",
+      "when to recall",
+      "reply and proactivity",
+      "sleep and wake",
+      "whether and how to use optional tools",
+      "delegation and result collection"
+    ],
+    "technicalControls": [
+      "bounded inputs, caches and context",
+      "source provenance and revocation",
+      "account permissions",
+      "actual capability and delivery receipts",
+      "writer concurrency and lifecycle"
+    ]
+  },
+  "limitations": [
+    "No real QQ/WeChat bridge login or messages in this version",
+    "No real Bilibili QR login, comment, reply or DM in this version",
+    "No paid model/embeddings or external cover provider called",
+    "Browser file chooser event unavailable in IAB; upload logic covered by tests and actual DSH management transport, browser download SHA verified",
+    "Subtitles/storyboards only cover supplied data; no full-video decode",
+    "Optional QQ feed/cover require compatible self-hosted provider",
+    "External provider copies cannot be recalled by local source revocation"
+  ],
+  "publication": {
+    "marketApplicationSubmitted": false,
+    "realModelCallsThisVersion": 0,
+    "realPlatformLoginsThisVersion": false,
+    "productionForceRestarted": false,
+    "productionDataChanged": false,
+    "normalBackendReloadNeeded": true
+  }
+}

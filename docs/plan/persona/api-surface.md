@@ -1,6 +1,6 @@
 # DSH 扩展点与 P0 接入验证
 
-当前0.9.0在既有八工具和owner桥上扩展自我资料读写，分次交流复用自主再判断；新增链路需本轮独立验收。
+当前0.10.0在既有八工具与owner桥补充检索、QQ丰富消息、B站及可选协议服务；当前字段以persona-schema第22节为准，平台支持／许可／送达分别报告。
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
@@ -253,3 +253,21 @@ clear不接收客户端自由路径或客户端自报文件列表，版本由tok
 UI先显示真实范围，再要求精确名称确认；关闭/取消预览不写入，归档或切换不隐含清除。写RPC及其回执绑定原实例和页面代次，确认后再次核对，旧页控件不作用于后来选择。清除完成保留不可加载标记；“新建人格”仍需用户明确输入名称并提交，不自动创建或将旧会话带入新库。
 
 最终owner桥、GUI与模型验收以[当前验收状态](../../management-ui.md#090-final-acceptance)为准，不从历史接口存在推定通过。
+
+## 0.10.0 检索与可选平台接口
+
+字段唯一见[persona-schema第22节](persona-schema.md#22-混合候选检索与可选平台扩展0100)。memory_search新增mode/timeMode/asOf/seedIds/associationDepth/diversity；persona_decide.retrievePlan同样可表达这些选择，不增加工具数或强制检索。tool结果仍按现有cursor分页，长解释可摘要为数量，不能为解释挤掉可继续读取的正文。
+
+| owner动作 | 实际职责 |
+| --- | --- |
+| memory.search | 所选人物／全局范围、时间与模式的候选搜索，分页结果与当前覆盖分开 |
+| retrieval.inspect/configure/prepare | 读取不回显密钥的服务状态；expectedVersion保存配置；仅明确prepare分页向量化 |
+| retrieval.diagnostics/detail/clearDiagnostics | 有界摘要／完整分页／清除运行诊断，不删除记忆或改变重要度 |
+| bilibili.inspect/configure/loginStart/loginPoll/loginCancel/disconnect | 实际公共网页扫码、账号就绪及启用；probe网络操作和纯能力快照分开 |
+| bilibili.listReceipts/resolveReceipt | 真实收据分页与unknown核对；手填编号不能直接冒充送达 |
+| socialProviders.inspect/configure/probe/execute/getJob/listJobs/cancel | 自备动态／翻唱服务配置、探测与同一真实作业查询 |
+| socialProviders.uploadBegin/uploadChunk/uploadFinish/uploadCancel/readAssetChunk/listAssets/deleteAsset | 有界真实音频导入、SHA核对、产物下载与明确删除 |
+
+persona_platform使用platform:bilibili的read/execute与operation，或QQ的feed.*／media.cover和job/cancel_job/assets；帐号权限由当前memoryRoot/平台/真实accountId核对，外发请求编号来自实际工具调用。QQ mention/message.read/forward读取沿真实binding与驱动支持执行，不开放泛化桌面控制。owner手动execute表示用户这次操作，不伪造人格自主选择；配置保存不启动生成。
+
+原生媒体输入需要实际DSH attachments／视觉模型或speechToText端口，安全来源和识别覆盖分开标注。无端口、无服务、无许可和失败分别报告，不构造假向量、图片理解或平台回执。当前接入条件／隐私／容量／最终证据集中见[本轮说明](../../integrations-and-retrieval.md)。

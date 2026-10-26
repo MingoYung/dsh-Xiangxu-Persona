@@ -46,7 +46,8 @@ function memoryHeader(item) {
     ...(item.scope != null ? { scope: item.scope } : {}), ...(item.role != null ? { role: item.role } : {}),
     ...(item.origin != null ? { origin: item.origin } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}),
     ...(item.proactiveId != null ? { proactiveId: item.proactiveId } : {}),
-    ...(item.epistemic ? { epistemic: item.epistemic } : {}), ...(item.label ? { label: item.label } : {}),
+    ...(item.epistemic ? { epistemic: item.epistemic } : {}),
+    ...(item.retrieval ? { retrieval: { channels: item.retrieval.channels, temporal: item.retrieval.temporal, lexicalScore: item.retrieval.lexicalScore, semanticScore: item.retrieval.semanticScore, rankScore: item.retrieval.rankScore, matchedTermCount: item.retrieval.matchedTerms?.length??0, associationPathCount: item.retrieval.associationPaths?.length??0, explanationDetailsOmitted: true } } : {}), ...(item.label ? { label: item.label } : {}),
     ...(item.policy ? { policy: item.policy, topic: item.topic } : {}),
     srcRefs: refs.first, sourceRefCount: refs.count,
     ...(refs.count > refs.first.length ? { additionalSourceRefsOmitted: refs.count - refs.first.length } : {}) };
@@ -108,6 +109,7 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
     const shape = hash(material), at = readCursor(args.cursor, { tool: toolName, query, shape, length: items.length });
     if (at.index === items.length && at.offset) throw new ToolCursorError('Cursor offset is past the result');
     const out = [], base = { totalMatched: items.length, ...accounting,
+      ...(result.diagnostics ? { retrieval: { method: result.diagnostics.method, referenceOnly: true, automaticRecall: false, semantic: { enabled: result.diagnostics.semantic?.enabled, configured: result.diagnostics.semantic?.configured, indexed: result.diagnostics.semantic?.indexed, eligible: result.diagnostics.semantic?.eligible, coverageComplete: result.diagnostics.semantic?.coverageComplete, reason: result.diagnostics.semantic?.reason, degraded: result.diagnostics.semantic?.degraded } } } : {}),
       ...(result.needsTarget ? { needsTarget: true } : {}) };
     const page = (rows, i, o = 0) => ({ ...base, items: rows,
       nextCursor: i < material.length ? cursorFor(toolName, query, shape, i, o) : null });

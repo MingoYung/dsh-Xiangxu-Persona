@@ -5,7 +5,7 @@ const fail = (code, message) => { throw Object.assign(new Error(message), { code
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** Owner-only composition behind the existing native DSH management route. */
-export function createPersonaSurfaces({ management, channels, connections, permissions, social, speech, mobile, getCoordinator }) {
+export function createPersonaSurfaces({ management, channels, connections, permissions, social, bilibili, speech, mobile, getCoordinator }) {
   if (typeof management?.dispatch !== 'function' || typeof getCoordinator !== 'function') throw new TypeError('Management and current coordinator ports are required');
   return {
     async dispatch(action, args = {}) {
@@ -29,6 +29,14 @@ export function createPersonaSurfaces({ management, channels, connections, permi
         };
         return Array.isArray(result?.connections) ? { ...result, connections: result.connections.map(withQr) } : withQr(result);
       }
+      if (action.startsWith('bilibili.')) {
+        if (!bilibili) fail('BILI_UNAVAILABLE','B站服务未就绪');
+        const method = action.slice(9), input={...args}; delete input.instanceId;
+        if (!['inspect','configure','loginStart','loginPoll','loginCancel','disconnect','listReceipts','resolveReceipt'].includes(method)) fail('BAD_MANAGEMENT_REQUEST','Unknown Bilibili action');
+        const result = await bilibili[method](input);
+        if (result?.qrContent) { try { return {...result,qrDataUrl:createLoginQr(result.qrContent)}; } catch { return {...result,qrUnavailable:true}; } }
+        return result;
+      }
       if (action.startsWith('permissions.')) {
         if (!permissions) fail('PERMISSION_UNAVAILABLE', '权限服务尚未就绪');
         const method = action.slice(12);
@@ -41,6 +49,30 @@ export function createPersonaSurfaces({ management, channels, connections, permi
         if (!['inspect', 'list', 'upsert', 'remove', 'linkCurrent', 'refresh'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown social identity action');
         return social[method](args);
       }
+      if (action.startsWith('retrieval.')) {
+        const c = await getCoordinator(args.instanceId);
+        if (!c) fail('INSTANCE_UNLOADED', '先加载人格实例再查看检索');
+        await c.ready;
+        if (c.initializationError) throw c.initializationError;
+        const method = action.slice(10), input = { ...args }; delete input.instanceId;
+        if (method === 'detail') return management.dispatch('retrieval.detail',args);
+        if (method === 'diagnostics') {
+          const full=await c.repository.getRetrievalDiagnostics(),recent=full.recent.slice(0,10).map(row=>({...row,records:row.records.slice(0,20),recordsPartial:row.recordsPartial||row.records.length>20})),exposure=full.exposure.slice(0,100);
+          const value={...full,recent,exposure,recentTotal:full.recent.length,exposureTotal:full.exposure.length,previewOnly:true};
+          while(Buffer.byteLength(JSON.stringify(value))>120000){if(recent.length)recent.pop();else if(exposure.length)exposure.pop();else fail('RETRIEVAL_DIAGNOSTIC_CAPACITY','诊断摘要超过响应容量');}
+          return value;
+        }
+        if (method === 'clearDiagnostics') return c.repository.clearRetrievalDiagnostics();
+        if (!c.retrievalProvider || c.retrievalInitializationError) fail('RETRIEVAL_PROVIDER_UNAVAILABLE', '向量服务配置未就绪，请查看诊断');
+        if (method === 'inspect') return c.retrievalProvider.inspect();
+        if (method === 'configure') {
+          const result = await c.retrievalProvider.configure(input);
+          await c.executeCommand('config', { retrieval: { semanticEnabled: result.enabled } });
+          return result;
+        }
+        if (method === 'prepare') return c.retrievalProvider.prepare(input);
+        fail('BAD_MANAGEMENT_REQUEST', 'Unknown retrieval action');
+      }
       if (action.startsWith('tasks.')) {
         const c = await getCoordinator(args.instanceId);
         if (!c) fail('INSTANCE_UNLOADED', '先加载人格实例再查看独立任务');
@@ -52,6 +84,17 @@ export function createPersonaSurfaces({ management, channels, connections, permi
         const input = { ...args }; for (const key of ['instanceId', 'actor', 'sourceRefs', 'sourceRecordIds', 'parentSessionId']) delete input[key];
         if (method === 'inspect') return { ...await c.tasks.inspect(), host: c.taskHost?.capabilities?.() ?? { available: false } };
         return c.tasks[method](input);
+      }
+      if (action.startsWith('socialProviders.')) {
+        const c=await getCoordinator(args.instanceId);if(!c)fail('INSTANCE_UNLOADED','先加载人格实例再设置扩展服务');await c.ready;
+        if(c.initializationError)throw c.initializationError;
+        if(c.socialProviderInitializationError||!c.socialProviders)fail('SOCIAL_PROVIDER_UNAVAILABLE','可选社交服务未就绪');
+        const method=action.slice(16),input={...args};delete input.instanceId;
+        if(['uploadBegin','uploadChunk','uploadFinish','uploadCancel','readAssetChunk'].includes(method)){if(!c.audioTransfers)fail('SOCIAL_AUDIO_UNAVAILABLE','音频传输端口未就绪');return c.audioTransfers[method](input);}
+        if(!['inspect','configure','probe','getJob','listJobs','cancel','listAssets','deleteAsset','execute'].includes(method))fail('BAD_MANAGEMENT_REQUEST','Unknown optional social action');
+        if(method==='deleteAsset')c.audioTransfers?.invalidate();
+        if(method==='execute') return c.socialProviders.execute(input,{actor:'user'});
+        return c.socialProviders[method](input);
       }
       if (action.startsWith('media.')) {
         const c = await getCoordinator(args.instanceId);

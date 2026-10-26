@@ -4,6 +4,8 @@ import { JsonStore } from './store.js';
 import { extractSourceDependencies, hotSourceDependencies, dependenciesRevoked, temporaryCleanupPlan, runReferencesRevocation } from './source-dependencies.js';
 import { countStringValues, serializedBytes, assertRecordCapacity, assertDocumentCapacity, assertFiniteReviewState, assertFiniteJson, capacityError } from './capacity.js';
 import { SELF_PROFILE_PATH, emptySelfProfile, validateSelfProfile, validateSelfProfilePatch, applySelfProfilePatch, selfProfileLinks, redactSelfProfile } from './self-profile.js';
+import { validateRetrievalInput, temporalReference, lexicalCandidates, associationCandidates, mergeCandidates } from './retrieval.js';
+import { RetrievalState } from './retrieval-semantic.js';
 import {
   SCHEMA_VERSION, SchemaError, defaultConfig, mergeConfig, emptyPersona, emptyRuntime,
   newId, sourceKey, countChars, safeId, validateChat, validateHot, validateMemoryItem,
@@ -52,10 +54,11 @@ function keywords(query) {
 }
 
 export class MemoryRepository {
-  constructor({ root, config = {}, clock = Date.now, fault = null }) {
+  constructor({ root, config = {}, clock = Date.now, fault = null, semanticPort = null }) {
     this.root = root; this.configOverrides = config; this.config = defaultConfig(config); this.clock = typeof clock === 'function' ? clock : () => clock.now();
     this.store = new JsonStore(root, { fault, journalMaxBytes: this.config.retention.journalMaxBytes, capacityLimits: this.config.capacityLimits, diskReserveBytes: this.config.diskReserveBytes });
     this._tail = Promise.resolve();
+    this._retrieval = new RetrievalState({ clock: () => this.now(), getConfig: () => this.config.retrieval, semanticPort });
   }
   _queue(work) { const result = this._tail.then(work); this._tail = result.catch(() => {}); return result; }
   now() { return this.clock(); }
@@ -81,7 +84,7 @@ export class MemoryRepository {
       return this;
     } catch (error) { await this.store.close(); throw error; }
   }
-  close() { return this._queue(() => this.store.close()); }
+  close() { return this._queue(async () => { this._retrieval.clearCache(); this._retrieval.clearDiagnostics(); await this.store.close(); }); }
   async _meta() { return this.store.readJson('meta/state.json', initialMeta()); }
   validateSourceRefs(refs, { requireOriginal = false } = {}) {
     return this._queue(async () => {
@@ -164,7 +167,9 @@ export class MemoryRepository {
   _event(meta) { meta.sequence += 1; return 'ev_' + String(meta.sequence).padStart(20, '0'); }
   async _commit(meta, { json = {}, jsonl = {}, expectedVersions = {}, runId = newId('write') } = {}) {
     const priorVersion = meta.version; meta.version += 1;
-    return this.store.transaction({ runId, json: { ...json, 'meta/state.json': meta }, jsonl, expectedVersions: { ...expectedVersions, 'meta/state.json': priorVersion } });
+    const result = await this.store.transaction({ runId, json: { ...json, 'meta/state.json': meta }, jsonl, expectedVersions: { ...expectedVersions, 'meta/state.json': priorVersion } });
+    this._retrieval.invalidate(meta, { clearQueries: Object.hasOwn(jsonl, 'global/revocations.jsonl') });
+    return result;
   }
   async _records(meta = null) {
     meta ??= await this._meta(); const rows = [];
@@ -464,23 +469,49 @@ export class MemoryRepository {
     return rows.filter((item) => !item.retractedBy && !meta.revokedIds.includes(item.id) && !(item.srcRefs?.length && item.srcRefs.every((ref) => meta.revokedSources.includes(sourceKey(ref)))));
   }
   async _search(input, context = {}) {
+    input = validateRetrievalInput(input);
     const target = input.targetPersonId ?? context.personId ?? null; const scope = input.scope ?? 'person';
     if (!['person', 'global', 'all'].includes(scope)) throw new SchemaError('Unknown search scope');
     if (scope === 'person' && !target) return { items: [], needsTarget: true };
     if (target) safeId(target);
-    const meta = await this._meta(); const terms = keywords(input.query); const normalizedQuery = String(input.query ?? '').toLocaleLowerCase();
-    const limit = input.limit ?? 5; if (!Number.isSafeInteger(limit) || limit < 0 || limit > 1000) throw new SchemaError('limit must be integer 0..1000');
-    const rows = (await this._allMemory(meta)).filter((item) => scope === 'all' || (scope === 'global' ? item.scope === 'global' : item.personId === target));
-    const results = rows.map((item) => {
-      const text = [item.text, item.meaning, item.label, item.desc, item.if, item.then, item.title, item.reference, item.experience, item.feltThen, item.meaningNow, ...(item.keys ?? []), ...(item.cues ?? [])].filter(Boolean).join(' ').toLocaleLowerCase();
-      const exact = normalizedQuery && text.includes(normalizedQuery) ? 2 : 0;
-      const matches = terms.reduce((sum, term) => sum + (text.includes(term) ? 1 : 0), 0);
-      const score = exact + (terms.length ? matches / terms.length : 0);
-      return { ...item, score };
-    }).filter((item) => !normalizedQuery || item.score > 0).sort((a, b) => b.score - a.score || (b.createdAt ?? b.sourceAt ?? 0) - (a.createdAt ?? a.sourceAt ?? 0));
-    return { items: results.slice(0, limit) };
+    const meta = await this._meta(), all = await this._allMemory(meta), now = this.now(); this._retrieval.reconcile(all, meta);
+    const scoped = all.filter(item => scope === 'all' || (scope === 'global' ? item.scope === 'global' : item.personId === target));
+    const rows = scoped.filter(item => temporalReference(item, input, now).eligible), lexical = !input.query && input.seedIds.length ? [] : lexicalCandidates(rows, input.query);
+    const semantic = await this._retrieval.search(rows, input.limit ? input.query : '', input.mode);
+    const seeds = [...input.seedIds]; for (let i = 0; seeds.length < 16 && i < Math.max(lexical.length, semantic.items.length); i++) {
+      for (const row of [lexical[i], semantic.items[i]]) if (row && !seeds.includes(row.id) && seeds.length < 16) seeds.push(row.id);
+    }
+    const depth = input.limit && (input.query || input.seedIds.length) ? input.associationDepth : 0;
+    const association = associationCandidates(rows, seeds, depth);
+    const result = mergeCandidates(rows, lexical, semantic.items, association, input, now);
+    const diagnostics = { requestId: context.requestId ?? newId('retrieval'), method: ['lexical', ...(semantic.diagnostics.available ? ['semantic'] : []), ...(depth ? ['association'] : [])].join('+'),
+      referenceOnly: true, automaticRecall: false, temporal: { mode: input.timeMode, at: input.timeMode === 'asOf' ? input.asOf : now,
+        scopedRecords: scoped.length, eligibleRecords: rows.length, unspecifiedValidity: rows.filter(item => temporalReference(item, input, now).status === 'unspecified').length, historicalDatabaseSnapshot: false },
+      semantic: semantic.diagnostics, association: { depth, seeds: seeds.length, candidates: association.items.length,
+        partial: association.truncated, unavailableLinks: association.missingLinks },
+      candidates: result.candidateCount, returned: result.items.length, diversity: input.diversity, distinctSourceGroups: result.distinctSourceGroups };
+    this._retrieval.recordSearch({ requestId: diagnostics.requestId, query: input.query, options: input, items: result.items, diagnostics });
+    return { items: result.items, diagnostics };
   }
   search(input, context = {}) { return this._queue(() => this._search(input, context)); }
+  setSemanticPort(port) { return this._queue(() => this._retrieval.setPort(port)); }
+  prepareRetrievalIndex({ scope = 'all', targetPersonId = null, offset = 0, limit } = {}) {
+    return this._queue(async () => {
+      if (!['all', 'person', 'global'].includes(scope)) throw new SchemaError('Unknown semantic preparation scope');
+      if (scope === 'person') safeId(targetPersonId);
+      const meta = await this._meta(), all = await this._allMemory(meta); this._retrieval.reconcile(all, meta);
+      const rows = all.filter(item => scope === 'all' || (scope === 'global' ? item.scope === 'global' : item.personId === targetPersonId)).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      return this._retrieval.prepare(rows, { offset, ...(limit !== undefined ? { limit } : {}) });
+    });
+  }
+  getRetrievalDiagnostics() {
+    return this._queue(async () => { const meta = await this._meta(), rows = await this._allMemory(meta); this._retrieval.reconcile(rows, meta);
+      const ids = new Set(rows.map(item => item.id)); this._retrieval.events = this._retrieval.events.map(event => ({ ...event, records: event.records.filter(row => ids.has(row.id)) }));
+      return this._retrieval.status(); });
+  }
+  clearRetrievalDiagnostics() { return this._queue(() => this._retrieval.clearDiagnostics()); }
+  clearRetrievalCache() { return this._queue(() => { this._retrieval.clearCache(); return this._retrieval.status(); }); }
+  recordRetrievalExposure(input) { return this._queue(() => this._retrieval.recordExposure(input)); }
   browseMemory({ query = '', scope = 'all', targetPersonId = null, recordType = null, offset = 0, limit = 50 } = {}) {
     return this._queue(async () => {
       if (!['all', 'person', 'global', 'unknown'].includes(scope)) throw new SchemaError('Unknown browse scope');
@@ -1088,7 +1119,10 @@ export class MemoryRepository {
     return this._queue(async () => {
       const rows = await this.store.readLines('global/snapshots.jsonl');
       const next = last([...rows.filter((r) => r.requestId !== snapshot.requestId), copy(snapshot)], this.config.retention.snapshotMaxRequests);
-      await this.store.transaction({ runId: newId('snapshot'), jsonl: { 'global/snapshots.jsonl': next } }); return copy(snapshot);
+      await this.store.transaction({ runId: newId('snapshot'), jsonl: { 'global/snapshots.jsonl': next } });
+      if (typeof snapshot.requestId === 'string' && snapshot.requestId && snapshot.requestId.length <= 256 && Array.isArray(snapshot.injectedIds) && snapshot.injectedIds.every(id => typeof id === 'string' && id && id.length <= 200))
+        this._retrieval.recordExposure({ requestId: snapshot.requestId, recordIds: snapshot.injectedIds, kind: 'snapshot' });
+      return copy(snapshot);
     });
   }
   getSnapshots() { return this._queue(() => this.store.readLines('global/snapshots.jsonl')); }
@@ -1112,7 +1146,9 @@ export class MemoryRepository {
       Object.assign(this.store, { capacityLimits: next.capacityLimits, journalMaxBytes: next.retention.journalMaxBytes, diskReserveBytes: next.diskReserveBytes });
       try { await this.store.transaction({ runId: newId('config'), json: { 'config.json': next } }); }
       catch (error) { Object.assign(this.store, previous); throw error; }
-      this.config = next; return copy(next);
+      const wasSemantic = this.config.retrieval?.semanticEnabled; this.config = next;
+      if (wasSemantic && !next.retrieval?.semanticEnabled) this._retrieval.clearCache(); else this._retrieval.prune();
+      return copy(next);
     });
   }
 }

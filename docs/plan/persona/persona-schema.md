@@ -1,8 +1,8 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.9.0兼容扩展集中在第20节：自我档案、工具/管理接口与交流偏好；已有persona-memory/3字段和历史证据保留各自范围。
+当前0.10.0兼容扩展集中在第22节：混合候选检索、有效时间、参考诊断与可选平台。第20／21节自我档案和生命周期继续有效；历史证据不自动提升为本轮验收。
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.9.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.10.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -339,6 +339,12 @@ interface RetrievePlan {
   targetPersonId?: PersonId;
   scope?: "person" | "global" | "all";
   limit?: number;
+  mode?: "auto" | "lexical" | "hybrid";
+  timeMode?: "all" | "current" | "past" | "asOf";
+  asOf?: EpochMs;
+  seedIds?: string[];
+  associationDepth?: number;
+  diversity?: "none" | "source";
   reason?: string;
 }
 interface IdentityPlan {
@@ -383,7 +389,7 @@ interface DecisionRecord extends PersonaDecideInput {
 
 | 工具 | 参数 | 目标语义 |
 |---|---|---|
-| `memory_search` | `{query, targetPersonId?, scope?:"person"\|"global"\|"all", limit?}` | 缺省取当前已识别对象；显式可指其他已知对象或所有关系 |
+| `memory_search` | `{query,targetPersonId?,scope?,limit?,mode?,timeMode?,asOf?,seedIds?,associationDepth?,diversity?,cursor?}` | 缺省取当前已识别对象；显式可指其他已知对象或所有关系 |
 | `memory_forget` | `{ids?, targetPersonId?, before?, reason}` | 清楚定位对象与内容后生成撤销记录；时间为epoch ms；歧义不批量操作 |
 | `persona_introspect` | `{targetPersonId?,section?,action?,selfPatch?,expectedVersion?,cursor?}` | section为`self/anchor/axes/facets/signatures/habits/relation/deep/state/all`；可明确查看对他人的印象。0.9.0的self读取与update_self当前自我资料更新见第20节 |
 | `persona_decide` | `PersonaDecideInput` | 写入人格的注意、回话、检索、下一判断与睡眠决定 |
@@ -519,6 +525,7 @@ interface PersonaConfig {
     maxTargetsPerJob: number;
   };
   reviewAssistant?: ReviewAssistantConfig; // 缺省关闭，契约见第18节
+  retrieval?: RetrievalConfig; // 0.10.0兼容扩展，字段见第22节；默认／范围由retrieval-config.js定义
   contextBudget: {
     totalTokens: number;
     environmentTokens: number;
@@ -691,7 +698,7 @@ xiangxu-connections/1最多两个平台档案、1MiB；传输上限来自CONNECT
 
 权限schema=xiangxu-permissions/1，按当前memoryRoot／platform／实际accountId保存allowed，最多128条／256KiB；管理inspect返回items:{id,label,supported,allowed,available,reason}，configure只由当前真实账号保存，list与reset用于明确清理旧账号许可。默认chat.text，旧voiceMode迁移可保留chat.voice意图；不支持／未就绪时仍不可用。reset移除该账号自定义许可并释放记录，恢复渠道默认chat.text以及voiceMode=both|voice时已开启的chat.voice意图，返回实际defaults；不删记忆、不自动重连，available仍核实际能力。新增未支持许可被拒绝；旧许可可保留／撤销但不变成available。
 
-能力ID固定为chat.text、chat.image、chat.video、chat.file、chat.voice、chat.sticker、message.reply、message.retract、contacts.read、groups.read、friend.manage、group.manage、profile.update、feed.read、feed.publish、feed.react、call.voice、call.video。它们是能力目录，当前feed.*与call.*未实现；系统表情与自定义表情包、视频文件与实时视频通话分别核实，不能凭勾选宣布支持。
+能力目录保留chat.text、chat.image、chat.video、chat.file、chat.voice、chat.sticker、message.reply、message.retract、contacts.read、groups.read、friend.manage、group.manage、profile.update、feed.read、feed.publish、feed.react、call.voice、call.video；0.10.0兼容增加chat.mention、message.read、message.forward.read与media.cover。它们是能力目录，当前call.*仍未实现；0.10.0的feed.*、media.cover、chat.mention、message.read、message.forward.read按第22节的实际适配／服务核对；系统表情与自定义表情包、视频文件与实时视频通话分别核实，不能凭勾选宣布支持。
 
 persona_platform action=inspect|execute|accounts，可选capability、真实target、assetId、text、messageId、stickerId与结果cursor。inspect读取当前目标支持／许可／可用；execute校验实际原生binding、当前实例／账号、接入范围、driver、用户授权与真实资产，再调用有限平台动作，不读取任意路径或泛化客户端控制。外发prepared／unknown不自动重放；微信ret=0但无远程messageId时以client_id标注API接受回执种类，不虚构平台消息ID或用户已读。具体实现事实见[渠道接入](../../channel-integration.md)。
 
@@ -1004,4 +1011,47 @@ clearPreview只扫描、计算指纹并签发本进程内临时token，不删除
 
 技术容量为最多16个未清除实例（归档与partial仍占用）、256个已清除墓碑；登记文件256KiB，归属文件2MiB，容量满明确拒绝而不淘汰归属/墓碑。list返回全部未清除记录与登记顺序尾部最多20条已清除记录，counts报告总量，clearedListComplete说明已清除列表是否完整。清除扫描最多20000个受管文件、累计256MiB；这些是管理操作技术帽，不扩大原有核心库容量或人格上下文预算。
 
-本节是结构与执行契约，当前版本验收状态以[管理说明的0.9.0最终验收](../../management-ui.md#090-final-acceptance)为准。
+本节是0.9.0生命周期增量的结构与执行契约，其历史验收见[0.9.0最终验收](../../management-ui.md#090-final-acceptance)；当前0.10.0增量以[本轮验收记录](../../integrations-and-retrieval.md#本轮验收记录)为准。
+
+## 22. 混合候选检索与可选平台扩展（0.10.0）
+
+本节是新增字段权威，保持persona-memory/3与八工具兼容。资源默认值、可调范围和硬帽唯一可执行数值源为[core/retrieval-config.js](../../../core/retrieval-config.js)；部署schema直接消费该源，不另维护一份数值裁决表。平台固定传输／资产帽分别来自适配器导出的LIMITS，说明索引见[本轮技术容量](../../integrations-and-retrieval.md#技术容量)。它们只约束资源，不决定人格重要度、亲疏或行为频率。
+
+~~~ts
+interface RetrievalConfig {
+  semanticEnabled?: boolean;
+  cacheEntries?: number;
+  cacheBytes?: number;
+  cacheTtlMs?: number;
+  requestTimeoutMs?: number;
+  batchRecords?: number;
+  documentChars?: number;
+  diagnosticEntries?: number;
+  diagnosticBytes?: number;
+}
+interface SemanticPort {
+  id: string;
+  version: string;
+  dimensions?: number;
+  embed(input: {texts: string[]; purpose: "document" | "query"; signal: AbortSignal}):
+    Promise<{vectors: number[][]}>;
+}
+~~~
+
+memory_search与RetrievePlan共用mode、timeMode、asOf、seedIds、associationDepth、diversity。默认mode:auto、timeMode:all、associationDepth:1、diversity:none、limit:5；scope沿原person/global/all语义。query最多2000字符，可空；limit技术范围0–1000，0不调用向量。seedIds最多16个真实记录ID，深度0–2；空query且无seed不做语义查询或图扩展。lexical关闭向量接口，仍允许明确的既有关联扩展；hybrid/auto没有服务／索引或服务失败时如实降级。
+
+current/asOf按已有validFrom≤at<validTo筛选，缺失边界保持未指定，不补编时间；asOf必须且只能随timeMode:asOf提供epoch毫秒，聊天原件还按sourceAt排除未来消息。past只选validTo已明确结束的资料，不等于所有历史经历；invalid区间不冒称有效。supersedesIds不会自动让旧观点失效。查询只覆盖尚存资料，不是历史数据库恢复，不复活明确遗忘。
+
+返回仍是items，既有score保留字面相关度含义；item.retrieval另含channels、rankScore、lexicalScore、semanticScore、matchedTerms、associationPaths、temporal、referenceOnly:true、automaticRecall:false。融合排序不是人格重要度；diversity:source只作为可选来源多样性排序，不设人群配额，不删条目。内部候选键含recordType/scope/personId/id，不能把同名裸ID串成他人经历。关联仅沿relatedMemoryIds/expandIds/supersedesIds/replacementIds等已存连接，不冒用来源依赖作语义关系；不完整时标partial。
+
+diagnostics包含真实method、temporal、semantic（enabled/configured/available/queryCacheHit/eligible/indexed/coverageComplete/reason/degraded）、association及返回量。候选、实际snapshot注入和工具返回分别记search_candidates/snapshot/tool_result；记录requestId/ID/来源hash/计算依据与queryHash，不额外留query原文，窗口与缓存都有帽且进程重启清空。重复曝光不改变排序权重、自动回忆或人格取舍。工具预算页可只返回scalar解释和matchedTermCount/associationPathCount、explanationDetailsOmitted:true，原文仍沿cursor读取。
+
+setSemanticPort(port|null)经仓库队列替换并清cache/provider状态；prepareRetrievalIndex只为显式所选页调用document embed。search只在启用且已有可用索引时按需query embed，并复用同provider/version/query指纹缓存。有限真实非零向量需维度／数值校验，不用字符串hash伪装语义。文档超过向量片段帽时标partialTexts/partialDocumentTexts，原件不截短；pageComplete/nextOffset是页进度，coverage才是实际覆盖。TTL、LRU、换服务和重启可移除可重建向量，不删除原始资料；撤销来源清除受影响缓存／诊断引用。DSH配置文件与密钥在库外，endpoint/model/apiKey/enabled/version经expectedVersion保存；不会回退聊天模型或自动全库索引。
+
+persona_platform保持同一工具，新增platform:bilibili及action:read/job/cancel_job/assets，原inspect/execute/accounts继续按分支使用。B站operation为search/recommend/video/subtitles/comments/frames/comment/reply/share/message；keyword、bvid/cid、page/limit、offset/charOffset/next、times/num、commentId/contentHash、评论父ID及接收UID等仅按对应操作校验，不是任意HTTP代理。读取按实际字幕／分P／采样覆盖，写入按真实rpid/msg_key回执；分享是私信链接。当前memoryRoot、账号、能力授权和真实调用requestId来自可信适配上下文，不能由模型伪造。B站默认没有许可；能力快照只读当前服务状态，不在操作队列内重入排队inspect，probe仍单独排队。unknown及等价未确认操作不得自动重发。
+
+QQ OneBot11扩展chat.mention、message.read、message.forward.read和安全rich消息。resolveIncomingMedia默认true、transcribeIncomingAudio默认false；真实图片附件需要视觉模型，语音只经已配置STT处理受支持PCM16 WAV。rich原始安全段、SHA、省略标志、媒体／提及／回复／转发及perception保留技术事实；转写和第三方转发是独立程序材料，不改用户原话或speaker身份。unsupported／失败如实报告，不猜媒体内容；微信与官方Bot不继承QQ桥能力。
+
+media.cover和QQ feed.*使用用户自备xiangxu-social-provider/1。配置分别含feed/cover的baseUrl/apiKey/allowRemote/accountId、同源probe/read/publish/react或submit/poll/cancel路径、model/targetVoice和明确downloadOrigins；不存在即不可用。作业保存真实requestId、目标／内容指纹、状态和来源，音频资产存真实bytes/mime/SHA与来源，导入经有界分块和整件校验。未确认不自动重交；取消本机等待不冒充远端取消。人格记什么仍自主选择。受管extensions/qq-social/state.json计入实例文本清除，库外音频、账号凭据、任务原件和备份不属于该删除清单；来源撤销另核永久撤销表并报告远端未删除边界。
+
+owner动作和各服务具体响应以[接口补充](api-surface.md#0100-检索与可选平台接口)和[本轮说明](../../integrations-and-retrieval.md)为消费说明。2970仍是动态snapshot总帽，参考不等于回忆；本节字段校验不代替本轮最终运行／真实账号验收。

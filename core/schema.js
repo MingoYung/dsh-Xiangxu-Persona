@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_RETRIEVAL_CONFIG, validateRetrievalConfig } from './retrieval-config.js';
 import { DEFAULT_CAPACITY_LIMITS, DEFAULT_PROCESSING_LIMITS, DEFAULT_DEEP_MEMORY_LIMITS } from './capacity.js';
 
 export const SCHEMA_VERSION = 'persona-memory/3';
@@ -227,6 +228,7 @@ export function mergeConfig(base, overrides = {}) {
   object(overrides, 'config overrides');
   return { ...base, ...overrides, contextBudget: { ...base.contextBudget, ...overrides.contextBudget }, artifactLimits: { ...base.artifactLimits, ...overrides.artifactLimits }, retention: { ...base.retention, ...overrides.retention },
     reviewAssistant: { enabled: false, maxOutputTokens: 1024, maxReportChars: 4000, ...base.reviewAssistant, ...overrides.reviewAssistant },
+    retrieval: { ...DEFAULT_RETRIEVAL_CONFIG, ...base.retrieval, ...overrides.retrieval },
     capacityLimits: { ...DEFAULT_CAPACITY_LIMITS, ...base.capacityLimits, ...overrides.capacityLimits }, processingLimits: { ...DEFAULT_PROCESSING_LIMITS, ...base.processingLimits, ...overrides.processingLimits } };
 }
 export function defaultConfig(overrides = {}) {
@@ -250,6 +252,7 @@ export function validateConfig(config) {
   for (const name of ['capacityLimits', 'processingLimits']) if (config[name] !== undefined) {
     object(config[name], name); for (const [key, value] of Object.entries(config[name])) { integer(value, name + '.' + key); if (value === 0) fail(name + '.' + key + ' must be positive'); }
   }
+  if (config.retrieval !== undefined) validateRetrievalConfig(config.retrieval);
   if (config.reviewAssistant !== undefined) {
     object(config.reviewAssistant, 'reviewAssistant');
     if (typeof config.reviewAssistant.enabled !== 'boolean') fail('reviewAssistant.enabled must be boolean');

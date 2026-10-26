@@ -208,6 +208,15 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
       const context = await repo.getContext({ personId }), value = section === 'all' ? { identity: context.identity, impression: context.impression, codes: context.codes, interpretations: context.interpretations } : context[section];
       return pageDetail(action, args, value);
     }
+    if (action === 'retrieval.detail') return pageDetail(action,args,await repo.getRetrievalDiagnostics());
+    if (action === 'memory.search') {
+      const input = Object.fromEntries(['query','mode','timeMode','asOf','seedIds','associationDepth','diversity','scope','limit'].filter(key => args[key] !== undefined).map(key => [key,args[key]]));
+      if (args.personId ?? args.targetPersonId) input.targetPersonId = args.personId ?? args.targetPersonId;
+      const result = await repo.search({ ...input, query: input.query ?? '', limit: input.limit ?? 100 });
+      const rows=result.items.map(row=>({...memorySummary(row),score:row.score,retrieval:row.retrieval}));
+      const revision=hash(rows.map(row=>{const value=structuredClone(row);if(value.retrieval?.temporal)delete value.retrieval.temporal.at;return value;}));
+      return { ...pageList(action,args,rows,revision), diagnostics: result.diagnostics };
+    }
     if (action === 'memory.list') {
       const size = args.pageSize ?? 30; if (!Number.isSafeInteger(size) || size < 1 || size > 100) throw error('BAD_MANAGEMENT_REQUEST', 'pageSize must be 1..100');
       let offset = 0, cursor;

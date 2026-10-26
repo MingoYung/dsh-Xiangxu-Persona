@@ -36,3 +36,9 @@ DSH operator CLI 的 --wait-ms 为正整数，默认30000，可供慢整理增�
 ## Native DSH management (0.3.0)
 
 The package is dsh-xiangxu-persona; its core export is dsh-xiangxu-persona/core. Existing persona-memory preset IDs and persona-memory/3 data remain compatible. UI-specific modules stay in adapters/dsh and ui; another host may reuse the core while implementing its own authenticated operator/lifecycle ports. Do not add a second live repository writer for browsing. Control and maintenance are explicit operations; importing/restoring data leaves the instance unloaded until selected again. See [management UI](management-ui.md) and the self-contained [schema](plan/persona/persona-schema.md).
+
+## 0.10.0 可选语义端口与平台移植
+
+普通文字和已存关联检索不要求外部服务。其它宿主可通过repository.setSemanticPort提供纯embed端口，显式调用prepareRetrievalIndex建立所选批次，再使用search；关闭或更换服务会清缓存，凭据、网络和用户启用界面由宿主负责。方法与真实向量要求见[Repository API](repository-api.md#0100-hybrid-candidate-retrieval-and-volatile-semantic-port)，数值以[retrieval-config.js](../core/retrieval-config.js)为准。
+
+QQ、B站、宿主附件／语音识别与可选动态／翻唱都是DSH适配层，不是核心默认依赖。移植不能把附件已接收当作媒体理解、把状态submitted当作送达，或把参考曝光当作回忆。不得用旧DSH/模型证据替代新宿主验收，详见[0.10.0 接入与检索说明](integrations-and-retrieval.md)。

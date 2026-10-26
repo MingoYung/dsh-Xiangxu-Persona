@@ -89,15 +89,16 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
             if(disposed||!message||typeof message.id!=='string'||message.id.length>100||typeof message.action!=='string'||!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(message.action))return;
             const current=channel;
             try{
-              if(message.action==='ui.asset.download'||message.action==='ui.task.download'){
+              if(message.action==='ui.asset.download'||message.action==='ui.audio.download'||message.action==='ui.task.download'){
                 if(downloadInProgress)throw new Error('已有资产正在下载');downloadInProgress=true;try{
-                const args=message.args??{},isTask=message.action==='ui.task.download';
-                if((isTask?typeof args.taskId!=='string'||!/^task-[a-f0-9]{32}$/.test(args.taskId)||typeof args.documentId!=='string'||!/^doc-[a-f0-9]{32}$/.test(args.documentId)||Object.keys(args).some(key=>!['taskId','documentId','instanceId'].includes(key)):typeof args.assetId!=='string'||!/^asset-[a-f0-9]{32}$/.test(args.assetId)||Object.keys(args).some(key=>!['assetId','instanceId'].includes(key)))||args.instanceId!==undefined&&(typeof args.instanceId!=='string'||args.instanceId.length>128))throw new Error('无效的资料下载请求');
+                const args=message.args??{},isTask=message.action==='ui.task.download',isAudio=message.action==='ui.audio.download';
+                if((isTask?typeof args.taskId!=='string'||!/^task-[a-f0-9]{32}$/.test(args.taskId)||typeof args.documentId!=='string'||!/^doc-[a-f0-9]{32}$/.test(args.documentId)||Object.keys(args).some(key=>!['taskId','documentId','instanceId'].includes(key)):typeof args.assetId!=='string'||!(isAudio?/^cover-[a-f0-9]{32}$/:/^asset-[a-f0-9]{32}$/).test(args.assetId)||Object.keys(args).some(key=>!['assetId','instanceId'].includes(key)))||args.instanceId!==undefined&&(typeof args.instanceId!=='string'||args.instanceId.length>128))throw new Error('无效的资料下载请求');
                 if(!crypto.subtle)throw new Error('当前宿主无法校验下载内容');
                 let offset=0,total=null,sha=null,mime=null,filename=null;const chunks=[];
                 for(let index=0;index<2049;index++){
                   if(disposed)throw new Error('页面已经关闭');
-                  const value=await ctx.connection.rpc.call('/api','persona-memory.manage',{action:isTask?'tasks.readChunk':'media.readAssetChunk',args:{...(isTask?{taskId:args.taskId,documentId:args.documentId}:{assetId:args.assetId}),instanceId:args.instanceId,offset,...(sha?{sha256:sha}:{})}});
+                  const value=await ctx.connection.rpc.call('/api','persona-memory.manage',{action:isTask?'tasks.readChunk':isAudio?'socialProviders.readAssetChunk':'media.readAssetChunk',args:{...(isTask?{taskId:args.taskId,documentId:args.documentId}:{assetId:args.assetId}),instanceId:args.instanceId,offset,...(sha?{sha256:sha}:{})}});
+                  if(disposed||current!==channel)throw new Error('下载页面或连接已经改变');
                   if(!value?.ok)throw new Error(value?.error?.message||'资产读取失败');const part=value.value;
                   if(!Number.isSafeInteger(part.totalBytes)||part.totalBytes<(isTask?0:1)||part.totalBytes>67108864||typeof part.sha256!=='string'||!/^[a-f0-9]{64}$/.test(part.sha256)||typeof part.dataBase64!=='string'||part.dataBase64.length>43692)throw new Error('资产下载超过容量或缺少校验');
                   if(total!==null&&(total!==part.totalBytes||sha!==part.sha256))throw new Error('资产已经变化，请重新读取');
@@ -108,7 +109,7 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
                   if(part.nextOffset!==offset)throw new Error('资产读取位置不连续');
                 }
                 if(offset!==total)throw new Error('资产未完整读取');const bytes=new Uint8Array(total);let at=0;for(const chunk of chunks){bytes.set(chunk,at);at+=chunk.length}
-                const actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');if(actual!==sha)throw new Error('资产校验不一致，未下载');
+                const actual=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');if(actual!==sha)throw new Error('资产校验不一致，未下载');if(disposed||current!==channel)throw new Error('下载页面或连接已经改变');
                 const url=URL.createObjectURL(new Blob([bytes],{type:mime||'application/octet-stream'})),link=document.createElement('a');link.href=url;link.download=isTask&&typeof filename==='string'&&filename.length>0&&Array.from(filename).length<=160&&Array.from(filename).every(char=>char.codePointAt(0)>31&&char.codePointAt(0)!==127&&![34,42,47,58,60,62,63,92,124].includes(char.codePointAt(0)))&&!filename.endsWith('.')&&!filename.endsWith(' ')?filename:/^[a-zA-Z0-9_.-]{1,160}$/.test(filename||'')?filename:'xiangxu-asset';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
                 if(!disposed&&current===channel)channel.port1.postMessage({id:message.id,ok:true,value:{status:'download_started',...(isTask?{taskId:args.taskId,documentId:args.documentId}:{assetId:args.assetId}),filename:link.download,bytes:total,sha256:sha}});return;
                 }finally{downloadInProgress=false}

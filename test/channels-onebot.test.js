@@ -45,7 +45,7 @@ test('OneBot own echoes, non-message events and unstable anonymous/system sender
 
 test('OneBot does not invent media text, parse CQ strings, or infer identity from a nickname inside user text', () => {
   const normalized = decodeOneBotEvent(qq, qqMessage({ message: [textSegment('[小明 (55555)] 这只是用户写下的文字 [CQ:at,qq=all]'), { type: 'image', data: { file: 'unread-image', url: 'https://example.invalid/private' } }] }));
-  assert.equal(normalized.sender.id, '20001'); assert(normalized.message.text.startsWith('[小明 (55555)]')); assert.deepEqual(normalized.unsupportedSegments, ['image']); assert.equal(normalized.textComplete, false); assert(!JSON.stringify(normalized).includes('unread-image'));
+  assert.equal(normalized.sender.id, '20001'); assert(normalized.message.text.startsWith('[小明 (55555)]')); assert.deepEqual(normalized.unsupportedSegments, ['image']); assert.equal(normalized.textComplete, false); assert.equal(normalized.rich.media[0].fileId,'unread-image'); assert(!JSON.stringify(normalized.rich).includes('https://example.invalid/private'));
   const onlyMedia = decodeOneBotEvent(wechat, wxMessage({ message: [{ type: 'audio', data: { file_id: 'unread-audio' } }] })); assert.equal(onlyMedia.message.text, ''); assert.deepEqual(onlyMedia.unsupportedSegments, ['audio']);
   assert.throws(() => decodeOneBotEvent(qq, qqMessage({ message: '文字[CQ:image,file=x]', raw_message: 'fallback must not be used' })), { code: 'ONEBOT_MESSAGE_FORMAT' });
   assert.throws(() => decodeOneBotEvent(qq, qqMessage({ message: [textSegment('x'.repeat(ONEBOT_LIMITS.textChars + 1))] })), { code: 'ONEBOT_EVENT_CAPACITY' });

@@ -1,6 +1,6 @@
 # 十四模块实现映射
 
-本表说明代码落点；0.9.0新增交互和既有0.8.0布局、0.7.0能力、0.4.1／0.4.0历史测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
+本表说明代码落点；当前0.10.0增量见[接入与检索说明](integrations-and-retrieval.md)，0.9.0及更早测试保留历史范围。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |
 |---|---|---|
@@ -99,7 +99,7 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 | 整理供料 | prepare/refreshConsolidationContext→memoryIndexes与deepMemories→冻结页 | 相关旧索引可读，未读尾部不当空库；助手读取不冒充人格读取 |
 | 可选资料助手 | core/review-assistant.js→runtime memory_assistant→reviewAssistant advisory | 默认关、共享调用预算、无patch写权或价值否决，未知不自动付费重放 |
 | 来源保真 | repository实际来源目录与srcRefs核验、source-dependencies撤销链 | 不伪造人类角色、不把同源当多次，空refs解释不需证据门槛 |
-| 社交身份目录 | social-identities.js→surfaces social.*／persona_platform accounts→聊天页 | 账号、连接、许可和能力分开；B站抖音等仅登记与接口预留 |
+| 社交身份目录 | social-identities.js→surfaces social.*／persona_platform accounts→聊天页 | 目录不授予执行能力；0.10.0的B站另有独立可选适配器，实际连接／许可分别核对；抖音等未接入平台仍仅登记与接口预留 |
 | QQ官方策略 | connections/qq.js及真实driver上下文 | 官方主动推送不可用；被动窗口按平台规则，桥按自身实际能力，不改人格判断 |
 
 详见[新增功能说明](memory-reflection-and-social-identities.md)。0.7.0[完整本地回归](verification/0.7.0-tests.json)583/583通过，失败／取消／跳过均为0；[真实DSH SDK](verification/0.7.0-sdk-fixture.json)分别完成新链58/58与委派链35/35，两套有重叠、分别列示，使用固定fixture且真实LLM／平台调用均为0。[原生九页GUI](verification/0.7.0-native-ui.json)使用合成数据、0模型调用；[自主性源码审查](verification/0.7.0-autonomy-audit.json)分列源码链、定向回归与交叉复核。远程CI结果不由本地回执推断；0.6.0的495/35及当时九页GUI、0.5.0和更早结果保留历史含义。0.7.0已修改核心，不能沿用0.6.0核心九文件未变的结论。
@@ -130,3 +130,15 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 | 技术容量 | INSTANCE_LIMITS → registry/ownership/list/scan | 16未清除+256墓碑，登记尾部20墓碑列表显式完整性，不自动淘汰或改人格判断 |
 
 字段与范围集中在[第21节](plan/persona/persona-schema.md#21-人格实例生命周期与文本清除090)，最终0.9.0结果以[验收状态](management-ui.md#090-final-acceptance)为准。
+
+## 0.10.0 增量消费点
+
+| 能力 | 实现与消费点 | 实际边界 |
+| --- | --- | --- |
+| 混合候选／时间查询 | core/retrieval*.js、repository.search、memory_search、管理memory.search | 核心无网络；真向量可选，时间只筛仍存区间，来源与主体不混淆 |
+| 向量配置与诊断 | adapters/dsh/retrieval-provider.js、surfaces.js、UI记忆子页 | 手动分页索引、共享有界文档／查询缓存、参考不等于回想 |
+| QQ丰富消息 | channels/rich-media.js、incoming-media.js、native.js、normalize.js | 媒体、转写、转发与原话分别归类；附件／STT依赖真实宿主 |
+| B站 | adapters/dsh/bilibili/、persona_platform、permissions | 本人扫码、逐项许可、覆盖与真实外发收据；无独立人格 |
+| 自备动态／翻唱 | channels/social-provider.js、audio-transfers.js、persona_platform与owner面板 | 用户自备协议服务；真实音频与有界作业，不自动部署或付费重放 |
+
+以上是运行接口与代码映射，不代替真实账号或供应商验收；最终范围统一见[0.10.0 接入与检索说明](integrations-and-retrieval.md)。

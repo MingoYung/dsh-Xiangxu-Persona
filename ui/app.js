@@ -1,4 +1,4 @@
-/* The management page talks only to the DSH bridge. It never creates a writer or a model call by itself. */
+/* Management uses the authenticated DSH bridge. Optional indexing and generation run only after an explicit owner action. */
 const $ = id => document.getElementById(id);
 const state = { connected: false, instanceId: null, instances: [], people: [], status: null, page: 'overview', view: null, trail: [], budgetDraft: null, configGroup: '0', memoryPerson: null, generation: 0, detailGeneration: 0 };
 const pages = {
@@ -65,7 +65,7 @@ function destinations(...items) { return element('div', { class: 'destination-li
 function sectionTabs(items) { return element('nav', { class: 'module-tabs', 'aria-label': '当前页面内容' }, items.map(([view, label]) => button(label, () => openSection(view, false), 'module-tab', { class: 'module-tab' + ((state.view ?? '') === view ? ' active' : ''), 'aria-current': (state.view ?? '') === view ? 'page' : 'false' }))); }
 let pageScrollRequested = false;
 const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overview', maintenance: 'settings' };
-const viewTitles = { 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
+const viewTitles = { retrieval: '查找关联记忆', 'retrieval-settings': '可选语义服务', 'retrieval-diagnostics': '检索与参考记录', 'provider-feed': 'QQ 动态扩展', 'provider-cover': '可选翻唱服务', bilibili: '连接 B 站', 'bilibili-permissions': 'B 站能力与权限', 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
 async function openSection(view, remember = true) { pageScrollRequested = true; if (remember) state.trail.push({ page: state.page, view: state.view }); state.view = view || null; await renderPage(); }
 async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? null; await renderPage(); }
 
@@ -355,12 +355,17 @@ const userGuideTopics = [
   ['开始相处', '在 DSH 对话中选择“相续人格”预设即可开始。可以直接打招呼，也可以在“了解相续 → 自我档案”给出名字、称呼或形象方面的初始想法；由相续选择或暂不设置都可以。初始资料与当前采用的自我描述分别保存。'],
   ['同一个人格，新的聊天窗口', '继续使用同一人格实例时，新开窗口不等于重新创建人格。不同实例分别保存资料。换了平台、昵称或群聊环境，可能需要提醒相续你希望被怎样称呼；账号和称呼是线索，不保证一定认对人。'],
   ['记住、想起与检索', '接收记录、当前回忆和长期整理是不同过程。本次没有提起过去，不代表资料已经被删除；尚未检索、检索未找到、记忆库为空和读取失败也不同。记什么、怎样理解和何时回忆，由相续决定。你可以在“记忆”里查看已保留内容，并在理解有误时直接纠正。'],
+  ['查找关联与指定时间', '在“记忆 → 查找关联记忆”输入关键词，可以结合文字匹配、已有关系和可选语义服务查找。“当前”、已明确结束的旧理解和指定时间仅筛选仍保留的资料，不会重建已删除的历史。候选结果与实际提供过的参考分别记录，不代表相续一定回忆了它。'],
+  ['可选语义服务与费用', '普通文字与关联检索一直可用。只有你配置并开启语义服务、点“建立一批索引”时，这一批记忆才会发送给指定的向量服务；后续语义查询也会提交查询文字，可能产生费用。缓存有容量上限，只移除可重新生成的向量，不因此删除原始记忆。'],
   ['短句与分条表达', '在“相处 → 交流节奏”选择自然短聊、按内容决定或完整展开。这是表达偏好，不是字数、条数或频率硬限制，复杂内容仍可展开。可以分次表达，但不保证每次发多条；每次补充可能增加一次模型调用。分不分条、说几句、是否继续，由相续结合实际交流决定；不会按消息条数要求人格进化。各渠道以实际能力和逐条回执为准。'],
   ['允许主动找我聊天', '开启表示允许相续自主选择联系时机，不保证每天或每隔多久发一次。关闭后仍可接收你的来信；是否回应、如何相处仍由相续判断。'],
   ['休息与现在叫醒', '休息期间来信会保留。相续可以选择时间、整理完成或等你叫醒；“现在叫醒”结束这次休息，让相续看到保留的来信。唤醒可能调用模型，醒来后是否以及怎样回应仍由相续决定。'],
   ['模型与思考强度', '模型和思考强度会影响等待时间、用量与复杂判断，相关后台整理也可能沿用对应会话的选择。强度不是感情深度，也不保证越高越自然；计费按当前模型服务和实际用量计算。'],
   ['形象、声音与身份资料', '形象与声音可以按需设置或交由相续选择。头像年龄、虚拟设定年龄、设定生日与实际建立时间分别看待；音色不会自动决定性别、性格或成熟程度。当前形象参考与旧作品分别保留。'],
   ['连接 QQ、微信与其他平台', '在“连接”里按实际驱动扫码或配置兼容桥。连接支持范围、你的许可和当前可用状态分别查看；接通账号不等于能使用平台全部功能。当前官方 QQ 为 Bot 接入，微信官方接入为私聊；普通微信群、朋友圈或实时通话不能仅靠扫码获得。'],
+  ['QQ 图片、语音与表情', '兼容桥实际支持并获准时，可接收结构化消息、引用、提及、表情与转发。看图需要当前模型支持图片且桥接端确实提供图片；语音转文字还需另行开启并已有可用的 DSH 识别服务。无法识别时保留原消息及识别状态，不把猜测当成你说过的话。'],
+  ['B 站与可选扩展', 'B 站需要扫码绑定、分别授予能力并开启连接。读取、评论、回复、私信和分享按实际权限执行；字幕与故事板仅覆盖接口返回部分，不等于完整观看视频。发送回执不能保证公开可见或对方已读；结果未知时先核对原收据，不会自动重发。QQ 动态和翻唱需要兼容的独立服务，填入接口并不等于平台已支持。'],
+  ['翻唱与本地音频', '可在“创作”中导入、查看和下载本地音频；真正的翻唱需要你配置兼容服务、模型及目标音色。文件传输校验只证明数据完整，不保证翻唱质量。服务是否生成成功、平台是否发送成功分别记录。'],
   ['容量、备份与遗忘', '记忆有存储与上下文容量限制，不承诺永久保存全部原话。你可以查看容量、创建备份或明确遗忘；实际作用范围以操作说明和回执为准。文本备份不包含外部图片、视频、平台凭据或供应商保存的副本。用于生成的材料会交给你选择的模型服务处理。'],
   ['认错人、记错事或表达不自然', '可以直接告诉相续你的感受，说明哪一处理解不对。若反复声称刚认识你、把未检索说成完全没有记忆，或身份资料前后矛盾，可记录使用的人格实例、模型、原话与时间；在“设置 → 数据维护与诊断”查看实际状态，再区分表达问题与技术故障。'],
 ];
@@ -402,7 +407,72 @@ function memoryRecord(record, open) {
     element('p', { class: 'record-text' }, short(text, 360)), element('div', { class: 'record-meta' }, tag(({ assistant: 'AI 助手', user: '用户原话', system: '程序材料' })[role] ?? role ?? '提炼/解释', role === 'assistant' ? 'ai' : role === 'user' ? 'human' : ''), tag(memoryScopeLabel(record)), record.speakerId ? tag('发言者：' + record.speakerId) : null, record.epistemic ? tag(record.epistemic) : null),
     element('div', { class: 'record-footer' }, button('查看详情 →', open, 'link')));
 }
+async function retrievalPage() {
+  const container = element('div'), instanceId=state.instanceId,generation=state.generation;
+  const alive=()=>state.instanceId===instanceId&&state.generation===generation&&state.page==='memory';
+  const queryRequest=(action,args={})=>{if(!alive())throw new Error('此检索页面已经切换，请在当前人格中重新打开。');return request(action,{...args,instanceId});};
+  if (state.view === 'retrieval-settings') {
+    const [provider, config] = await Promise.all([queryRequest('retrieval.inspect'), queryRequest('config.get')]);
+    const endpoint = field('retrieval-endpoint', '向量接口地址', provider.endpoint, { placeholder: 'https://服务地址/v1/embeddings', hint: '填写完整 embeddings 地址；可使用本机部署的向量服务。不会改用聊天模型。' });
+    const model = field('retrieval-model', '向量模型名称', provider.model);
+    const key = field('retrieval-key', provider.hasApiKey ? '更换密钥（留空保留）' : '服务密钥（本机无密钥可留空）', '', { type: 'password' });
+    const enabled = field('retrieval-enabled', '语义检索', provider.enabled ? 'on' : 'off', { choices: [['off','关闭'],['on','开启']] });
+    const status = element('div'), progress = element('div'); let offset = 0;
+    const save = button('保存向量服务', async () => {
+      await queryRequest('retrieval.configure', { endpoint: endpoint.input.value.trim(), model: model.input.value.trim(), ...(key.input.value ? { apiKey: key.input.value } : {}), enabled: enabled.input.value === 'on', expectedVersion: provider.version });
+      if(!alive())return;key.input.value = ''; toast('向量服务已保存；尚未自动建立索引。'); await renderPage();
+    }, 'primary');
+    const prepare = button('建立一批索引', async () => {
+      const result = await queryRequest('retrieval.prepare', { offset, limit: config.retrieval?.batchRecords ?? 16, scope: 'all' });
+      if(!alive())return;offset = result.nextOffset ?? 0;
+      replace(progress, notice(result.available===false?'这批索引未建立：'+(result.reason??'服务没有确认有效向量'):'已收到这批索引回执。缓存只在当前运行进程中保留，原始记忆没有被删除。'), kv({ '本批新建':number(result.prepared), '实际覆盖':number(result.coverage?.indexed)+' / '+number(result.coverage?.eligible)+' 条', '文档部分取样':number(result.partialTexts)+' 条', '完整索引覆盖':result.coverage?.complete?'是':'否', '下一批起点':result.nextOffset??'本次分页结束（不代表全库已缓存）' }),disclosure({},element('summary',{},'查看索引回执'),data(result)));
+      prepare.textContent = result.nextOffset != null ? '继续下一批索引' : '重新从头建立';
+    }, 'secondary', { disabled: !provider.enabled });
+    container.append(notice('普通文字与关联检索一直可用。开启语义检索后，只有点“建立一批索引”才会把这一批已有记忆提交到指定向量服务；查询也会向该服务提交查询文字，可能产生费用。'),
+      card('可选向量服务', '不要求配置。无需向量服务也能使用相续人格。', endpoint.wrapper, model.wrapper, key.wrapper, enabled.wrapper, save, status),
+      card('为语义检索建立索引', '按批处理，显示实际覆盖。缓存有容量上限，超过上限会移除可重新生成的向量，保留原始资料。', prepare, progress),
+      destinations(destination('查看实际检索记录', '核对服务降级、索引覆盖和提供过的参考。', () => openSection('retrieval-diagnostics'))));
+    return container;
+  }
+  if (state.view === 'retrieval-diagnostics') {
+    const result = await queryRequest('retrieval.diagnostics');
+    container.append(notice('这里记录程序检索和提供参考的事实。它不代表人格一定想起了这件事，也不会因为重复出现就修改记忆的重要程度。'),
+      card('当前检索方式', '记录有容量上限，只保留编号、来源和计算依据，不额外保存查询原文。', kv({ '语义检索':result.semantic?.enabled?(result.semantic?.configured?'已配置':'未配置服务'):'关闭', '文档向量缓存':number(result.semantic?.cache?.documentEntries)+' 条', '查询向量缓存':number(result.semantic?.cache?.queryEntries)+' 条', '缓存容量':number(result.semantic?.cache?.bytes)+' / '+number(result.semantic?.cache?.byteLimit)+' bytes', '最近服务问题':result.semantic?.lastError?.code??result.semantic?.lastError??'无' })),
+      card('最近检索与提供的参考', '候选列表、人格上下文参考和工具返回分别记录。',
+        ...(result.recent??[]).map(row=>element('div',{class:'record'},element('strong',{},({search_candidates:'找到候选',snapshot:'提供人格上下文参考',tool_result:'返回工具参考'})[row.kind]??row.kind),element('p',{class:'small muted'},date(row.at)+' · '+number(row.recordCount)+' 条 · '+(row.method??'')+(row.queryCacheHit?' · 复用查询向量':'')),disclosure({},element('summary',{},'查看记录编号和依据'),data(row)))),
+        element('p',{class:'small muted'},'显示最近 '+number(result.recent?.length)+' / '+number(result.recentTotal)+' 次记录。'),
+        button('分页查看完整诊断',()=>inspectDocument('retrieval.detail',{},'检索诊断完整记录'),'secondary'),
+        button('清空这些诊断记录', async () => { await queryRequest('retrieval.clearDiagnostics'); if(alive())await renderPage(); }, 'secondary')));
+    return container;
+  }
+  const query = field('hybrid-query', '想查找什么', '', { placeholder: '可以使用原话、意思相近的描述，或当前关心的事情' });
+  const scope = field('hybrid-scope', '查询范围', 'all', { choices: [['all','全部关系'],['global','共同记忆'],['person','指定人物']] });
+  const person = field('hybrid-person', '选择人物', '', { choices: [['','请选择'],...state.people.map(p => [p.personId ?? p.id,p.displayName ?? p.personId ?? p.id])] });
+  const time = field('hybrid-time', '查看哪个时期的理解', 'all', { choices: [['all','全部已保留资料'],['current','当前有效'],['past','已明确结束的旧理解'],['asOf','指定时间有效']] });
+  const asOf = field('hybrid-asof', '指定时间', '', { type: 'datetime-local' });
+  const mode = field('hybrid-mode', '检索方式', 'auto', { choices: [['auto','按当前配置检索'],['lexical','文字匹配与已有关系（不用向量）'],['hybrid','文字、语义与已有关系']] });
+  const results = element('div');
+  const update = () => { person.input.disabled = scope.input.value !== 'person'; asOf.input.disabled = time.input.value !== 'asOf'; }; scope.input.addEventListener('change',update); time.input.addEventListener('change',update); update();
+  async function search() {
+    if (scope.input.value === 'person' && !person.input.value) throw new Error('请选择人物。');
+    const timestamp = time.input.value === 'asOf' ? new Date(asOf.input.value).getTime() : undefined;
+    if (timestamp !== undefined && !Number.isFinite(timestamp)) throw new Error('请选择有效的日期和时间。');
+    const result = await queryRequest('memory.search', { query: query.input.value.trim(), scope: scope.input.value, ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), mode: mode.input.value, timeMode: time.input.value, ...(timestamp !== undefined ? { asOf: timestamp } : {}), limit: 100, pageSize: 100 });
+    if(!alive())return;replace(results, notice(`这次返回 ${number(result.total)} 条候选参考。时间查询依据条目中已注明的有效起止时间；未注明的资料不会被猜测成过去或现在。`),
+      ...getItems(result).map(item => element('article', { class: 'record' }, element('h3', {}, item.title || item.textPreview || item.id),
+        element('p', { class: 'record-meta' }, memoryScopeLabel(item) + ' · ' + (item.retrieval?.channels ?? []).join(' / ')),
+        button('查看完整记忆与来源', () => inspectDocument('memory.detail',{id:item.id},'记忆详情'),'link'),
+        disclosure({}, element('summary',{},'为什么找到这一条'),data(item.retrieval)))),
+      disclosure({},element('summary',{},'本次检索覆盖与限制'),data(result.diagnostics)));
+  }
+  container.append(notice('检索只提供候选参考，是否回忆、怎样理解和是否记住仍由相续决定。指定时间查询只筛选仍保留的资料，不会恢复当时已删除的数据或重建整个历史状态。'),
+    card('查找关联记忆', '', query.wrapper, element('div',{class:'form-grid'},scope.wrapper,person.wrapper,time.wrapper,asOf.wrapper,mode.wrapper),button('查找记忆',search,'primary')), results,
+    destinations(destination('可选语义服务','添加向量接口并按批建立索引。',()=>openSection('retrieval-settings')),destination('检索记录','查看程序提供过的参考、计算依据与覆盖情况。',()=>openSection('retrieval-diagnostics'))));
+  return container;
+}
+
 async function memoryPage() {
+  if (['retrieval','retrieval-settings','retrieval-diagnostics'].includes(state.view)) return retrievalPage();
   const container = element('div'), filters = element('div', { class: 'toolbar', role: 'search' }), resultArea = element('div');
   const query = field('memory-query', '搜索线索', '', { placeholder: '原话、记忆或编码中的文字', class: 'search' });
   const scope = field('memory-scope', '查询范围', 'all', { choices: [['all', '全部关系'], ['person', '指定人物'], ['global', '共同记忆'], ['unknown', '未知暂存']] });
@@ -447,6 +517,7 @@ async function memoryPage() {
   peopleQuery.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadPeople().catch(showError); } });
   const relations = card('人物与关系', '按真实人物列表分页。查看主观印象、编码与相处状态。', peopleQuery.wrapper, button('搜索人物', () => loadPeople(), 'secondary compact'), peopleResults);
   const tabs = sectionTabs([['', '全部记忆'], ['deep', '深刻经历'], ['people', '认识的人']]);
+  container.append(destinations(destination('查找关联记忆', '使用文字、可选语义和已有关系查找，并查看过去与现在的理解。', () => openSection('retrieval'))));
   container.append(tabs);
   if (state.view === 'people') { await loadPeople(); container.append(relations); return container; }
   if (state.memoryPerson) { const selected = state.memoryPerson; scope.input.value = 'person'; person.input.disabled = false; if (![...person.input.options].some(item => item.value === selected.id)) person.input.append(element('option', { value: selected.id }, selected.name)); person.input.value = selected.id; container.append(element('div', { class: 'active-filter' }, element('span', {}, '正在看：' + selected.name), button('查看所有人的记忆', async () => { state.memoryPerson = null; await openSection('', false); }, 'link'))); }
@@ -712,7 +783,7 @@ async function permissionsPanel(id) {
         await permissionRequest('permissions.configure', { id, allowed }); if (!alive()) return; toast('权限已保存。'); await renderPage();
       }, 'primary'));
     const saved = await permissionRequest('permissions.list', { id });
-    if (Array.isArray(saved.items) && saved.items.length) content.append(element('details', { class: 'advanced-section' }, element('summary', {}, '已保存账号权限'), element('div', { class: 'advanced-body record-list' }, saved.items.map(item => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.accountId), tag((item.allowed ?? []).length + ' 项已保存许可')), element('p', { class: 'small muted' }, '上次设置 ' + date(item.updatedAt)), button('恢复该账号默认权限', async () => { const confirmation = await confirmOperation({ title: '恢复该账号默认权限', description: '移除该账号在当前人格中的授权选择，恢复渠道默认许可：文字，以及渠道中已开启的语音。不会删除聊天记忆或自动断开账号。', preview: { accountId: item.accountId }, accept: '恢复默认权限' }); if (!confirmation || !alive()) return; await permissionRequest('permissions.reset', { id, accountId: item.accountId }); toast('该账号权限已恢复默认。'); await renderPage(); }, 'secondary compact'))))));
+    if (Array.isArray(saved.items) && saved.items.length) content.append(element('details', { class: 'advanced-section' }, element('summary', {}, '已保存账号权限'), element('div', { class: 'advanced-body record-list' }, saved.items.map(item => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.accountId), tag((item.allowed ?? []).length + ' 项已保存许可')), element('p', { class: 'small muted' }, '上次设置 ' + date(item.updatedAt)), button('恢复该账号默认权限', async () => { const confirmation = await confirmOperation({ title: '恢复该账号默认权限', description: id==='bilibili'?'移除该账号在当前人格中的授权选择，B站默认关闭全部操作许可。聊天记忆与账号连接仍保留。':'移除该账号在当前人格中的授权选择，恢复渠道默认许可：文字，以及渠道中已开启的语音。不会删除聊天记忆或自动断开账号。', preview: { accountId: item.accountId }, accept: '恢复默认权限' }); if (!confirmation || !alive()) return; await permissionRequest('permissions.reset', { id, accountId: item.accountId }); toast('该账号权限已恢复默认。'); await renderPage(); }, 'secondary compact'))))));
   } catch (error) { content.append(notice(errorText(error), 'warning')); }
   return element('details', { class: 'advanced-section' }, element('summary', {}, '实际能力与权限'), element('div', { class: 'advanced-body' }, content));
 }
@@ -835,7 +906,227 @@ async function socialIdentitiesPanel({ generation = state.generation, connection
   return content;
 }
 
+/* 0.10 integrations fragment. Insert before chatPage in ui/app.js.
+ * Dependencies are existing native-theme helpers; no imports or extra polling loop.
+ * Route chat/bilibili -> bilibiliPage, chat/bilibili-permissions -> permissionsPanel('bilibili').
+ */
+async function bilibiliPage() {
+  const generation = state.generation, instanceId = state.instanceId, life = pageLifetime(generation);
+  const alive = () => life.alive() && state.instanceId === instanceId && state.page === 'chat' && state.view === 'bilibili';
+  const call = (action, args = {}) => request('bilibili.' + action, { ...args, instanceId });
+  const page = element('div'), accountArea = element('div'), loginArea = element('div'), controls = element('div'), receiptsArea = element('div');
+  let current = await call('inspect'), login = current.login ?? null, polling = false, receiptOffset = 0, receiptTicket = 0;
+  const phaseName = value => ({ idle: '尚未绑定', starting: '正在获取二维码', waiting: '等待扫码', scanned: '已扫码，等待手机确认', authorized: '已授权', expired: '二维码已过期', failed: '本次授权未完成' })[value] ?? '尚未完成';
+  const statusName = value => ({ delivered: '平台已接受', unknown: '结果未知，等待核对', prepared: '结果未知，等待核对', failed: '已明确失败' })[value] ?? value;
+  const operationName = value => ({ comment: '发布视频评论', reply: '回复评论', share: '私信分享视频', message: '发送私信' })[value] ?? value;
+  const receiptFilter = field('bili-receipt-filter', '显示哪些发送记录', 'unknown', { choices: [['unknown', '等待核对'], ['', '全部发送记录'], ['delivered', '平台已接受'], ['failed', '明确失败']] });
+  const waiting = () => login && ['waiting', 'scanned'].includes(login.phase);
+  const cancelOnLeave = () => {
+    pageCleanups.delete(cancelOnLeave); life.stop();
+    const selected = waiting() ? login.flowId : null; login = null;
+    if (selected) void call('loginCancel', { flowId: selected }).catch(() => {});
+  };
+  pageCleanups.add(cancelOnLeave);
+  function paintAccount() {
+    if (!alive()) return;
+    replace(accountArea, kv({ '当前账号': current.accountName ? current.accountName + ' · ' + current.accountId : current.accountId ?? '尚未绑定', '账号授权': current.hasCredentials ? '本机已保存授权' : '尚未授权', '最近核实': current.connected ? '已取得平台确认' : '尚未核实或授权已失效', '人格可用入口': current.enabled ? '已启用，仍受你的能力许可约束' : '已停用' }),
+      current.error ? notice(current.error.message ?? '本次操作未完成，可重新核实账号状态。', 'warning') : null);
+    replace(controls, button(current.enabled ? '停用 B 站能力' : '启用 B 站能力', async () => {
+      if (!alive()) return;
+      if (!current.enabled && !current.accountId) throw new Error('请先完成扫码绑定，再启用 B 站能力。');
+      current = await call('configure', { enabled: !current.enabled }); if (!alive()) return; paintAccount(); toast(current.enabled ? 'B 站入口已启用；没有自动发布或新增冲浪日程。' : 'B 站入口已停用。');
+    }, current.enabled ? 'secondary' : 'primary', { disabled: !current.accountId }),
+    button('核实账号状态', async () => { if (!alive()) return; current = await call('inspect', { probe: true }); if (alive()) paintAccount(); }, 'secondary', { disabled: !current.accountId }),
+    current.accountId ? button('断开本机授权', async () => {
+      const confirmation = await confirmOperation({ title: '断开 B 站本机授权', description: '停止此入口并删除本插件保存的账号凭据。发送回执与人格记忆仍保留；这不等于撤销平台其他设备的登录。', accept: '断开本机授权' });
+      if (!confirmation || !alive()) return; current = await call('disconnect'); login = null; if (alive()) { paintAccount(); paintLogin(); }
+    }, 'subtle') : null);
+  }
+  async function useLogin(value) {
+    current = value;
+    const prior = login; login = value.login ? { ...prior, ...value.login } : null;
+    if (login && !['waiting', 'scanned'].includes(login.phase)) { delete login.qrContent; delete login.qrDataUrl; }
+    if (alive()) { paintAccount(); paintLogin(); }
+  }
+  async function pollLogin() {
+    if (!alive() || !waiting() || polling) return; polling = true;
+    try { const result = await call('loginPoll', { flowId: login.flowId }); if (alive()) await useLogin(result); }
+    catch (error) { if (alive()) { replace(loginArea, notice('扫码状态还没有核实完成，可以查询原二维码，不必重新绑定。', 'warning'), button('查询原扫码任务', pollLogin, 'secondary')); throw error; } }
+    finally { polling = false; }
+  }
+  function paintLogin() {
+    if (!alive()) return; replace(loginArea);
+    if (waiting()) {
+      if (safeImageData(login.qrDataUrl)) loginArea.append(element('img', { class: 'connection-qr', src: login.qrDataUrl, alt: 'B站本次登录授权二维码' }));
+      else loginArea.append(notice('二维码图片尚未生成，可复制本次真实授权链接在手机上打开。', 'warning'));
+      loginArea.append(element('p', {}, phaseName(login.phase)), element('p', { class: 'small muted' }, '请用手机 B 站扫码，并由你本人确认。关闭本页会停止本次查询并取消本地扫码任务。'),
+        login.expiresAt ? element('p', { class: 'small muted' }, '本次二维码有效期至 ' + date(login.expiresAt)) : null,
+        element('div', { class: 'row-actions' }, button('查询扫码状态', pollLogin, 'secondary'), button('取消本次扫码', async () => { if (!alive() || !login) return; const result = await call('loginCancel', { flowId: login.flowId }); if (alive()) await useLogin(result); }, 'subtle'), login.qrContent ? button('复制授权链接', () => copyText(login.qrContent, '已复制本次 B 站授权链接。'), 'link') : null));
+      life.later(() => { void pollLogin().catch(error => { if (alive()) showError(error); }); }, 2500);
+      return;
+    }
+    loginArea.append(current.accountId ? element('p', {}, '账号已绑定。你可以继续设置当前人格的能力许可，再启用入口。') : element('p', {}, '用手机 B 站扫码即可绑定账号，不需要填写 Cookie。'),
+      ...(login && ['expired', 'failed'].includes(login.phase) ? [notice(phaseName(login.phase) + '，可重新获取二维码。', 'warning')] : []),
+      button(current.accountId ? '更换绑定账号' : '扫码绑定 B 站', async () => {
+        if (!alive()) return; const result = await call('loginStart');
+        if (!alive()) { if (result.login?.flowId) await call('loginCancel', { flowId: result.login.flowId }); return; }
+        await useLogin(result);
+      }, current.accountId ? 'secondary' : 'primary'));
+  }
+  function reconciliationForm(receipt) {
+    const area = element('div'), actualId = field('bili-actual-' + receipt.receiptRef, '平台上的实际消息或评论编号', '', { hint: '私信使用 msg_key，评论使用 rpid。只有从当前账号的平台记录核对一致，才会记为平台已接受。' }),
+      reason = field('bili-reason-' + receipt.receiptRef, '你的核对说明', '', { multiline: true, hint: '最多 256 字；不需要填写账号密码、Cookie 或其他密钥。' });
+    actualId.input.maxLength = 160; reason.input.maxLength = 256;
+    area.append(actualId.wrapper, reason.wrapper, element('div', { class: 'row-actions' },
+      button('用平台真实回执核对', async () => {
+        if (!alive()) return; if (!actualId.input.value.trim() || !reason.input.value.trim()) throw new Error('请填写实际编号和核对说明。');
+        const result = await call('resolveReceipt', { receiptRef: receipt.receiptRef, outcome: 'delivered', messageId: actualId.input.value.trim(), reason: reason.input.value.trim() });
+        if (!alive()) return; if (!result.changed && result.status === 'unknown') { replace(area, notice('尚未在当前可查询的平台记录里核实到这一条，仍保留为结果未知。没有自动重发。', 'warning')); return; }
+        toast('已按平台实际记录更新回执。'); await loadReceipts();
+      }, 'secondary'),
+      button('我已核对，确认没有发送', async () => {
+        if (!alive()) return; if (!reason.input.value.trim()) throw new Error('请说明你怎样确认没有发送。');
+        const confirmed = await confirmOperation({ title: '确认这次没有发送', description: '这会把未知记录标为已人工确认未送达。之后相续可以对同样内容发起一个新请求；本次回执与核对说明仍保留。请先在发送账号和目标位置完成核对。', accept: '确认未送达' });
+        if (!confirmed || !alive()) return;
+        await call('resolveReceipt', { receiptRef: receipt.receiptRef, outcome: 'not_delivered', confirmNotDelivered: true, reason: reason.input.value.trim() }); if (alive()) { toast('已保留你的核对结果。'); await loadReceipts(); }
+      }, 'subtle')));
+    return area;
+  }
+  async function loadReceipts(offset = receiptOffset) {
+    const ticket = ++receiptTicket, result = await call('listReceipts', { offset, limit: 10, ...(receiptFilter.input.value ? { status: receiptFilter.input.value } : {}) });
+    if (!alive() || ticket !== receiptTicket) return; receiptOffset = offset;
+    replace(receiptsArea, result.items?.length ? element('div', { class: 'record-list' }, result.items.map(receipt => {
+      const row = element('article', { class: 'record' }, element('h3', { class: 'record-title' }, operationName(receipt.operation)), element('p', { class: 'record-meta' }, statusName(receipt.status) + ' · ' + date(receipt.updatedAt)),
+        kv({ '账号': receipt.accountId, '目标': receipt.target?.receiverUid ?? receipt.target?.bvid ?? '见回执', '平台编号': receipt.messageId ?? '尚未取得', '实际确认': receipt.confirmedBy ?? '尚未确认' }),
+        disclosure({}, element('summary', {}, '查看请求与回执编号'), kv({ '请求编号': receipt.deliveryId, '回执查询编号': receipt.receiptRef, '备注': receipt.resolutionReason ?? '无' }), data(receipt)));
+      if (['unknown', 'prepared'].includes(receipt.status)) { const formArea = element('div'); row.append(button('核对这一条', () => { if (alive()) replace(formArea, reconciliationForm(receipt)); }, 'secondary compact'), formArea); }
+      return row;
+    })) : element('p', { class: 'small muted' }, receiptFilter.input.value === 'unknown' ? '当前没有等待核对的发送。' : '当前筛选下没有发送记录。'),
+      element('div', { class: 'pagination' }, element('span', {}, '本页 ' + (result.items?.length ?? 0) + ' 条 / 共 ' + (result.total ?? 0) + ' 条'), offset > 0 ? button('上一页', () => loadReceipts(Math.max(0, offset - 10)), 'secondary compact') : null, result.hasMore ? button('下一页', () => loadReceipts(offset + 10), 'secondary compact') : null));
+  }
+  receiptFilter.input.addEventListener('change', () => { if (alive()) void loadReceipts(0).catch(showError); });
+  page.append(card('1 · 绑定 B 站账号', '凭据只保存在本机账号目录；扫码不会自动启用能力。', accountArea, loginArea),
+    card('2 · 选择当前人格的能力许可', '读取视频资料、公开评论与私信分别授权，默认全部关闭。', destinations(destination('设置 B 站能力与权限', '选择允许读取的资料与可以执行的账号操作。是否使用由相续自己决定。', () => openSection('bilibili-permissions')))),
+    card('3 · 启用入口', '启用只开放已获许可的工具，不会额外创建另一人格、自动发布内容或安排冲浪日程。', element('div', { class: 'row-actions' }, controls), notice('视频理解来自字幕和故事板采样，覆盖范围会随工具结果返回；没有接入完整视频解码或直播观看。')),
+    card('发送记录与待核对结果', '接口回执、公开可见和对方已读分别记录。结果未知时不会自动重发。',
+      element('p', { class: 'small muted' }, '已保留 ' + (current.receipts?.retained ?? 0) + ' / ' + (current.limits?.receipts ?? 512) + ' 条发送回执；其中 ' + (current.receipts?.unresolved ?? 0) + ' 条待核对。达到技术容量会停止新发送，不会自动删除旧记录。'), receiptFilter.wrapper, button('刷新发送记录', () => loadReceipts(0), 'secondary compact'), receiptsArea),
+    disclosure({}, element('summary', {}, '连接方式、覆盖范围与原始状态'), element('p', { class: 'small muted' }, '使用 B 站公开网页登录和内容接口，并非接管桌面客户端。部分公开网页接口可能随平台调整；未知交付只根据实际证据核对。'), data(current)));
+  if (alive()) { paintAccount(); paintLogin(); await loadReceipts(0); }
+  return page;
+}
+
+/* Optional route: chat/provider-feed or media/provider-cover -> socialProviderPage('feed'|'cover'). */
+async function socialProviderPage(kind = 'feed') {
+  if (!['feed', 'cover'].includes(kind)) throw new Error('请选择动态扩展或翻唱服务。');
+  const generation = state.generation, instanceId = state.instanceId, view = state.view, life = pageLifetime(generation), ownerPage = state.page;
+  const alive = () => life.alive() && state.instanceId === instanceId && state.view === view && state.page === ownerPage;
+  const call = (action, args = {}) => request('socialProviders.' + action, { ...args, instanceId });
+  const inspected = await call('inspect', { includeConfiguration: true }), provider = inspected.providers?.find(item => item.kind === kind) ?? { kind, enabled: false }, page = element('div'), probeArea = element('div'), jobsArea = element('div'), assetsArea = element('div'), uploadArea = element('div');
+  const isCover = kind === 'cover', title = isCover ? '可选翻唱服务' : '可选 QQ 动态扩展';
+  let activeUpload = null, jobsTicket = 0, assetsTicket = 0;
+  const cleanup = () => { pageCleanups.delete(cleanup); life.stop(); const uploadId = activeUpload; activeUpload = null; if (uploadId) void call('uploadCancel', { uploadId }).catch(() => {}); };
+  pageCleanups.add(cleanup);
+  const configFields = {
+    baseUrl: field('social-' + kind + '-url', '服务地址', provider.baseUrl ?? '', { placeholder: '例如 http://127.0.0.1:8000', hint: '填写你已经部署的、兼容相续扩展协议的服务地址。' }),
+    apiKey: field('social-' + kind + '-key', '服务密钥（可选）', '', { type: 'password', placeholder: provider.hasApiKey ? '已保存；留空保留原密钥' : '服务不需要密钥时可留空' }),
+    accountId: field('social-feed-account', '服务对应的实际 QQ 账号 ID', provider.accountId ?? '', { hint: '需与当前接入 QQ 的实际账号一致；它不是联系人昵称。' }),
+    model: field('social-cover-model', '翻唱模型', provider.model ?? '', { placeholder: '服务提供的模型名称' }),
+    targetVoice: field('social-cover-voice', '目标音色', provider.targetVoice ?? '', { placeholder: '服务提供的音色标识' }),
+  };
+  const enabled = element('input', { type: 'checkbox', checked: provider.enabled === true }), allowRemote = element('input', { type: 'checkbox', checked: provider.allowRemote === true }), clearKey = element('input', { type: 'checkbox' });
+  configFields.apiKey.input.autocomplete = 'new-password'; configFields.apiKey.input.maxLength = 4096;
+  const paths = isCover ? [['probePath', '状态检查路径', '/health'], ['submitPath', '提交翻唱路径', '/cover'], ['pollPath', '查询任务路径', '/jobs/{jobId}'], ['cancelPath', '取消任务路径（可选）', '/jobs/{jobId}/cancel']]
+    : [['probePath', '状态检查路径', '/health'], ['readPath', '读取动态路径', '/feed'], ['publishPath', '发布动态路径', '/feed/publish'], ['reactPath', '点赞／评论路径', '/feed/react']];
+  const pathFields = Object.fromEntries(paths.map(([key, label, placeholder]) => [key, field('social-' + kind + '-' + key, label, provider[key] ?? '', { placeholder })]));
+  const downloads = field('social-cover-downloads', '允许下载产物的额外来源（可选）', (provider.downloadOrigins ?? []).join('\n'), { multiline: true, hint: '每行一个 HTTPS origin，例如 https://media.example.com；服务自身的来源已经允许。最多 8 项。' });
+  const advanced = disclosure({}, element('summary', {}, '接口路径与连接选项'),
+    element('p', { class: 'small muted' }, '这些路径由扩展服务提供，不是 QQ 官方公开接口。没有这类服务时可以保持关闭。'),
+    element('div', { class: 'form-grid' }, Object.values(pathFields).map(item => item.wrapper)),
+    element('label', { class: 'field-checkbox' }, allowRemote, '允许连接我配置的 HTTPS 远程服务'),
+    element('label', { class: 'field-checkbox' }, clearKey, '清除之前保存的服务密钥'), isCover ? downloads.wrapper : null,
+    disclosure({}, element('summary', {}, '查看扩展协议格式'), data(inspected.protocol)));
+  const save = button('保存服务设置', async () => {
+    if (!alive()) return;
+    const patch = { enabled: enabled.checked, baseUrl: configFields.baseUrl.input.value.trim(), allowRemote: allowRemote.checked, ...Object.fromEntries(Object.entries(pathFields).map(([key, item]) => [key, item.input.value.trim()])) };
+    if (isCover) { patch.model = configFields.model.input.value.trim(); patch.targetVoice = configFields.targetVoice.input.value.trim(); patch.downloadOrigins = downloads.input.value.split(/\r?\n/).map(item => item.trim()).filter(Boolean); }
+    else patch.accountId = configFields.accountId.input.value.trim();
+    if (clearKey.checked && configFields.apiKey.input.value) throw new Error('设置新密钥和清除旧密钥只能选择其中一项。');
+    if (clearKey.checked) patch.apiKey = ''; else if (configFields.apiKey.input.value) patch.apiKey = configFields.apiKey.input.value;
+    await call('configure', { kind, config: patch }); configFields.apiKey.input.value = ''; if (alive()) { toast('服务设置已保存；没有自动执行账号操作或制作任务。'); await renderPage(); }
+  }, 'primary');
+  page.append(card(title, isCover ? '把输入音频交给你选择的本机或云端服务；不在插件内安装大型模型。' : '仅为自备服务保留动态读取、发布与互动入口，平台未提供的能力不会因开关而出现。',
+    element('p', {}, isCover ? '可以先导入本地音频；开始制作前，请设置并启用服务和目标音色。未配置时不会提交制作任务。' : '如果已有兼容服务，在这里连接；如果没有，可以先保持关闭，不影响 QQ／微信的普通聊天。'),
+    configFields.baseUrl.wrapper, configFields.apiKey.wrapper, isCover ? element('div', { class: 'form-grid' }, configFields.model.wrapper, configFields.targetVoice.wrapper) : configFields.accountId.wrapper,
+    element('label', { class: 'field-checkbox' }, enabled, '启用这项扩展服务'), advanced,
+    element('div', { class: 'row-actions' }, save, button('检查服务连接', async () => {
+      if (!alive()) return; const result = await call('probe', { kind }); if (!alive()) return;
+      replace(probeArea, notice(result.reachable && result.accountMatches !== false ? '已取得兼容服务的状态确认。平台操作仍需要实际能力与用户许可。' : '尚未取得有效确认，请先保存设置并检查服务地址、协议和账号。', result.reachable && result.accountMatches !== false ? '' : 'warning'), disclosure({}, element('summary', {}, '查看这次检查的实际结果'), data(result)));
+    }, 'secondary')), probeArea));
+  if (!isCover) page.append(card('账号操作的许可', '服务配置和账号许可分开管理。相续仍自主决定是否使用这些能力。', destinations(destination('查看 QQ 能力与权限', '只有连接器或你配置的服务实际支持、并且获得许可的能力才可用。', () => openSection('qq-permissions')))));
+  const knownAssets = new Map(), selected = field('social-cover-input', '本次使用的音频', '', { choices: [['', '请先导入或选择音频']] });
+  function assetLabel(asset) { return (asset.name || asset.assetId) + ' · ' + (Math.round((asset.bytes ?? 0) / 1024)) + ' KiB'; }
+  function updateSelection(preferred) {
+    const value = preferred ?? selected.input.value;
+    replace(selected.input, element('option', { value: '' }, '请选择输入音频'), ...[...knownAssets.values()].map(asset => element('option', { value: asset.assetId, selected: value === asset.assetId }, assetLabel(asset))));
+    selected.input.value = knownAssets.has(value) ? value : '';
+  }
+  async function loadAssets(cursor) {
+    const ticket = ++assetsTicket, result = await call('listAssets', { limit: 10, ...(cursor ? { cursor } : {}) }); if (!alive() || ticket !== assetsTicket) return;
+    for (const item of result.items ?? []) knownAssets.set(item.assetId, item); updateSelection();
+    replace(assetsArea, result.items?.length ? element('div', { class: 'record-list' }, result.items.map(asset => element('article', { class: 'record' }, element('h3', { class: 'record-title' }, asset.name || '已保存音频'), element('p', { class: 'record-meta' }, assetLabel(asset)),
+      element('div', { class: 'row-actions' }, button('选择这段音频', () => { selected.input.value = asset.assetId; toast('已选择输入音频。'); }, 'secondary compact'), button('下载音频', async () => { if (alive()) await request('ui.audio.download', { assetId: asset.assetId, instanceId }); }, 'secondary compact'),
+        button('删除本机音频', async () => { const confirmed = await confirmOperation({ title: '删除这份本机音频', description: '删除所选音频资产及其本地任务引用；不会撤回已经发送到外部平台的内容。', preview: { 文件: asset.name || asset.assetId }, accept: '删除本机音频', danger: true }); if (!confirmed || !alive()) return; await call('deleteAsset', { assetId: asset.assetId }); knownAssets.delete(asset.assetId); if (selected.input.value === asset.assetId) selected.input.value = ''; if (alive()) await loadAssets(); }, 'subtle compact'))))) : element('p', { class: 'small muted' }, '还没有保存音频，可以先导入一份。'),
+      element('div', { class: 'pagination' }, element('span', {}, '本页 ' + (result.items?.length ?? 0) + ' 条 / 共 ' + (result.total ?? 0) + ' 条'), cursor ? button('回到第一页', () => loadAssets(), 'secondary compact') : null, result.nextCursor ? button('下一页音频', () => loadAssets(result.nextCursor), 'secondary compact') : null));
+  }
+  async function loadJobs() {
+    const ticket = ++jobsTicket, result = await call('listJobs', { limit: 20 }); if (!alive() || ticket !== jobsTicket) return;
+    const jobs = (result.items ?? []).filter(job => job.kind === kind);
+    replace(jobsArea, jobs.length ? element('div', { class: 'record-list' }, jobs.reverse().map(job => element('article', { class: 'record' }, element('h3', { class: 'record-title' }, isCover ? '翻唱任务' : ({ 'feed.read': '读取动态', 'feed.publish': '发布动态', 'feed.react': '动态互动' })[job.capability] ?? '动态任务'),
+      element('p', { class: 'record-meta' }, (labels[job.status] ?? job.status) + ' · ' + date(job.updatedAt)),
+      job.status === 'unknown' ? notice('结果尚未确认；停止本机等待不代表远端取消。请先查看服务任务和实际回执，避免重复提交。', 'warning') : null,
+      job.error ? notice(job.error.message ?? '任务尚未完成。', 'warning') : null,
+      element('div', { class: 'row-actions' }, button('更新任务状态', async () => { if (!alive()) return; await call('getJob', { jobId: job.jobId, poll: true }); if (alive()) { await loadJobs(); if (isCover) await loadAssets(); } }, 'secondary compact'),
+        !['completed', 'failed', 'cancelled', 'revoked'].includes(job.status) ? button('申请取消任务', async () => { if (!alive()) return; const result = await call('cancel', { jobId: job.jobId }); if (alive()) { toast(result.status === 'cancelled' ? '远端已确认取消。' : '已取得取消请求的实际结果；是否取消以回执为准。'); await loadJobs(); } }, 'subtle compact') : null,
+        ...(job.resultAssetIds ?? []).map(assetId => button('下载这份结果', async () => { if (alive()) await request('ui.audio.download', { assetId, instanceId }); }, 'secondary compact'))),
+      disclosure({}, element('summary', {}, '查看任务编号与实际回执'), kv({ '任务编号': job.jobId, '请求编号': job.requestId, '远端任务': job.remoteJobId, '实际回执': job.receiptId ?? job.result?.receiptId ?? '尚未取得' }), data(job))))) : element('p', { class: 'small muted' }, '这一项扩展目前没有任务记录。'));
+  }
+  if (isCover) {
+    const upload = element('input', { type: 'file', accept: '.wav,.mp3,.flac,.ogg,audio/wav,audio/mpeg,audio/flac,audio/ogg', 'aria-label': '选择要导入的音频' });
+    const digest = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+    const encode = bytes => btoa(String.fromCharCode(...bytes));
+    page.append(card('输入音频与翻唱', '原音频和生成结果分别保存在当前人格的音频资产区；没有自动发到聊天渠道。',
+      element('p', { class: 'small muted' }, '支持可识别的 WAV／MP3／FLAC／Ogg 文件，每份最多 16 MiB。以容器校验和实际服务结果为准。'), upload,
+      button('导入所选音频', async () => {
+        if (!alive()) return; const file = upload.files?.[0]; if (!file) throw new Error('请先选择一份音频。'); if (!file.size || file.size > 16777216) throw new Error('音频需要大于零且不超过 16 MiB。');
+        const bytes = new Uint8Array(await file.arrayBuffer()), sha256 = await digest(bytes); if (!alive()) return;
+        const mime = ({ wav: 'audio/wav', mp3: 'audio/mpeg', flac: 'audio/flac', ogg: 'audio/ogg' })[file.name.split('.').at(-1).toLowerCase()] ?? file.type;
+        const started = await call('uploadBegin', { name: file.name, mime, totalBytes: bytes.byteLength, sha256, requestId: operationId('audio-import') }); activeUpload = started.uploadId;
+        if (!activeUpload) throw new Error('没有取得本次上传编号。');
+        try {
+          for (let offset = 0, index = 0; offset < bytes.byteLength; offset += 32768, index++) {
+            if (!alive()) return; const chunk = bytes.subarray(offset, Math.min(offset + 32768, bytes.byteLength)); const receipt=await call('uploadChunk', { uploadId: activeUpload, index, dataBase64: encode(chunk), sha256: await digest(chunk) });
+            if(receipt?.uploadId!==activeUpload||receipt.index!==index||receipt.receivedBytes!==offset+chunk.byteLength)throw new Error('这一块音频没有得到有效确认，已停止上传；原导入状态可在音频库核对。');
+            if (alive()) replace(uploadArea, notice('已传入 ' + Math.min(offset + chunk.byteLength, bytes.byteLength) + ' / ' + bytes.byteLength + ' 字节。'));
+          }
+          if (!alive()) return; const result = await call('uploadFinish', { uploadId: activeUpload }); activeUpload = null;
+          if (alive()) { if(result?.status!=='completed'||!result?.asset||result.asset.sha256!==sha256||result.asset.bytes!==bytes.byteLength||result.asset.assetId!=='cover-'+sha256.slice(0,32)){replace(uploadArea,notice('音频导入结果尚未确认，请核对音频库，不要重复导入。','warning'));await loadAssets();return;} if (result.asset?.assetId) { knownAssets.set(result.asset.assetId, result.asset); updateSelection(result.asset.assetId); } replace(uploadArea, notice('音频已校验并保存。')); upload.value = ''; await loadAssets(); }
+        } finally { if (activeUpload) { const uploadId = activeUpload; activeUpload = null; await call('uploadCancel', { uploadId }).catch(() => {}); } }
+      }, 'secondary'), uploadArea, selected.wrapper,
+      element('p', { class: 'small muted' }, '开始制作会把所选音频交给上面保存的服务，费用与耗时取决于该服务。相续也可以通过已有工具自主选择这项能力。'),
+      provider.capabilities?.['media.cover'] ? kv({ '已保存的模型': provider.model, '已保存的目标音色': provider.targetVoice }) : notice('请先保存并启用有效的翻唱服务设置，再开始制作。'),
+      button('开始制作翻唱', async () => { if (!alive()) return; if (!selected.input.value) throw new Error('请选择一份已保存音频。'); const result = await call('execute', { requestId: operationId('cover'), capability: 'media.cover', payload: { assetId: selected.input.value } }); if (alive()) { toast('已取得翻唱任务状态：' + (labels[result.status] ?? result.status ?? '已准备')); await loadJobs(); } }, 'primary', { disabled: provider.capabilities?.['media.cover'] !== true }),
+      assetsArea));
+  }
+  page.append(card('任务与实际结果', '这里只查询实际任务；不会把固定测试文本当作生成结果，也不会自动重提未知任务。', button('刷新任务记录', loadJobs, 'secondary compact'), jobsArea),
+    disclosure({}, element('summary', {}, '容量与原始配置'), data({ limits: inspected.limits, usage: inspected.usage, provider })));
+  if (alive()) { await loadJobs(); if (isCover) await loadAssets(); }
+  return page;
+}
+
 async function chatPage() {
+  if(state.view==='bilibili')return bilibiliPage();
+  if(state.view==='bilibili-permissions'){const panel=await permissionsPanel('bilibili');panel.open=true;panel.disclosureButton.hidden=true;return panel;}
+  if(state.view==='provider-feed')return socialProviderPage('feed');
   const generation = state.generation;
   const [channels, official] = await Promise.all([request('channels.status'), request('connections.status')]);
   const container = element('div');
@@ -844,6 +1135,8 @@ async function chatPage() {
   const statusName = value => ({ connected: '已连接', ready: '已就绪', connecting: '正在连接', disconnected: '尚未连接', disabled: '已停用', unconfigured: '尚未配置', unavailable: '暂不可用', error: '连接异常' })[value] ?? value;
   if (!state.view) return destinations(
     ...['qq', 'wechat'].map(id => { const item = connections.find(value => value.id === id), authorized = official.connections?.find(value => value.id === id); return destination(id === 'qq' ? 'QQ' : '微信', id === 'qq' ? '扫码连接独立 QQ Bot；个人账号可使用已有兼容桥。' : '官方扫码接入私聊；群聊需已有兼容桥支持。', () => openSection(item?.config?.mode === 'bridge' && item.configured ? id + '-bridge' : id), item?.connected ? '已连接' : authorized?.connected ? '已授权，待启用' : '未连接'); }),
+    destination('B 站', '可选扫码连接，按授权浏览资料、发表评论或发送私信。', () => openSection('bilibili')),
+    destination('QQ 动态扩展', '仅在自备兼容服务时开启，普通 OneBot 不保证空间接口。', () => openSection('provider-feed')),
     destination('声音', '选择音色、试听，以及由谁决定声音。', () => openSection('voice')),
     destination('社交身份', '登记人格的平台账号，核对连接与可用能力。', () => openSection('accounts')));
   if (state.view === 'accounts') return socialIdentitiesPanel({ generation, connections });
@@ -871,10 +1164,12 @@ async function chatPage() {
     const clearAccessToken = element('input', { type: 'checkbox' });
     const privateIds = field('channel-' + id + '-private', '接入的私聊对象', (config.allowedPrivateIds ?? []).join('\n'), { multiline: true, placeholder: '每行一个对象 ID', hint: '空白表示暂不接入私聊；明确填 * 可接入该账号的全部私聊。' });
     const groupIds = field('channel-' + id + '-groups', '接入的群聊', (config.allowedGroupIds ?? []).join('\n'), { multiline: true, placeholder: '每行一个群 ID', hint: '空白表示暂不接入群聊；明确填 * 可接入该账号的全部群。' });
+    const incomingImages=field('incoming-images-'+id,'接收图片等媒体',config.resolveIncomingMedia!==false?'on':'off',{choices:[['on','开启'],['off','关闭']],hint:'通过兼容桥提供真实字节，并在当前模型支持时附加图片；未识别的媒体会保留状态。'});
+    const incomingAudio=field('incoming-audio-'+id,'把收到的语音转成文字',config.transcribeIncomingAudio===true?'on':'off',{choices:[['off','关闭'],['on','使用已就绪的 DSH 语音识别']],hint:'只使用已有识别服务；不自动下载模型。转写保留为识别资料，不改写用户原话。'});
     const voiceMode = field('channel-' + id + '-voice', '回复形式', config.voiceMode ?? 'text', { choices: [['text', '文字'], ['both', '文字与语音'], ['voice', '语音']] });
     const save = button('保存接入设置', async () => {
       if (accessToken.input.value && clearAccessToken.checked) throw new Error('请只选择填写新令牌，或清除已保存的令牌。');
-      const patch = { mode: 'bridge', apiUrl: apiUrl.input.value.trim(), accountId: account.input.value.trim(), allowedPrivateIds: parseIds(privateIds.input), allowedGroupIds: parseIds(groupIds.input), voiceMode: voiceMode.input.value };
+      const patch = { mode: 'bridge', apiUrl: apiUrl.input.value.trim(), accountId: account.input.value.trim(), allowedPrivateIds: parseIds(privateIds.input), allowedGroupIds: parseIds(groupIds.input), voiceMode: voiceMode.input.value, resolveIncomingMedia:incomingImages.input.value==='on',transcribeIncomingAudio:incomingAudio.input.value==='on' };
       if (accessToken.input.value) patch.accessToken = accessToken.input.value;
       if (clearAccessToken.checked) patch.clearAccessToken = true;
       await request('channels.configure', { id, config: patch }); accessToken.input.value = ''; toast(title + '接入设置已保存。'); await renderPage();
@@ -915,7 +1210,7 @@ async function chatPage() {
       connection.hasAccessToken ? element('label', { class: 'field-checkbox' }, clearAccessToken, '明确清除已保存的 API 令牌') : null,
       element('div', { class: 'form-grid' }, privateIds.wrapper, groupIds.wrapper),
       element('p', { class: 'subtle-note' }, '这些列表只确定哪些对象和群接入人格；接入之后，是否回应、关注谁和怎样相处仍由人格自己判断。'),
-      element('div', { class: 'channel-details' }, voiceMode.wrapper), controls, element('hr', { class: 'divider' }), bridgeDetails, excludedInfo))));
+      element('div', { class: 'channel-details' }, voiceMode.wrapper, incomingImages.wrapper, incomingAudio.wrapper), controls, element('hr', { class: 'divider' }), bridgeDetails, excludedInfo))));
   }
     return container;
   }
@@ -952,6 +1247,7 @@ async function chatPage() {
 
 
 async function mediaPage() {
+  if(state.view==='provider-cover')return socialProviderPage('cover');
   const generation = state.generation, life = pageLifetime(generation), instanceId = state.instanceId;
   const mediaRequest = (action, args = {}) => request(action, { ...args, instanceId });
   const view = await mediaRequest('media.inspect', { includeConfiguration: true });
@@ -961,6 +1257,7 @@ async function mediaPage() {
     button(providers.some(item => item.enabled && item.configured && item.capabilities?.generate) ? '开始创作' : '连接图片服务', () => openSection(providers.some(item => item.enabled && item.configured && item.capabilities?.generate) ? 'create' : 'provider-image'), 'primary'),
     destinations(destination('形象档案', '外貌描述、参考图，以及谁可以修改。', () => openSection('identity')),
       destination('作品与任务', '查看已保存的作品和生成进度。', () => openSection('gallery')),
+      destination('可选翻唱服务','使用自备服务和已保存音频制作，查看任务与下载结果。',()=>openSection('provider-cover')),
       ...['image', 'video'].map(kind => { const provider = providers.find(item => item.kind === kind); return destination(kind === 'image' ? '图片服务' : '视频服务', kind === 'image' ? '连接 Images API 或 ComfyUI。' : '连接已部署的 ComfyUI 视频工作流。', () => openSection('provider-' + kind), provider?.enabled && provider?.configured ? '已开启' : '未开启'); })));
   const assets = state.view === 'gallery' ? await mediaRequest('media.listAssets', { limit: 12 }) : { items: [] };
   const description = field('identity-description', '形象描述', identity.description ?? '', { multiline: true, hint: '用于保持角色身份的外貌描述；动作、衣服与场景可以在每次创作时变化。' });

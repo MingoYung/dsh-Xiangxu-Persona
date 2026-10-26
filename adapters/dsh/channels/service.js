@@ -19,7 +19,7 @@ const bounded = (value, name, max = 256, empty = false) => { if (typeof value !=
 const normalizedRoot = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
 const terminal = receipt => !['prepared', 'unknown'].includes(receipt.status);
 const cleanError = error => ({ code: /^[A-Z0-9_]{1,80}$/.test(error?.code ?? '') ? error.code : 'CHANNEL_OPERATION_FAILED', message: '渠道操作未完成，请检查本地桥、连接设置和诊断。' });
-const DEFAULT_CONFIG = { mode: 'bridge', apiUrl: '', accountId: '', accessToken: '', allowedPrivateIds: [], allowedGroupIds: [], voiceMode: 'text', allowRemote: false };
+const DEFAULT_CONFIG = { mode: 'bridge', apiUrl: '', accountId: '', accessToken: '', allowedPrivateIds: [], allowedGroupIds: [], voiceMode: 'text', allowRemote: false, resolveIncomingMedia: true, transcribeIncomingAudio: false };
 function retainedRoute(value) {
   if (!object(value) || Object.keys(value).some(key => !['provider', 'model', 'reasoningEffort', 'maxTokens'].includes(key))) fail('CHANNEL_ROUTE_INVALID', '宿主模型路由无效');
   bounded(value.provider, '模型提供方'); bounded(value.model, '模型');
@@ -45,6 +45,7 @@ function configuration(patch, previous = DEFAULT_CONFIG) {
     if (!Array.isArray(next[key]) || next[key].length > CHANNEL_LIMITS.scopeIds) fail('CHANNEL_BAD_CONFIG', '接入范围超过技术容量');
     next[key] = [...new Set(next[key].map(value => bounded(value, '接入ID')))];
   }
+  for (const key of ['resolveIncomingMedia','transcribeIncomingAudio']) if (typeof next[key] !== 'boolean') fail('CHANNEL_BAD_CONFIG','入站媒体设置必须为开关');
   if (!['text', 'both', 'voice'].includes(next.voiceMode) || typeof next.allowRemote !== 'boolean' || !['bridge', 'official'].includes(next.mode)) fail('CHANNEL_BAD_CONFIG', '回复形式、连接方式或远程许可无效');
   return next;
 }
@@ -102,7 +103,7 @@ export function createChannelRegistryStorage(file) {
 }
 
 /** Optional IM transport. This registry stores routing metadata and receipts, never dialogue text. */
-export function createChannelService({ getCoordinator, channelPort, registryPath, storage, clientFactory = createBridgeClient, speechPort, connectionPort, authorizeAction = async ({ capability }) => { if (!['chat.text', 'chat.voice'].includes(capability)) fail('CAPABILITY_PERMISSION_DENIED', '此操作尚未获得用户授权'); }, clock = Date.now, onError = () => {}, port = 17654 } = {}) {
+export function createChannelService({ getCoordinator, channelPort, registryPath, storage, clientFactory = createBridgeClient, speechPort, connectionPort, incomingMediaPort, authorizeAction = async ({ capability }) => { if (!['chat.text', 'chat.voice'].includes(capability)) fail('CAPABILITY_PERMISSION_DENIED', '此操作尚未获得用户授权'); }, clock = Date.now, onError = () => {}, port = 17654 } = {}) {
   if (typeof getCoordinator !== 'function' || typeof channelPort?.create !== 'function' || typeof channelPort?.send !== 'function' || typeof channelPort?.close !== 'function' || !storage && !registryPath || typeof clientFactory !== 'function') throw new TypeError('Channels need a coordinator, native port and external registry');
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) fail('CHANNEL_BAD_CONFIG', '渠道监听端口无效');
   const persistence = storage ?? createChannelRegistryStorage(registryPath), clients = new Map(), probes = new Map(), sockets = new Set();
@@ -259,11 +260,11 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, recentExcluded: [...value.recentExcluded, metadata].slice(-CHANNEL_LIMITS.excluded) } : value) });
       return { status: 'outside_scope', accepted: false };
     }
-    if (!event.message.text) return { status: 'unsupported', accepted: false, unsupportedSegments: event.unsupportedSegments ?? [] };
+    if (!event.message.text && !event.rich?.hasStructuredContent) return { status: 'unsupported', accepted: false, unsupportedSegments: event.unsupportedSegments ?? [] };
     const root = coordinator.memoryRoot, generation = registry.generations.find(value => sameRoot(value.memoryRoot, root))?.value ?? 0;
     const facts = { platform: event.platform, accountId: event.accountId, conversation: event.conversation, sender: event.sender }, stable = hash([normalizedRoot(root), generation, facts.platform, facts.accountId, facts.conversation.type, facts.conversation.id, facts.sender.id, ...(selected.generation ? [selected.generation] : [])]);
     let binding = registry.bindings.find(value => value.sessionId === 'xiangxu-social-' + stable.slice(0, 32));
-    const sourceId = 'im-' + hash([event.platform, event.accountId, event.message.id, ...(normalized ? ['official'] : [])]), receiptId = hash([normalizedRoot(root), 'inbound', sourceId]), textHash = hash(event.message.text);
+    const sourceId = 'im-' + hash([event.platform, event.accountId, event.message.id, ...(normalized ? ['official'] : [])]), receiptId = hash([normalizedRoot(root), 'inbound', sourceId]), textHash = event.rich?.hasStructuredContent ? hash({ text:event.message.text,rich:event.rich }) : hash(event.message.text);
     const previous = registry.receipts.find(value => value.id === receiptId);
     if (previous) { if (previous.textHash !== textHash) fail('CHANNEL_MESSAGE_CONFLICT', '同一平台消息ID不能替换原文'); return { status: previous.status === 'prepared' ? 'unknown' : previous.status, accepted: previous.status === 'accepted', duplicate: true, messageId: previous.messageId }; }
     if (!binding && registry.bindings.length >= CHANNEL_LIMITS.bindings) fail('CHANNEL_BINDING_CAPACITY', '渠道会话登记已达到128条技术上限');
@@ -282,7 +283,8 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
         binding = { ...binding, agentOptions: retainedRoute(native.agentOptions) };
         await save({ ...registry, bindings: registry.bindings.map(value => value.sessionId === binding.sessionId ? { ...value, agentOptions: binding.agentOptions } : value) });
       }
-      await channelPort.send(clone(binding), { messageId: sourceId, text: event.message.text, sourceFacts: { ...clone(facts), messageId: event.message.id, sourceMessageId: event.message.id, sourceAt: event.message.createdAt, textComplete: event.textComplete, ...(event.unsupportedSegments ? { unsupportedSegments: event.unsupportedSegments } : {}) } });
+      const incoming = event.rich?.hasStructuredContent ? await incomingMediaPort?.prepare(event,{client:client(selected).value,binding,config:selected.config}) : null;
+      await channelPort.send(clone(binding), { messageId: sourceId, text: event.message.text, ...(incoming ? { structured: incoming } : event.rich?.hasStructuredContent ? { structured: { rich:event.rich,derived:[],images:[] } } : {}), sourceFacts: { ...clone(facts), messageId: event.message.id, sourceMessageId: event.message.id, sourceAt: event.message.createdAt, textComplete: event.textComplete, ...(event.unsupportedSegments ? { unsupportedSegments: event.unsupportedSegments } : {}) } });
     } catch (error) {
       const safe = report(error);
       try { await save({ ...registry, receipts: registry.receipts.map(value => value.id === receiptId ? { ...value, status: 'unknown', code: safe.code } : value) }); } catch (persistError) { report(persistError); }
@@ -397,8 +399,8 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   }
   async function execute({ sessionId, capability, payload = {}, requestId } = {}) { return queue(async () => {
     await ready; bounded(sessionId, '会话'); bounded(requestId, '操作编号', 160);
-    if (!CAPABILITY_IDS.includes(capability) || !object(payload) || Object.keys(payload).some(key => !['text', 'bytes', 'mime', 'filename', 'messageId', 'stickerId', 'quoteMessageId'].includes(key))) fail('CHANNEL_CAPABILITY_REQUEST', '平台操作参数无效');
-    const metadata = {}; for (const [key, value] of Object.entries(payload)) { if (key === 'bytes') { if (!(value instanceof Uint8Array) || !value.byteLength || value.byteLength > 16777216) fail('CHANNEL_MEDIA_CAPACITY', '媒体字节超过技术容量'); metadata.bytesSha256 = hash(value); metadata.bytesLength = value.byteLength; } else { bounded(value, key, key === 'text' ? 16000 : 512, key === 'text'); metadata[key] = value; } }
+    if (!CAPABILITY_IDS.includes(capability) || !object(payload) || Object.keys(payload).some(key => !['text', 'bytes', 'mime', 'filename', 'messageId', 'stickerId', 'quoteMessageId', 'mentionUserId', 'mentionAll', 'forwardId'].includes(key))) fail('CHANNEL_CAPABILITY_REQUEST', '平台操作参数无效');
+    const metadata = {}; for (const [key, value] of Object.entries(payload)) { if (key === 'bytes') { if (!(value instanceof Uint8Array) || !value.byteLength || value.byteLength > 16777216) fail('CHANNEL_MEDIA_CAPACITY', '媒体字节超过技术容量'); metadata.bytesSha256 = hash(value); metadata.bytesLength = value.byteLength; } else if (key === 'mentionAll') { if (typeof value !== 'boolean') fail('CHANNEL_CAPABILITY_REQUEST','提及全体标记必须为开关'); metadata[key]=value; } else { bounded(value, key, key === 'text' ? 16000 : 512, key === 'text'); metadata[key] = value; } }
     const binding = registry.bindings.find(value => value.sessionId === sessionId); if (!binding) fail('CHANNEL_BINDING_NOT_FOUND', '没有对应的平台会话');
     const id = hash([normalizedRoot(binding.memoryRoot), 'capability', sessionId, requestId]), textHash = hash({ capability, metadata }), previous = registry.receipts.find(value => value.id === id);
     if (previous) { if (previous.textHash !== textHash) fail('CHANNEL_OUTPUT_CONFLICT', '同一操作编号不能替换动作或内容'); return resultFor(previous, true); }
@@ -407,7 +409,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     const checked = await runProbe(selected); if (!checked.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '平台连接尚未确认');
     const entry = client(selected), available = await capabilities({ id: selected.id }); if (!available.items.find(item => item.id === capability)?.supported) fail('CAPABILITY_UNSUPPORTED', '当前连接器没有实现这个能力');
     await authorize(binding, capability);
-    if (['contacts.read', 'groups.read'].includes(capability)) { const read = await entry.value.execute(binding.facts, capability, payload, { deliveryId: 'im-read-' + id.slice(0, 48) }); if (Buffer.byteLength(JSON.stringify(read)) > 32768) fail('CHANNEL_READ_CAPACITY', '读取结果超过单次技术容量'); return read; }
+    if (['contacts.read', 'groups.read', 'message.read', 'message.forward.read'].includes(capability)) { const read = await entry.value.execute(binding.facts, capability, payload, { deliveryId: 'im-read-' + id.slice(0, 48) }); if (Buffer.byteLength(JSON.stringify(read)) > 32768) fail('CHANNEL_READ_CAPACITY', '读取结果超过单次技术容量'); return read; }
     const deliveryId = 'im-cap-' + id.slice(0, 48), receipt = { id, kind: 'outbound', sessionId, sourceEventId: 'capability:' + requestId, textHash, deliveryId, capability, status: 'prepared', at: clock() };
     const next = compact(clone(registry)); next.receipts.push(receipt); await save(next);
     let outcome;

@@ -1,10 +1,10 @@
 # DSH 原生接入测试记录
 
-> 当前版本入口：产品现名dsh-Xiangxu-Persona（相续人格），0.3.0图形设置、实例与管理说明见[管理界面](management-ui.md)。下文保留对应旧版历史数字、SHA及失败，不作为本版浏览器验收。
+> 当前版本入口：产品dsh-Xiangxu-Persona（相续人格）0.10.0的接入、检索与最终状态见[本轮说明](integrations-and-retrieval.md)；日常操作见[管理界面](management-ui.md)。下文只保留对应旧版历史数字、SHA及失败，不作为0.10.0新增能力或当前真实平台的验收。
 
 ## 0.2.0历史结果入口
 
-当前结果见[自主整理、容量与补充唤醒验证](evolution-and-wake-validation.md)。本文件下文保留 **0.1.0 首次交付历史**，通过数及 fixture 范围不覆盖新结果。0.1.1 的真实全流程、97次 provider 派发、最终155/155本地回归、实际修复及未覆盖项统一见[真实模型复核](real-model-validation.md)与[宿主证据](real-model-host-evidence.md)。
+0.2.0历史结果见[自主整理、容量与补充唤醒验证](evolution-and-wake-validation.md)。本文件下文保留 **0.1.0 首次交付历史**，通过数及 fixture 范围不覆盖新结果。0.1.1 的真实全流程、97次 provider 派发、最终155/155本地回归、实际修复及未覆盖项统一见[真实模型复核](real-model-validation.md)与[宿主证据](real-model-host-evidence.md)。
 
 ## 首次交付记录
 

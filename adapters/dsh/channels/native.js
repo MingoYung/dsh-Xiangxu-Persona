@@ -42,16 +42,19 @@ export function createDshChannelPort({ ctx, getCoordinator, presetId = 'persona-
     })().finally(() => resolving.delete(binding.sessionId)));
     return resolving.get(binding.sessionId);
   }
-  async function send(binding, { messageId, text, sourceFacts = {} }) {
+  async function send(binding, { messageId, text, structured, sourceFacts = {} }) {
     const saved = await create(binding), agent = ctx.agents.get(saved.sessionId);
     if (!agent) fail('CHANNEL_AGENT_UNAVAILABLE', '聊天会话尚未就绪');
     const pending = [...(agent.inbox?.nextTurn ?? []), ...(agent.inbox?.nextStep ?? [])], history = agent.session?.deriveMessages?.() ?? [];
     const previous = [...pending, ...history].find(message => message.id === messageId);
-    if (previous && plainText(previous.content) !== text) fail('CHANNEL_MESSAGE_CONFLICT', '同一个平台消息标识不能对应不同原文');
+    if (previous && (previous.source?.xiangxuStructured?.originalText ?? plainText(previous.content)) !== text) fail('CHANNEL_MESSAGE_CONFLICT', '同一个平台消息标识不能对应不同原文');
+    const structuredSource = structured?.rich ? { originalText:text,rich:structured.rich,derived:structured.derived??[] } : null;
+    const derivedText = structuredSource ? '[平台结构化资料：不是用户键入的原话]\n' + JSON.stringify({ mentions:structuredSource.rich.mentions,replies:structuredSource.rich.replies,faces:structuredSource.rich.faces,media:structuredSource.rich.media,forwards:structuredSource.rich.forwards,perception:structuredSource.rich.perception,derived:structuredSource.derived }) : '';
     if (!previous) agent.followup({ id: messageId, role: 'user', source: { kind: 'user', xiangxuChannel: saved.facts,
+      ...(structuredSource ? { xiangxuStructured:structuredSource } : {}),
       platformMessageId: sourceFacts.messageId ?? sourceFacts.sourceMessageId ?? null, platformSourceAt: Number.isSafeInteger(sourceFacts.sourceAt) ? sourceFacts.sourceAt : null,
       textComplete: sourceFacts.textComplete !== false, unsupportedSegments: Array.isArray(sourceFacts.unsupportedSegments) ? sourceFacts.unsupportedSegments.slice(0, 32) : [] },
-      content: [{ type: 'text', text }] });
+      content: [...(text ? [{type:'text',text}] : []),...(derivedText ? [{type:'text',text:derivedText}] : []),...(structured?.images??[]).map(attachment=>({type:'image',attachment}))] });
     const sessions = get(ctx, 'sessions'); if (typeof sessions?.flush !== 'function') fail('CHANNEL_DURABILITY_UNAVAILABLE', '宿主不能确认原生收件箱持久化');
     await sessions.flush(agent.session);
     return { status: 'accepted', messageId, duplicate: Boolean(previous), binding: saved };

@@ -58,7 +58,7 @@ reviewAssistant默认{enabled:false,maxOutputTokens:1024,maxReportChars:4000}。
 
 ## 账号与社交身份
 
-社交身份把用户为人格准备的平台账号关联到当前人格；账号注册、平台认证和实际授权仍在相应平台完成。当前QQ／微信复用既有连接，B站、抖音及其他平台可先登记账号档案并预留适配接口；没有适配器时只表示“已登记”，不显示成已经登录、能发私信、投稿或通话。
+社交身份把用户为人格准备的平台账号关联到当前人格；账号注册、平台认证和实际授权仍在相应平台完成。当前QQ／微信复用既有连接，B站增加独立可选适配器，抖音及其他平台可先登记账号档案并预留适配接口；没有适配器时只表示“已登记”，不显示成已经登录、能发私信、投稿或通话。
 
 owner动作是social.inspect/list/upsert/remove/linkCurrent/refresh。upsert只接受platform、accountId、displayName、accountType、profileUrl、avatarUrl、notes及instanceId；不接受模型或前端自报verified、权限、memoryRoot或凭据。linkCurrent从当前实际连接核对QQ／微信账号，不能以用户填写的昵称替代实际账号。解除登记只删除该人格的账号档案，不退出平台、不改授权、不删记忆。
 
@@ -86,3 +86,11 @@ owner动作是social.inspect/list/upsert/remove/linkCurrent/refresh。upsert只�
 ### 0.7.0已取得的分级证据
 
 [原生GUI回执](verification/0.7.0-native-ui.json)记录九页、合成深刻记忆、助手开关保存及未核实社交身份的实际显示，模型调用为0；[源码自主性审查](verification/0.7.0-autonomy-audit.json)说明源码链、来源SHA、发现与修复、本人定向测试及其他执行者回执的不同证据强度。它们不证明真实平台已经登录、模型整理质量或长期人格结果。
+
+## 0.10.0 检索参考、时间与实际账号
+
+新增混合检索只扩展候选供给：文字、用户可选的真实语义向量与已存显式关联，不为深刻经历规定触发条件。search_candidates、snapshot和tool_result分别记录技术参考事实；重复曝光不自动加权、惩罚或降低重要度，是否回想和怎样解释仍由人格判断。没有固定遗忘期限、情绪阈值、主人优先权重或强制整理频率。
+
+current/past/asOf读取条目已有有效区间；past仅指明确结束的旧理解，asOf不恢复被删历史；supersedesIds是人格保存的关联，不自动让旧看法失效。语义索引有界且可重建，来源撤销清缓存与有关诊断引用，不复活已遗忘资料。
+
+B站现在有独立可选适配器，可实际扫码后按当前账号许可执行有限读取与评论／私信；登记档案本身仍不授权。QQ动态和翻唱依赖自备协议服务，抖音等未接入平台仍只作目录参考。所有连接共用同一人格，平台发言者、关系主体与外部材料分别保留。当前入口与状态见[0.10.0 接入与检索说明](integrations-and-retrieval.md)；以上0.7–0.9验收数字保留原版本范围。
