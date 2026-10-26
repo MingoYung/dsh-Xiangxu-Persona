@@ -218,4 +218,3 @@ for (const changed of ['disposed', 'channel']) test('actual build refuses a down
   const pending = f.invoke(); await active; if (changed === 'disposed') f.context.disposed = true; else f.context.channel = { port1: { postMessage() {} } }; release();
   await assert.rejects(pending, /页面或连接已经改变/); assert.equal(f.created.length, 0); assert.equal(f.clicked.length, 0); assert.equal(f.posted.length, 0); assert.equal(f.context.downloadInProgress, false);
 });
-

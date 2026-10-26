@@ -144,7 +144,7 @@
     "test/speaker-identity.test.js": "18ff3712b9452084547b9ffed0b8cc68fadf865af264381314712feed790762a",
     "test/storage.test.js": "91d5056829719c7fb5414f9e358e1c9c04c308cdd4578063081b4848a0f6365c",
     "test/ui-expansion.test.js": "609a5d3c2ad98793694d08e91a822b71d312ddae23423baaba289de909ae113c",
-    "test/ui-integrations.test.js": "e57b81596646083abfeb50e9c879cb1a7c1903c64e3128c35488ab04b896ec81",
+    "test/ui-integrations.test.js": "7fbe15e226dd31c23d68735dcc7591295a8c741f989f89865a7639ea658f5871",
     "test/ui-onboarding.test.js": "9dac6d5065c2b3a8200517338d62796ddca3567a7269288de6329ecb8622fe3e",
     "test/ui-persona-lifecycle.test.js": "ff1358860d3cf3ed3738cd19c2a74ff569688c978a70747b98239b3c8171beec",
     "test/voice.test.js": "e5abe144d03557e8352487e13519728884d5501334dc8e1fade952b0471dfcdf",
@@ -183,13 +183,27 @@
       "passed": 867,
       "failed": 1,
       "correction": "missing host exec.callId no longer breaks memory-search exposure; full suite rerun passed"
+    },
+    "postFormatting": {
+      "file": "test/ui-integrations.test.js",
+      "beforeSha256": "e57b81596646083abfeb50e9c879cb1a7c1903c64e3128c35488ab04b896ec81",
+      "afterSha256": "7fbe15e226dd31c23d68735dcc7591295a8c741f989f89865a7639ea658f5871",
+      "change": "Removed surplus blank line at EOF only; no executable statement changed",
+      "validation": "20 UI integration cases rerun after formatting"
     }
   },
   "staticChecks": {
     "status": "passed",
     "syntaxFiles": 164,
     "portableCoreImports": "passed",
-    "packageTargets": "passed"
+    "packageTargets": "passed",
+    "documents": {
+      "status": "passed",
+      "planDocuments": 14,
+      "implementationDocuments": 22,
+      "localLinks": 657,
+      "selfContainedPlans": true
+    }
   },
   "nativeSdk": {
     "checks": 40,
@@ -317,5 +331,12 @@
     "productionForceRestarted": false,
     "productionDataChanged": false,
     "normalBackendReloadNeeded": true
+  },
+  "documentMirrors": {
+    "status": "passed",
+    "repoDocuments": 36,
+    "reportMirrors": 14,
+    "localLinks": 1043,
+    "backupVerified": 47
   }
 }
