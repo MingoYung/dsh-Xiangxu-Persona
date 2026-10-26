@@ -10,7 +10,8 @@ import { createChannelService } from '../adapters/dsh/channels/service.js';
 import { INSTANCE_LIMITS, sessionOwnershipKey, createSessionOwnershipStore, writeInstanceMetadata, acquireClearGate } from '../adapters/dsh/instance-lifecycle.js';
 
 async function fixture(t, options = {}) {
-  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'xiangxu-lifecycle-'));
+  const temporaryRoot = await fs.realpath(os.tmpdir());
+  const base = await fs.realpath(await fs.mkdtemp(path.join(temporaryRoot, 'xiangxu-lifecycle-')));
   const root = path.join(base, 'memory'), registryPath = path.join(base, 'instances.json');
   const opened = [], stopped = [], maintenance = []; let busy = false, clock = Date.now(), flush = false;
   const createCoordinator = config => {
@@ -30,7 +31,7 @@ async function fixture(t, options = {}) {
     isBusy: () => busy, beforeMaintenance: async (kind, item) => maintenance.push({ kind, instanceId: item.instanceId }), ...options };
   const manager = createInstanceManager(settings), managers = [manager]; await manager.ready;
   t.after(async () => { for (const value of managers) await value.close().catch(() => {}); for (const value of opened) await value.close().catch(() => {});
-    const resolved = path.resolve(base), prefix = path.resolve(os.tmpdir()) + path.sep;
+    const resolved = path.resolve(base), prefix = path.resolve(temporaryRoot) + path.sep;
     assert.ok(resolved.startsWith(prefix) && path.basename(resolved).startsWith('xiangxu-lifecycle-'));
     await fs.rm(resolved, { recursive: true, force: true }); });
   return { base, root, registryPath, manager, opened, stopped, maintenance, settings, track: value => { managers.push(value); return value; },

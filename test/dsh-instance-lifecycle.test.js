@@ -23,7 +23,7 @@ function scopedSurface() {
 }
 
 test('actual coordinator mount/unload/reload releases all scoped tools and listeners without duplicate personality context', async t => {
-  const base = await fs.mkdtemp(join(tmpdir(), 'xiangxu-live-lifecycle-')), root = join(base, 'memory'), surface = scopedSurface();
+  const base = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'xiangxu-live-lifecycle-'))), root = join(base, 'memory'), surface = scopedSurface();
   const session = { id: 's-one', header: {}, deriveMessages: () => [], requestHeader: () => ({ config: { provider: 'not-called', model: 'not-called' } }) };
   const agent = { id: session.id, session, ctx: surface.scope, inbox: { nextTurn: [], nextStep: [] }, status: 'idle', followup() {} };
   const ctx = { agents: { get: () => agent }, get: key => key === 'sessionQuery' ? { readSession: async () => ({ events: [] }) } : undefined, llm: {} };
@@ -46,7 +46,7 @@ test('actual coordinator mount/unload/reload releases all scoped tools and liste
 });
 
 test('a failing disposer cannot strand the writer lock or skip the remaining scoped cleanup', async t => {
-  const root = await fs.mkdtemp(join(tmpdir(), 'xiangxu-dispose-fault-')), surface = scopedSurface();
+  const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'xiangxu-dispose-fault-'))), surface = scopedSurface();
   const session = { id: 'dispose-session', header: {}, deriveMessages: () => [] };
   const agent = { id: session.id, session, ctx: surface.scope, inbox: { nextTurn: [], nextStep: [] }, status: 'idle' };
   const ctx = { agents: { get: () => agent }, get: () => undefined, llm: {} };

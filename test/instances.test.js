@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createInstanceManager } from '../adapters/dsh/instances.js';
 
 async function fixture(t,options={}) {
-  const base=await fs.mkdtemp(path.join(os.tmpdir(),'xiangxu-instances-')), root=path.join(base,'memory'), registryPath=path.join(base,'instances.json'), calls=[];
+  const base=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'xiangxu-instances-'))), root=path.join(base,'memory'), registryPath=path.join(base,'instances.json'), calls=[];
   let busy=false;
   const createCoordinator=config=>{
     calls.push({kind:'open',root:config.memoryRoot,config});

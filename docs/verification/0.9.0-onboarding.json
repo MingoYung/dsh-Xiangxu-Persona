@@ -10,12 +10,34 @@
       "skipped": 0,
       "cancelled": 0,
       "durationMs": 142221.7332,
-      "logSha256": "c6e0073a68d5aa331f1f25fd4e77a104e1d4a99d1604168e0d598b3de66d1aba"
+      "logSha256": "c6e0073a68d5aa331f1f25fd4e77a104e1d4a99d1604168e0d598b3de66d1aba",
+      "scope": "Last full local run before normalization of three temporary-directory test fixtures; runtime/package/UI source bytes unchanged. Fixture correction has a separate focused receipt; final complete CI results are linked in the delivery index."
     },
     "ui": {
       "passed": 88,
       "failed": 0,
       "includesNativeHostUnitTests": true
+    },
+    "fixtureNormalization": {
+      "tests": 30,
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "syntheticJunctionTempProbe": {
+        "passed": 30,
+        "failed": 0,
+        "durationMs": 8888.1362,
+        "exitCode": 0,
+        "eightDotThreeAliasTested": false,
+        "productionGuardStillRejectsAlias": true
+      },
+      "sourceDigests": {
+        "test/instances.test.js": "d007adb2efdf1af08a2586389ef898c1ecb20e7b59afd62c4773ab72e7890f67",
+        "test/instance-lifecycle.test.js": "ef50c080ce1b61ba744fd5d1cb5afc9be018d3a3f9ff9e9da5432a6b03ddf770",
+        "test/dsh-instance-lifecycle.test.js": "0e0baac8a5cc4cfbe323a9555c5d3dd0c0272f879cbe34925b8f1a4b29d7fcc5"
+      },
+      "logSha256": "670f4f61856d00817816ed0989cb2988636aa805f8dfb5e8a40acdb69769df3a",
+      "runtimeChanged": false
     }
   },
   "nativeSdk": {
@@ -356,6 +378,16 @@
       "actualDispatches": 0,
       "completed": false,
       "reason": "INSTANCE_OWNERSHIP_BUSY; corrected and followed by seven successful real dispatches."
+    },
+    {
+      "stage": "initial GitHub Windows CI",
+      "commit": "209588aee0ae843d63e17c3c1592e8822a895833",
+      "runUrl": "https://github.com/MingoYung/dsh-Xiangxu-Persona/actions/runs/40359086262",
+      "tests": 711,
+      "passed": 682,
+      "failed": 29,
+      "linux": "passed",
+      "reason": "Runner temporary-directory aliases were not canonical paths, so the strict production path guard rejected three test fixtures during initialization. Test fixtures resolve their newly created directories to real paths; no production guard was relaxed and no case was skipped."
     }
   ],
   "autonomy": {
