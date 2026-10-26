@@ -36,10 +36,61 @@ export function extractSourceDependencies(value) {
   return { refs: [...refs.values()], recordIds: [...recordIds], complete };
 }
 
+/** Host transport/platform IDs are not memory IDs. Only the scan copy changes. */
+export function extractProcessDependencies(record) {
+  const content = record.content?.mode === 'cached' ? record.content.text : null;
+  if (record.kind !== 'tool_result' || record.sourceKind !== 'tool/result' || typeof content !== 'string') return extractSourceDependencies(content);
+  if (content.length > 2000000) return { refs: [], recordIds: [], complete: false };
+  let envelope; try { envelope = JSON.parse(content); } catch { return extractSourceDependencies(content); }
+  if (envelope?.message?.role !== 'tool' || envelope.message.source?.kind !== 'tool') return extractSourceDependencies(content);
+  let complete = true, nodes = 0;
+  const explicit = new Set(), active = new WeakSet();
+  const explicitArrays = new Set([...idArrays, 'sourceRecordIds']);
+  const scanCopy = (value, depth = 0, field = '') => {
+    if (++nodes > 100000 || depth > 32) { complete = false; return null; }
+    if (typeof value === 'string') {
+      if (field === 'recordId' && value) explicit.add(value);
+      if (explicit.size > 16384) { complete = false; return null; }
+      const text = value.trim();
+      if (/^[{[\"]/.test(text)) {
+        if (text.length > 2000000) { complete = false; return null; }
+        let parsed; try { parsed = JSON.parse(text); } catch { return value; }
+        if (parsed !== value) return JSON.stringify(scanCopy(parsed, depth + 1));
+      }
+      return value;
+    }
+    if (!value || typeof value !== 'object') return value;
+    if (active.has(value)) { complete = false; return null; }
+    active.add(value);
+    let next;
+    if (Array.isArray(value)) {
+      if (explicitArrays.has(field)) for (const id of value) {
+        if (typeof id === 'string' && id) explicit.add(id);
+        if (explicit.size > 16384) { complete = false; break; }
+      }
+      next = [];
+      for (const item of value) { if (nodes >= 100000) { complete = false; break; } next.push(scanCopy(item, depth + 1)); }
+    } else {
+      next = Object.create(null);
+      for (const [name, item] of Object.entries(value)) {
+        if (nodes >= 100000) { complete = false; break; }
+        if (name === 'id' && value.schemaVersion !== 'persona-memory/3') continue;
+        next[name] = scanCopy(item, depth + 1, name);
+      }
+    }
+    active.delete(value); return next;
+  };
+  const dependencies = extractSourceDependencies(scanCopy(envelope));
+  const recordIds = [...new Set([...dependencies.recordIds, ...explicit])];
+  return { refs: dependencies.refs, recordIds, complete: complete && dependencies.complete && recordIds.length <= 16384 };
+}
+
 export function hotSourceDependencies(record) {
-  const dependencies = extractSourceDependencies({ content: record.content?.mode === 'cached' ? record.content.text : null,
-    navigationSummary: record.navigationSummary, refs: record.dependencyRefs, dependencyRecordIds: record.dependencyRecordIds });
-  return { ...dependencies, complete: dependencies.complete && record.dependencyScanComplete !== false,
+  const scanned = extractProcessDependencies(record);
+  const annotated = extractSourceDependencies({ navigationSummary: record.navigationSummary, refs: record.dependencyRefs, dependencyRecordIds: record.dependencyRecordIds });
+  const refs = new Map([...scanned.refs, ...annotated.refs].map(ref => [key(ref), ref]));
+  const recordIds = [...new Set([...scanned.recordIds, ...annotated.recordIds])];
+  return { refs: [...refs.values()], recordIds, complete: scanned.complete && annotated.complete && record.dependencyScanComplete !== false && refs.size <= 8192 && recordIds.length <= 16384,
     annotated: Array.isArray(record.dependencyRefs) && Array.isArray(record.dependencyRecordIds) && record.dependencyScanComplete !== false };
 }
 

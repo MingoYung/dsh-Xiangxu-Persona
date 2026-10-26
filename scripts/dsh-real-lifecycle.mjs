@@ -98,7 +98,7 @@ async function install(options){
   await prepareProfile(options);
 }
 
-class Engine{
+export class Engine{
   constructor(options,dir,root,overlay){
     this.options=options;this.dir=dir;this.root=root;this.frames=[];this.pending=new Map();this.counter=0;this.log=Promise.resolve();this.closed=false;this.ready=false;let out='',err='';
     this.child=spawn(options.exe,[options.cli,'--profile',options.profile,'--patch',overlay],{cwd:projectRoot,windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',DSH_HOME:options.home,PERSONA_MEMORY_ROOT:root},stdio:['pipe','pipe','pipe']});
@@ -115,7 +115,7 @@ class Engine{
   async prompt(sid,content){const before=this.events(sid).length,receipt=await this.request('session/prompt',{sessionId:sid,contentBlocks:[{type:'text',text:content}]});await this.request('session/wait',{sessionId:sid});const failure=this.events(sid).slice(before).find(x=>x.type==='turn/end'&&x.data.reason?.kind==='error');if(failure)throw Object.assign(new Error(failure.data.reason.error?.message??'Native model turn failed'),{code:failure.data.reason.error?.code??'NATIVE_TURN_ERROR',data:failure.data.reason});return receipt;}
   async close(){if(this.closed){await this.log;return this.exit;}try{await this.request('shutdown',{},15000);}catch{}this.child.stdin.end();let timer;const r=await Promise.race([this.exit,new Promise(done=>{timer=setTimeout(()=>done(null),15000);})]);clearTimeout(timer);if(!r){this.child.kill();await this.exit;}await this.log;return r??this.exit;}
 }
-async function start(options,dir,memoryRoot){
+export async function start(options,dir,memoryRoot){
   await mkdir(dir,{recursive:true});const observer=join(options.artifacts,'real-observer.mjs');await writeFile(observer,observerSource);
   const overlay=join(dir,'overlay.yml');await writeFile(overlay,JSON.stringify([{id:'tools',config:{mode:'native'}},{insert:[{id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'}},{id:'persona-real-observer',name:pathToFileURL(observer).href,config:{artifacts:dir,provider:options.provider,model:options.model,sourceProbes:options.sourceProbes??[],maxActualDispatches:options.maxActualDispatches??null}}]}],null,2));
   const e=new Engine(options,dir,memoryRoot,overlay);if(!await e.wait(()=>e.ready,30000))throw new Error('Real provider observation did not become ready; no model prompt sent');

@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { JsonStore } from './store.js';
 import { extractSourceDependencies, hotSourceDependencies, dependenciesRevoked, temporaryCleanupPlan, runReferencesRevocation } from './source-dependencies.js';
 import { countStringValues, serializedBytes, assertRecordCapacity, assertDocumentCapacity, assertFiniteReviewState, assertFiniteJson, capacityError } from './capacity.js';
+import { SELF_PROFILE_PATH, emptySelfProfile, validateSelfProfile, validateSelfProfilePatch, applySelfProfilePatch, selfProfileLinks, redactSelfProfile } from './self-profile.js';
 import {
   SCHEMA_VERSION, SchemaError, defaultConfig, mergeConfig, emptyPersona, emptyRuntime,
   newId, sourceKey, countChars, safeId, validateChat, validateHot, validateMemoryItem,
@@ -67,6 +68,7 @@ export class MemoryRepository {
         }
         const persona = await reader.readJson('self/persona.json'); if (persona && persona.schemaVersion !== SCHEMA_VERSION) throw new SchemaError('Unsupported stored persona schemaVersion; source is preserved');
         const runtime = await reader.readJson('global/state.json'); if (runtime && runtime.schemaVersion !== SCHEMA_VERSION) throw new SchemaError('Unsupported stored runtime schemaVersion; source is preserved');
+        const selfProfile = await reader.readJson(SELF_PROFILE_PATH); if (selfProfile) validateSelfProfile(selfProfile);
       } });
       const stored = await this.store.readJson('config.json');
       if (stored) this.config = defaultConfig(mergeConfig(stored, this.configOverrides ?? {}));
@@ -74,7 +76,8 @@ export class MemoryRepository {
       const meta = await this._meta(); const writes = { json: {}, jsonl: {} };
       const correctedSpeakers = await this._correctAssistantSpeakerPlaceholders(meta, writes);
       const cleanedDependencies = await this._cleanDependencyCaches(meta, writes, 'open_revocation_cleanup');
-      if (correctedSpeakers || cleanedDependencies) await this._commit(meta, writes);
+      const cleanedSelfProfile = await this._cleanSelfProfile(meta, writes);
+      if (correctedSpeakers || cleanedDependencies || cleanedSelfProfile) await this._commit(meta, writes);
       return this;
     } catch (error) { await this.store.close(); throw error; }
   }
@@ -97,6 +100,65 @@ export class MemoryRepository {
   }
   async _runtime() { return this.store.readJson('global/state.json', emptyRuntime(this.now())); }
   async _persona() { return this.store.readJson('self/persona.json', emptyPersona(this.now())); }
+  async _selfProfile(meta = null) {
+    const stored = await this.store.readJson(SELF_PROFILE_PATH);
+    if (!stored) return emptySelfProfile();
+    return redactSelfProfile(stored, meta ?? await this._meta()).profile;
+  }
+  async _cleanSelfProfile(meta, writes) {
+    const stored = writes.json[SELF_PROFILE_PATH] ?? await this.store.readJson(SELF_PROFILE_PATH);
+    if (!stored) return false;
+    const result = redactSelfProfile(stored, meta);
+    if (!result.changed) return false;
+    writes.json[SELF_PROFILE_PATH] = validateSelfProfile({ ...result.profile, version: stored.version + 1, updatedAt: this.now() });
+    return true;
+  }
+  getSelfProfile() { return this._queue(() => this._selfProfile()); }
+  updateSelfProfile(patch, options = {}) {
+    return this._queue(async () => {
+      const actor = options.actor ?? 'user';
+      validateSelfProfilePatch(patch, actor);
+      if (options.expectedVersion !== undefined && (!Number.isSafeInteger(options.expectedVersion) || options.expectedVersion < 0)) throw new SchemaError('expectedVersion must be a nonnegative integer');
+      const stored = validateSelfProfile(await this.store.readJson(SELF_PROFILE_PATH, emptySelfProfile()));
+      if (options.expectedVersion !== undefined && options.expectedVersion !== stored.version) throw conflict('Self profile changed');
+      const meta = await this._meta(); let links = selfProfileLinks(options);
+      if (dependenciesRevoked({ refs: links.sourceRefs, recordIds: links.sourceRecordIds }, meta)) throw Object.assign(new Error('Self profile update references an explicitly revoked source'), { code: 'SOURCE_REVOKED' });
+      if (links.sourceRefs.length || links.sourceRecordIds.length) {
+        const hot = await this._hot(meta), known = new Set((await this._allMemory(meta)).map(item => item.id));
+        const hotById = new Map(hot.map(item => [item.id, item])), expanded = new Set();
+        const acceptedSource = ref => Object.hasOwn(meta.sources, sourceKey(ref)) || Object.keys(meta.hotSources).some(key => key.startsWith(sourceKey(ref) + ':'));
+        // A stored process record and its source root are valid provenance too.
+        // Host envelope UUIDs and arbitrary IDs merely quoted in its JSON are not.
+        // Carry the selected process's real dependencies, so withdrawing an
+        // underlying participant source also withdraws the derived self field.
+        for (;;) {
+          if (dependenciesRevoked({ refs: links.sourceRefs, recordIds: links.sourceRecordIds }, meta)) throw Object.assign(new Error('Self profile update references an explicitly revoked source'), { code: 'SOURCE_REVOKED' });
+          for (const ref of links.sourceRefs) if (!acceptedSource(ref)) throw Object.assign(new Error('Self profile source does not identify an accepted event or process root'), { code: 'SOURCE_UNKNOWN' });
+          for (const id of links.sourceRecordIds) if (!known.has(id) && !hotById.has(id)) throw Object.assign(new Error('Self profile source does not identify retained memory or process material'), { code: 'SOURCE_UNKNOWN' });
+          const sourceRoots = new Set(links.sourceRefs.filter(ref => !Object.hasOwn(meta.sources, sourceKey(ref))).map(sourceKey));
+          const selected = hot.filter(item => !expanded.has(item.id) && (links.sourceRecordIds.includes(item.id) || sourceRoots.has(sourceKey(item.sourceRef))));
+          if (!selected.length) break;
+          const refs = [...links.sourceRefs], ids = [...links.sourceRecordIds];
+          for (const item of selected) {
+            expanded.add(item.id); const dependencies = hotSourceDependencies(item);
+            if (!dependencies.complete) throw Object.assign(new Error('Self profile process source has incomplete dependency information; original material was preserved'), { code: 'SOURCE_DEPENDENCIES_INCOMPLETE' });
+            refs.push(item.sourceRef, ...dependencies.refs); ids.push(...dependencies.recordIds);
+          }
+          const mergedRefs = new Map();
+          for (const ref of refs) mergedRefs.set(sourceKey(ref), { ...mergedRefs.get(sourceKey(ref)), ...ref });
+          links = selfProfileLinks({ sourceRefs: [...mergedRefs.values()], sourceRecordIds: [...new Set(ids)] });
+        }
+      }
+      const cleaned = redactSelfProfile(stored, meta);
+      const result = applySelfProfilePatch(cleaned.profile, patch, { actor, now: this.now(),
+        ...(Object.hasOwn(options, 'sourceRefs') || links.sourceRefs.length ? { sourceRefs: links.sourceRefs } : {}),
+        ...(Object.hasOwn(options, 'sourceRecordIds') || links.sourceRecordIds.length ? { sourceRecordIds: links.sourceRecordIds } : {}) });
+      if (!result.changed && !cleaned.changed) return copy(result.profile);
+      const next = result.changed ? result.profile : validateSelfProfile({ ...result.profile, version: stored.version + 1, updatedAt: this.now() });
+      const writes = { json: { [SELF_PROFILE_PATH]: next }, expectedVersions: { [SELF_PROFILE_PATH]: stored.version } };
+      await this._enforceLimits(writes); await this._commit(meta, writes); return copy(next);
+    });
+  }
   async _document(path) { return this.store.readJson(path, doc(this.now())); }
   _bump(value) { return { ...value, version: (value.version ?? 0) + 1, updatedAt: this.now() }; }
   _event(meta) { meta.sequence += 1; return 'ev_' + String(meta.sequence).padStart(20, '0'); }
@@ -194,7 +256,7 @@ export class MemoryRepository {
     for (const file of files) {
       if (/^(people\/[^/]+\/hot|staging\/hot)\.jsonl$/.test(file.path)) {
         for (const entry of await this.store.readLines(file.path)) if (entry.content?.mode === 'cached') hotChars += countChars(entry.content.text);
-      } else if (/^(self\/(persona|history)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(stream\.jsonl|identity\.json|index\.json|codes\.json|impression\.json|pending\.json))$/.test(file.path) || file.path === 'staging/events.jsonl') {
+      } else if (/^(self\/(persona|history|profile)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(stream\.jsonl|identity\.json|index\.json|codes\.json|impression\.json|pending\.json))$/.test(file.path) || file.path === 'staging/events.jsonl') {
         persistentChars += strings(file.path.endsWith('.jsonl') ? await this.store.readLines(file.path) : await this.store.readJson(file.path));
       }
     }
@@ -497,7 +559,9 @@ export class MemoryRepository {
     recent.reverse();
     const emptyImpression = { schemaVersion: SCHEMA_VERSION, version: 0, personId, summary: '', signatures: [], coordinates: {}, events: [], updatedAt: this.now() };
     const deep = await this._document('global/deep.json');
-    const result = { persona: await this._persona(),
+    const result = { persona: await this._persona(), selfProfile: await this._selfProfile(meta),
+      memoryAvailability: { knownSourceCount: Object.entries(meta.sources).filter(([key, receipt]) => !meta.revokedSources.includes(key) && !meta.revokedIds.includes(receipt.id)).length,
+        personAssociation: personId ? 'associated' : 'unassociated', storeContent: 'not_assessed' },
       deepMemories: deep.items.filter(item => !meta.revokedIds.includes(item.id) && !item.srcRefs?.some(ref => meta.revokedSources.includes(sourceKey(ref)))), deepMemoryVersion: deep.version,
       ...(includeIndexes ? { memoryIndexes: { global: await this._document('global/index.json'), person: personId ? await this._document(personPath(personId, 'index.json')) : null } } : {}),
       identity: personId ? await this.store.readJson(personPath(personId, 'identity.json')) : null,
@@ -631,10 +695,11 @@ export class MemoryRepository {
       meta.pending = meta.pending.filter((eventId) => !revokedEvents.has(eventId));
       for (const id of meta.personIds) { const state = await this._personState(id); const pending = state.pendingEventIds.filter((eventId) => !revokedEvents.has(eventId)); if (pending.length !== state.pendingEventIds.length) writes.json[personPath(id, 'state.json')] = this._bump({ ...state, pendingEventIds: pending }); }
       const snapshots = await this.store.readLines('global/snapshots.jsonl');
-      writes.jsonl['global/snapshots.jsonl'] = snapshots.filter((snapshot) => !(snapshot.injectedIds ?? []).some((id) => affected.has(id)));
+      writes.jsonl['global/snapshots.jsonl'] = snapshots.filter((snapshot) => !(snapshot.injectedIds ?? []).some((id) => affected.has(id)) && !dependenciesRevoked(extractSourceDependencies(snapshot), meta));
       writes.jsonl['global/revocations.jsonl'] = [...await this.store.readLines('global/revocations.jsonl'), revocation];
       // Clear bounded rollback versions so explicitly forgotten text cannot be revived by rollback.
       writes.json['self/history.json'] = { schemaVersion: SCHEMA_VERSION, versions: [] };
+      await this._cleanSelfProfile(meta, writes);
       await this._cleanDependencyCaches(meta, writes, 'explicit_revocation');
       await this._commit(meta, writes); return { revocation, affectedIds: [...affected] };
     });
@@ -983,7 +1048,8 @@ export class MemoryRepository {
   async _enforceLimits(writes) {
     for (const [path, document] of Object.entries(writes.json ?? {})) {
       const limits = this.config.artifactLimits;
-      if (/^(self\/(persona|history)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) assertDocumentCapacity(document, this.config.capacityLimits, path);
+      if (/^(self\/(persona|history|profile)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) assertDocumentCapacity(document, this.config.capacityLimits, path);
+      if (path === SELF_PROFILE_PATH) validateSelfProfile(document);
       if (path === 'self/persona.json') {
         if (Object.keys(document.axes).length > limits.axes || document.facets.filter((r) => r.kind === 'tendency').length > limits.tendencyFacets || document.facets.filter((r) => r.kind === 'boundary').length > limits.boundaryFacets || document.signatures.length > limits.signatures || document.habits.length > limits.habits) throw Object.assign(new Error('Persona patch exceeds configured storage capacity; choose a smaller patch or adjust resource limits'), { code: 'CAPACITY_EXCEEDED' });
         assertRecordCapacity(document.anchor, this.config.capacityLimits, path + '/anchor');
@@ -1002,7 +1068,7 @@ export class MemoryRepository {
       }
     }
     const current = await this._capacity(); let delta = 0;
-    for (const [path, value] of Object.entries(writes.json ?? {})) if (/^(self\/(persona|history)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) delta += strings(value) - strings(await this.store.readJson(path));
+    for (const [path, value] of Object.entries(writes.json ?? {})) if (/^(self\/(persona|history|profile)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) delta += strings(value) - strings(await this.store.readJson(path));
     for (const [path, value] of Object.entries(writes.jsonl ?? {})) if (/stream\.jsonl$|staging\/events\.jsonl$/.test(path)) delta += strings(value) - strings(await this.store.readLines(path));
     if (current.persistentChars + delta > this.config.longTermTargetChars) throw Object.assign(new Error('Patch exceeds total persistent memory target'), { code: 'CAPACITY_EXCEEDED' });
   }

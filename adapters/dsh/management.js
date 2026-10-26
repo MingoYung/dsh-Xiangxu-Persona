@@ -160,7 +160,7 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
   }
   async function perform(action, args) {
     if (action === 'instances.list') return instanceList();
-    if (action.startsWith('instances.') && ['load', 'unload', 'select'].includes(action.slice(10))) {
+    if (action.startsWith('instances.') && ['load', 'unload', 'select', 'create', 'archive', 'restore', 'clearPreview', 'clear'].includes(action.slice(10))) {
       const method = lifecycle[action.slice(10)]; if (!method) throw error('MANAGEMENT_LIFECYCLE_UNAVAILABLE', 'Instance lifecycle port unavailable'); return method(args);
     }
     if (action.startsWith('maintenance.') && ['validate', 'backup', 'restore', 'recover'].includes(action.slice(12))) {
@@ -172,8 +172,9 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
       if (!c) return { available: false, unloaded: true, instances, instanceId: args.instanceId ?? instances.activeInstanceId ?? null, runtime: null, capacity: null, agents: [], errors: [] };
       if (c.initializationError) return { available: false, instances, memoryRoot: c.memoryRoot, errors: [{ code: c.initializationError.code ?? 'INITIALIZATION_FAILED', message: short(c.initializationError.message, 600) }] };
       const state = await c.repository.getRuntime(), capacity = await c.repository.getCapacity(), jobs = Object.values(state.execution?.consolidationJobs ?? {});
+      const self = await c.repository.getSelfProfile?.();
       const counts = {}; for (const job of jobs) counts[job.status] = (counts[job.status] ?? 0) + 1;
-      return { available: true, instances, instanceId: args.instanceId ?? instances.activeInstanceId ?? null, memoryRoot: c.memoryRoot,
+      return { available: true, ...(self ? { selfProfile: { mode: self.mode, version: self.version, onboardingAcknowledged: self.onboardingAcknowledged } } : {}), instances, instanceId: args.instanceId ?? instances.activeInstanceId ?? null, memoryRoot: c.memoryRoot,
         runtime: { version: state.version, updatedAt: state.updatedAt, globalMuted: state.globalMuted, sleep: state.sleep, schedule: state.schedule,
           activeRunId: state.activeRunId ?? null, currentDecision: decisionSummary(state.currentDecision), pendingControl: Boolean(state.execution?.pendingControl), pendingWake: Boolean(state.execution?.pendingWake),
           jobCounts: counts, memoryGapCounts: { total: state.memoryGaps?.length ?? 0, unresolved: state.memoryGaps?.filter(row => !row.resolvedAt).length ?? 0 } },
@@ -194,6 +195,11 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
       const persona = await repo.getPersona(), section = args.section ?? 'all';
       if (!['all', 'anchor', 'axes', 'facets', 'signatures', 'habits', 'retired'].includes(section)) throw error('BAD_MANAGEMENT_REQUEST', 'Unknown persona section');
       return pageDetail(action, args, section === 'all' ? persona : { version: persona.version, section, value: persona[section] });
+    }
+    if (action === 'self.get') return repo.getSelfProfile();
+    if (action === 'self.update') {
+      if (!Number.isSafeInteger(args.expectedVersion) || args.expectedVersion < 0) throw error('SELF_VERSION_REQUIRED', '请先读取当前自我档案再保存');
+      return repo.updateSelfProfile(requireObject(args.patch), { actor: 'user', expectedVersion: args.expectedVersion });
     }
     if (action === 'relation.get') {
       const personId = optionalPerson(args), section = args.section ?? 'all';

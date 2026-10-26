@@ -231,10 +231,10 @@ export function mergeConfig(base, overrides = {}) {
 }
 export function defaultConfig(overrides = {}) {
   return validateConfig(mergeConfig({
-    schemaVersion: SCHEMA_VERSION, consolidationMode: 'sleep', timezone: 'UTC',
+    schemaVersion: SCHEMA_VERSION, consolidationMode: 'sleep', timezone: 'UTC', conversationStyle: 'short_chat',
     reviewAssistant: { enabled: false, maxOutputTokens: 1024, maxReportChars: 4000 },
     longTermTargetChars: 1000000, recentTargetChars: 100000, recentPreferredDays: 3, tempTargetChars: 200000, diskReserveBytes: 0,
-    contextBudget: { totalTokens: 2970, environmentTokens: 120, anchorTokens: 200, personaTokens: 700, habitTokens: 150, relationTokens: 300, retrievalTokens: 1500, deepMemoryTokens: 600 },
+    contextBudget: { totalTokens: 2970, environmentTokens: 120, anchorTokens: 200, personaTokens: 700, habitTokens: 150, relationTokens: 300, retrievalTokens: 1500, deepMemoryTokens: 600, selfProfileTokens: 350 },
     artifactLimits: { axes: 5, tendencyFacets: 12, boundaryFacets: 20, signatures: 24, habits: 8, impressionSignaturesPerPerson: 8, indexItemsPerPerson: 80, codesPerScope: 12, interpretationsPerPerson: 30, relationEventsPerPerson: 80, ...DEFAULT_DEEP_MEMORY_LIMITS },
     capacityLimits: { ...DEFAULT_CAPACITY_LIMITS }, processingLimits: { ...DEFAULT_PROCESSING_LIMITS },
     retention: { snapshotMaxRequests: 50, personaHistoryMaxVersions: 5, journalMaxBytes: 8388608, backupMaxBytes: 8388608 }
@@ -243,6 +243,7 @@ export function defaultConfig(overrides = {}) {
 export function validateConfig(config) {
   object(config, 'config'); if (config.schemaVersion !== SCHEMA_VERSION) fail('unsupported config schemaVersion');
   enumeration(config.consolidationMode, ['sleep', 'on_write'], 'consolidationMode');
+  if (config.conversationStyle !== undefined) enumeration(config.conversationStyle, ['short_chat', 'balanced', 'detailed'], 'conversationStyle');
   str(config.timezone, 'timezone'); try { new Intl.DateTimeFormat('en', { timeZone: config.timezone }); } catch { fail('invalid IANA timezone'); }
   for (const key of ['longTermTargetChars', 'recentTargetChars', 'recentPreferredDays', 'tempTargetChars', 'diskReserveBytes']) num(config[key], key);
   for (const name of ['contextBudget', 'artifactLimits', 'retention']) { object(config[name], name); for (const [key, v] of Object.entries(config[name])) integer(v, name + '.' + key); }

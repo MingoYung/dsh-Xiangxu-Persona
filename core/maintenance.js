@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { JsonStore, atomicReplaceWithRetry } from './store.js';
 import { temporaryCleanupPlan, runReferencesRevocation } from './source-dependencies.js';
+import { SELF_PROFILE_PATH, validateSelfProfile, redactSelfProfile } from './self-profile.js';
 import { SCHEMA_VERSION, validateConfig, validatePersona, validateChat, validateHot,
   validateMemoryItem, validateCode, validateInterpretation, validateImpression, validateDeepMemory } from './schema.js';
 
@@ -80,6 +81,7 @@ async function validateContent(root, files) {
     const text = await fs.readFile(inside(root, file.path), 'utf8');
     const values = file.path.endsWith('.jsonl') ? text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line)) : [JSON.parse(text)];
     for (const value of values) {
+      if (file.path === SELF_PROFILE_PATH) { validateSelfProfile(value); continue; }
       if (value && typeof value === 'object' && value.schemaVersion && value.schemaVersion !== SCHEMA_VERSION) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema in ' + file.path);
       if (file.path === 'config.json') validateConfig(value);
       else if (file.path === 'self/persona.json') validatePersona(value);
@@ -169,6 +171,12 @@ async function offlineStore(root, token) {
     validateConfig(config);
   } }); return store;
 }
+async function sanitizeSelfProfile(root, meta) {
+  const file = inside(root, SELF_PROFILE_PATH);
+  if (!await exists(file)) return;
+  const stored = await json(file), result = redactSelfProfile(stored, meta);
+  if (result.changed) await syncWrite(file, validateSelfProfile({ ...result.profile, version: stored.version + 1, updatedAt: Date.now() }));
+}
 async function carryRevocations(currentRoot, candidate, maxBytes) {
   const current = await json(path.join(currentRoot, 'meta', 'state.json'));
   const ids = new Set(current.revokedIds ?? []), roots = new Set(current.revokedSources ?? []);
@@ -198,6 +206,7 @@ async function carryRevocations(currentRoot, candidate, maxBytes) {
   };
   for (const file of (await scan(candidate, maxBytes)).files) {
     if (file.path.startsWith('.wal/') || file.path === 'meta/state.json') continue;
+    if (file.path === SELF_PROFILE_PATH) { await sanitizeSelfProfile(candidate, candidateMeta); continue; }
     if (file.path.startsWith('journal/runs/')) {
       const run = await json(inside(candidate, file.path)); delete run.input; delete run.candidatePatch; delete run.validationError; delete run.attemptRecordedAt; delete run.reviewState; delete run.progressUpdatedAt; run.validatedPatch = [];
       if (run.status !== 'committed') run.status = 'failed';
@@ -235,6 +244,7 @@ async function carryRevocations(currentRoot, candidate, maxBytes) {
 async function sanitizeTemporaryDependencies(candidate, maxBytes) {
   const metaPath = path.join(candidate, 'meta', 'state.json'), meta = await json(metaPath);
   if (!(meta.revokedSources?.length || meta.revokedIds?.length || meta.invalidatedHotContextGroups?.length)) return;
+  await sanitizeSelfProfile(candidate, meta);
   const files = (await scan(candidate, maxBytes)).files, hotFiles = new Map(), runs = [];
   for (const file of files) {
     if (/^(people\/[^/]+\/hot|staging\/hot)\.jsonl$/.test(file.path)) {

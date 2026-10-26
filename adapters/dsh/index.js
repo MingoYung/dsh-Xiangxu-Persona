@@ -1,3 +1,4 @@
+import { conversationOrientation } from '../../core/onboarding.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { resolve, join, dirname, basename, relative, isAbsolute, sep } from 'node:path';
@@ -26,7 +27,7 @@ import { createDelegationHost, lookupTaskWorker } from './delegation/native.js';
 import { mountTaskWorkerScope } from './delegation/worker.js';
 import { createDelegationIsolation } from './delegation/isolation.js';
 import { TOOL_PARAMETERS, asToolJson } from './tool-schema.js';
-import { extractSourceDependencies } from '../../core/source-dependencies.js';
+import { extractSourceDependencies, extractProcessDependencies } from '../../core/source-dependencies.js';
 
 export const name = 'dsh-Xiangxu-Persona';
 export const inject = ['agents', 'systemPrompt', 'tools', 'llm'];
@@ -36,7 +37,7 @@ const DESCRIPTIONS = {
   persona_task: '自主创建独立工程或研究任务，查看状态并按需读取完整档案；retain选择真实资料片段供既有记忆整理，是否记住及如何理解仍由你决定。',
   memory_search: '按你选择的线索翻找长期记忆；可明确查某个已知的人或全部关系。结果保留真实主体。',
   memory_forget: '执行已经明确选择的遗忘或纠正。给出记录ids或时间范围和对象，空选择不会清库。',
-  persona_introspect: '查看共同人格、对某人的印象、实际相处状态和已生效的决定。',
+  persona_introspect: '查看共同人格、当前自我档案、对某人的印象和实际状态；update_self可按你的选择更新current自我描述，初始用户想法另存，不规定性格与成长。',
   persona_decide: '表达你自己的认人、注意、回话、等待、检索、必要时的记忆梳理、下次思考或睡眠决定。它不规定你该怎样做人。',
   persona_voice: '查看当前设备可用的声音，或自主保存一个音色、语速和音高选择；用户指定模式保留用户的播放设置。',
   persona_media: '按需查看形象档案和作品，使用用户已开通的图片或视频服务；生成返回真实作业与资产编号，不等于已经发给对方。',
@@ -62,6 +63,9 @@ function freezeMessage(message) {
 function makeMessage(text, source, id = randomUUID()) {
   return freezeMessage({ id, role: 'user', source, content: [{ type: 'text', text }] });
 }
+// Transport/platform IDs and memory record IDs have distinct source roles.
+export function scanProcessDependencies(record) { return extractProcessDependencies(record); }
+
 function recentMessageIds(agent) {
   const pending = [...(agent.inbox?.nextTurn ?? []), ...(agent.inbox?.nextStep ?? [])];
   const history = agent.session?.deriveMessages?.() ?? [];
@@ -150,7 +154,7 @@ export function createDshCoordinator(ctx, config = {}) {
     state.processDependenciesByTurn.set(turn, current);
   }
   function markProcessDependencies(state, record, turn) {
-    const scanned = record.content?.mode === 'cached' ? extractSourceDependencies(record.content.text) : { refs: [], recordIds: [], complete: record.dependencyScanComplete !== false };
+    const scanned = scanProcessDependencies(record);
     addProcessDependencies(state, turn, scanned);
     const current = state.processDependenciesByTurn.get(turn);
     const refs = new Map([...(record.dependencyRefs ?? []), ...scanned.refs, ...(current?.refs.values() ?? [])].map(ref => [JSON.stringify([ref.sourceSessionId, ref.sourceEventId]), ref]));
@@ -603,6 +607,7 @@ export function createDshCoordinator(ctx, config = {}) {
     catch (error) { report(error); return value; }
     state.latestSnapshot = snapshot; state.snapshots.set(state.currentTurn, snapshot);
     return { ...value, sections: [...sections.filter(section => !['persona-memory:protocol', 'persona-memory:live'].includes(section.name)),
+      { name: 'persona-memory:conversation', text: conversationOrientation(repository.config.conversationStyle), interpolate: false },
       { name: 'persona-memory:protocol', text: CONTROL_GUIDANCE, interpolate: false },
       { name: 'persona-memory:live', text: snapshot.injectedText, interpolate: false }] };
   }
@@ -825,6 +830,14 @@ export function createDshCoordinator(ctx, config = {}) {
               result = await coordinator.platformPort({ ...args, sessionId: target?.sessionId ?? executingAgent.session.id, requestId: context.operationId });
             }
           }
+          else if (toolName === 'persona_introspect' && (args.section === 'self' || args.action === 'update_self')) {
+            if (args.action === 'update_self') {
+              if (!Number.isSafeInteger(args.expectedVersion)) throw Object.assign(new Error('更新自我档案需要当前version；可先查看section:self'), { code: 'SELF_VERSION_REQUIRED' });
+              const dependencies = state.processDependenciesByTurn.get(state.currentTurn), snapshot = state.latestSnapshot?.sourceDependencies;
+              const sourceRefs = [...new Map([...(context.srcRefs ?? []), ...(dependencies?.refs.values() ?? []), ...(snapshot?.refs ?? [])].map(ref => [JSON.stringify([ref.sourceSessionId, ref.sourceEventId]), { sourceSessionId: ref.sourceSessionId, sourceEventId: ref.sourceEventId }])).values()];
+              result = await repository.updateSelfProfile({ current: args.selfPatch ?? {} }, { actor: 'persona', expectedVersion: args.expectedVersion, sourceRefs, sourceRecordIds: [...new Set([...(dependencies?.recordIds ?? []), ...(snapshot?.recordIds ?? [])])] });
+            } else result = await repository.getSelfProfile();
+          }
           else result = await runtime.introspect(args, context);
           }
           const output = await boundToolOutput(toolName, result, args, { counter: runtime.tokenCounter, budget: repository.config.contextBudget.retrievalTokens });
@@ -1005,7 +1018,7 @@ export function apply(ctx, config = {}) {
     isBusy: instanceId => management?.hasActiveOperations?.(instanceId) ?? false,
     onStopping: async () => { if (!shuttingDown) await channels?.suspend(); await speech.cleanup(); },
     onStarted: async coordinator => { try { await bindChannels(coordinator); } catch (error) { reportChannel(error); } },
-    beforeMaintenance: async (kind, item) => { if (['restore', 'recover'].includes(kind)) await channels?.invalidateForRoot(item.memoryRoot); },
+    beforeMaintenance: async (kind, item) => { if (['restore', 'recover', 'clear'].includes(kind)) await channels?.invalidateForRoot(item.memoryRoot); },
     onLoaded: async coordinator => {
       for (const agent of ctx.agents.list?.() ?? []) {
         if (lookupTaskWorker(agent.session.id)) continue;

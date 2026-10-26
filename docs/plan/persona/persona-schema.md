@@ -1,8 +1,8 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.8.0把管理界面重组为“相处、记忆、连接、创作、设置”五个主入口；人格、成长、独立任务和维护改从页内目的入口进入，复杂配置按所选任务分开显示。沿用DSH主题，取消原生三角折叠，先展示可读内容，再由明确按钮查看来源和技术字段。普通资料编辑一次保存；实际付费操作、扩大权限、遗忘和恢复继续明确确认。只变更界面编排，core/、adapters/、八工具和persona-memory/3不变，不增加人格回忆、进化、主动或睡眠规则。当前操作见[管理说明](../../management-ui.md)。0.8.0只重整管理界面的导航、内容层次与交互流程，core/、adapters/和运行时schema相对0.7.0未改，八个人格工具与persona-memory/3保持兼容。本版[完整本地回归](../../verification/0.8.0-tests.json)605/605通过，失败／取消／跳过均为0；UI与宿主专项55/55（50项UI＋5项host）属于同批验证，不另算独立需求。[真实DSH界面](../../verification/0.8.0-native-ui.json)完成5个主入口与16项任务式旅程、浅深主题及保存回读，使用隔离样本、无真实模型或平台调用。[后端兼容回执](../../verification/0.8.0-backend-compatibility.json)逐SHA核对50份后台及配套文件，继承0.7.0 SDK证据，未声称重新执行本版SDK。0.7.0的583/58/35与当时九页GUI保留历史含义；远程CI和发布状态另以实际结果为准。
+当前0.9.0兼容扩展集中在第20节：自我档案、工具/管理接口与交流偏好；已有persona-memory/3字段和历史证据保留各自范围。
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.7.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.9.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -385,7 +385,7 @@ interface DecisionRecord extends PersonaDecideInput {
 |---|---|---|
 | `memory_search` | `{query, targetPersonId?, scope?:"person"\|"global"\|"all", limit?}` | 缺省取当前已识别对象；显式可指其他已知对象或所有关系 |
 | `memory_forget` | `{ids?, targetPersonId?, before?, reason}` | 清楚定位对象与内容后生成撤销记录；时间为epoch ms；歧义不批量操作 |
-| `persona_introspect` | `{targetPersonId?, section?}` | section为`anchor/axes/facets/signatures/habits/relation/state/all`；可明确查看对他人的印象 |
+| `persona_introspect` | `{targetPersonId?,section?,action?,selfPatch?,expectedVersion?,cursor?}` | section为`self/anchor/axes/facets/signatures/habits/relation/deep/state/all`；可明确查看对他人的印象。0.9.0的self读取与update_self当前自我资料更新见第20节 |
 | `persona_decide` | `PersonaDecideInput` | 写入人格的注意、回话、检索、下一判断与睡眠决定 |
 
 缺省对象未知时，`scope:"person"` 查询返回 `needsTarget`，不偷偷绑定或新建；可继续用 `scope:"global"`、`scope:"all"` 或让人格根据环境识别。显式跨对象查询不默认加管理员 ACL，检索返回真实主体、来源和解释性质。删除必须同时解析清楚对象与内容选择；没有 `ids` 或 `before` 范围时返回 `needsSelection`，不能因对象唯一就把空选择扩成清空此人，更不能解释成全实例删除。整个人物的遗忘可先明确选择其记录，再沿同一撤销流程执行，不额外引入人格资格或权限闸门。
@@ -494,6 +494,7 @@ interface OutboxRecord {
 interface PersonaConfig {
   schemaVersion: SchemaVersion;
   consolidationMode: "sleep" | "on_write";
+  conversationStyle?: "short_chat" | "balanced" | "detailed"; // 0.9.0缺省short_chat，仅表达偏好
   timezone: string;
   longTermTargetChars: number;
   recentTargetChars: number;
@@ -527,6 +528,7 @@ interface PersonaConfig {
     relationTokens: number;
     retrievalTokens: number;
     deepMemoryTokens?: number; // 0.7.0兼容扩展，缺省600，仍受totalTokens约束
+    selfProfileTokens?: number; // 0.9.0兼容扩展，缺省350，仍在totalTokens内
   };
   artifactLimits: {
     axes: number;
@@ -554,13 +556,14 @@ interface PersonaConfig {
 | 配置 | 工程初值/部署要求 | 含义 |
 |---|---|---|
 | `consolidationMode` | `sleep` | 人格自主选择睡眠及对应增量整理；可以只休息，也可清醒时显式run；on_write合并写后机会，由人格选择run/defer |
+| `conversationStyle` | `short_chat` | 表达偏好；另可选balanced/detailed，无硬字数、条数或频率 |
 | `timezone` | 部署时设置IANA名称，如`Asia/Shanghai` | 环境可提供本次真实时区，不能由目录名推测 |
 | `longTermTargetChars` | 1,000,000 | **整个实例**持久记忆正文总目标，含C1/C2/C3/印象/编码等，不按人数倍增 |
 | `recentTargetChars` | 100,000 | 当前对象的近期读取目标/物化视图候选容量，不是进prompt的字数 |
 | `recentPreferredDays` | 3 | 近期优先，不保证3天内任何量都100%保留 |
 | `tempTargetChars` | 200,000 | 整个实例热区缓存候选总量；原件可用引用与分页读取 |
 | `diskReserveBytes` | 部署填写非负字节数并检查可用空间 | 物理资源保护，不能留一个假装普适的默认值 |
-| `contextBudget` | 总2,970；既有分段120/200/700/150/300/1,500，深刻参考600 | 参考段是额外分段帽，不增加总预算；合计仍受2,970最终约束，不要求填满 |
+| `contextBudget` | 总2,970；既有分段120/200/700/150/300/1,500，深刻参考600、自我资料350 | 参考段是局部分段帽，不增加总预算；合计仍受2,970最终约束，不要求填满 |
 | `artifactLimits` | 原类型5/12/20/24/8/8/80/12/30/80；深刻记忆128条／100000字符 | 按类型限制存储量；与单条、文档、实例帽同时成立，无必须达到的最小条数 |
 | `retention` | 快照50次、人格历史5版；journal/backup字节上限部署填写 | 有界恢复与诊断，不永久保存所有材料 |
 
@@ -855,4 +858,150 @@ QQ官方driver报告proactive:false、passiveReplyRequired:true及私聊60分钟
 
 顶层五个入口始终保留；打开任务式子页后，“返回”回到实际来处，当前主入口保持选中。相处提供日常状态、主动联系开关、了解人格和独立任务；记忆把可读原文、深刻经历、人物与成长记录分开；连接把QQ、微信、声音、社交身份分开，单平台再分扫码步骤、能力权限和兼容桥；创作分形象、图片服务、视频服务、生成与作品任务；设置再分实例列表、启动时加载、使用其他记忆库、交流时间、资料助手、分类容量和维护；同实例切换容量类别保留草稿，一次保存已改字段，不同实例草稿隔离。成长记录分整理进度／人格变化／手动操作，任务先显示摘要、技术元信息按需要打开。命名按钮替代原生details三角，不把所有表单同时摊开。
 
-0.8.0只重整管理界面的导航、内容层次与交互流程，core/、adapters/和运行时schema相对0.7.0未改，八个人格工具与persona-memory/3保持兼容。本版[完整本地回归](../../verification/0.8.0-tests.json)605/605通过，失败／取消／跳过均为0；UI与宿主专项55/55（50项UI＋5项host）属于同批验证，不另算独立需求。[真实DSH界面](../../verification/0.8.0-native-ui.json)完成5个主入口与16项任务式旅程、浅深主题及保存回读，使用隔离样本、无真实模型或平台调用。[后端兼容回执](../../verification/0.8.0-backend-compatibility.json)逐SHA核对50份后台及配套文件，继承0.7.0 SDK证据，未声称重新执行本版SDK。0.7.0的583/58/35与当时九页GUI保留历史含义；远程CI和发布状态另以实际结果为准。
+0.8.0只重整管理界面的导航、内容层次与交互流程，core/、adapters/和运行时schema相对0.7.0未改，八个人格工具与persona-memory/3保持兼容。该历史版本[完整本地回归](../../verification/0.8.0-tests.json)605/605通过，失败／取消／跳过均为0；UI与宿主专项55/55（50项UI＋5项host）属于同批验证，不另算独立需求。[真实DSH界面](../../verification/0.8.0-native-ui.json)完成5个主入口与16项任务式旅程、浅深主题及保存回读，使用隔离样本、无真实模型或平台调用。[后端兼容回执](../../verification/0.8.0-backend-compatibility.json)逐SHA核对50份后台及配套文件，继承0.7.0 SDK证据，未声称重新执行本版SDK。0.7.0的583/58/35与当时九页GUI保留历史含义；远程CI和发布状态另以实际结果为准。
+
+## 20. 自我档案、初始化与交流定位（0.9.0）
+
+本节是兼容扩展的唯一字段权威。可选self/profile.json使用xiangxu-self/1，实例其余文件继续persona-memory/3；旧实例没有该文件时只返回空视图，不写假建立时间，不清空既有anchor。self/persona.json的anchor是经历形成的共同身份基调；profile.current是当前采用的身份资料，profile.initial只是用户提供的起点，两类内容分别供料，不自动复制或覆盖。形象与音色仍有原档案权威。
+
+~~~ts
+type SelfProfileMode = "together" | "autonomous" | "unset";
+type SelfProfileActor = "user" | "persona";
+type SelfProfileField = "name" | "pronouns" | "gender" | "ageDescription" |
+  "birthday" | "background" | "selfDescription";
+type SelfProfileValues = Record<SelfProfileField, string>;
+interface SelfProfileSource {
+  actor: SelfProfileActor;
+  at: EpochMs;
+  sourceRefs: Array<Pick<SrcRef, "sourceSessionId" | "sourceEventId"> & Partial<SrcRef>>;
+  sourceRecordIds: string[];
+}
+type SelfProfileProvenance = {
+  initial: Partial<Record<SelfProfileField, SelfProfileSource>>;
+  current: Partial<Record<SelfProfileField, SelfProfileSource>>;
+};
+interface SelfProfileHistory {
+  version: number;
+  at: EpochMs;
+  actor: SelfProfileActor;
+  mode: SelfProfileMode;
+  onboardingAcknowledged: boolean;
+  initial: SelfProfileValues;
+  current: SelfProfileValues;
+  provenance: SelfProfileProvenance;
+}
+interface SelfProfile {
+  schemaVersion: "xiangxu-self/1";
+  version: number;
+  createdAt: EpochMs | null;
+  updatedAt: EpochMs | null;
+  mode: SelfProfileMode;
+  onboardingAcknowledged: boolean;
+  initial: SelfProfileValues;
+  current: SelfProfileValues;
+  provenance: SelfProfileProvenance;
+  history: SelfProfileHistory[];
+}
+interface SelfProfilePatch {
+  mode?: SelfProfileMode;
+  onboardingAcknowledged?: boolean;
+  initial?: Partial<SelfProfileValues>;
+  current?: Partial<SelfProfileValues>;
+}
+~~~
+
+七项资料均为自由字符串，可以空白；不把生日解析为真实出生，不根据年龄、性别或称呼推导人格。createdAt只记录此档案首次实质保存，不等于实例出生、设定生日或相处开始。initial/current各合计最多2400个Unicode code points，整个档案最多65536字节，history最多8版；只轮转有限旧版，不截断当前字段凑容量。每次写入来源最多16个sourceRefs、32个sourceRecordIds，保留每字段实际actor和来源。重复无变化不写入，expectedVersion冲突报错；检查通过后沿现有事务、实例容量和单写者落盘。
+
+repository.getSelfProfile()读取，updateSelfProfile(patch,{actor,expectedVersion?,sourceRefs?,sourceRecordIds?})写入。persona主体只能改current；用户管理可明确改初始化元数据与资料，并保留actor，界面当前仅编辑initial/mode，不自动接受为人格当前认同。来源存在性、撤销、结构与容量校验不判定自我认同应当怎样。明确遗忘覆盖initial/current/history对应依赖，旧备份恢复不能复活已撤销资料；此文件随实例文本备份，不包含外部作品或音色资产。
+
+不新增第九个人格工具。persona_introspect兼容原用法，增加section:"self"、action:"inspect"读取完整档案；action:"update_self"携带selfPatch（七字段的局部字符串对象）与expectedVersion更新current，来源由真实本轮上下文绑定，不能借此改用户的初始想法或引导确认状态。缺少版本返回SELF_VERSION_REQUIRED，旧版本返回VERSION_CONFLICT，超过工具输出预算继续用真实游标读同次结果。
+
+owner管理增加self.get和self.update。后者参数为{instanceId?,patch,expectedVersion}，expectedVersion在顶层且必需，actor由管理端固定为user。status只给selfProfile:{mode,version,onboardingAcknowledged}摘要，不把全档案与历史铺进总览。首次轻提示仅在unset且未确认时出现；“以后再说”保存onboardingAcknowledged:true，不造身份、不发起模型、不阻止聊天。
+
+PersonaConfig增加可选conversationStyle:"short_chat"|"balanced"|"detailed"，缺省short_chat；contextBudget增加可选selfProfileTokens，缺省350。self_profile段先放current，再放标明initialWishes的用户想法；每个展示字段完整保留，放不下的字段记录omitted且可用内省读全，历史不逐轮发送。350是局部帽，仍受totalTokens=2970动态总帽约束，不是额外增加350；工具定义、宿主历史和输出仍按原请求预算另行核算。
+
+RequestSnapshot增加conversationStyle及selfProfileReference:{version,shown,omitted,fullProfileAvailable}技术摘要。memoryAvailability分别给personAssociation（associated/unassociated）、retrieval（not_requested/provided/found/no_matches）、returnedItems和已知来源计数；storeContent保持not_assessed时不能推断全库为空。读取故障沿实际错误处理，不伪装空记录。
+
+短聊偏好不设固定字数、条数、最短间隔或必须续发。自主补充复用persona_decide.nextCheckAt与既有调度/等待/停止/平台限制；每次重新判断能结合新来信，发出的每条都须有真实原生assistant来源及实际渠道回执。待发送、取消、结果未知不写成已说过。不使用标点切割、随机延时或手工合成assistant事件。每次补充可能增加模型调用；用户说明和界面展示此代价，完整说明不进入每轮人格提示。
+
+定向续聊需要一并保留当前replyPlan.target，单独设置nextCheckAt不保证回到原会话。每次到期重新读取pending和上下文交模型判断，不播放旧台词；这不是实时打断机制，生成已开始后到来的新消息可能要下一原生轮次才处理，不能承诺插话绝不出现旧半句。globalMuted及QQ官方等实际平台能力限制继续适用。
+
+0.9.0新增字段与流程的最终全量、SDK、GUI和真实模型对照统一见[当前验收状态](../../management-ui.md#090-final-acceptance)；本节结构定义不代替运行结果，也不继承0.8.0后台未变的历史结论。
+
+## 21. 人格实例生命周期与文本清除（0.9.0）
+
+本节定义DSH适配层的实例管理契约；人格内容仍使用persona-memory/3，自我资料仍为xiangxu-self/1。实例切换、归档与用户明确清除是宿主生命周期操作，不增加人格记什么、如何成长或何时主动的规则。实际实现为adapters/dsh/instances.js与instance-lifecycle.js，owner动作见[接口说明](api-surface.md#090-人格实例管理接口)。
+
+~~~ts
+type InstanceClearStatus = "clearing" | "partial" | "cleared";
+interface PersonaInstanceRecord {
+  instanceId: string;
+  name: string;                  // trim后1..80个JS字符串长度单位
+  memoryRoot: string;            // 受核验的绝对目录
+  archivedAt?: string | null;    // ISO时间；归档保留资料
+  clearedAt?: string | null;     // 只有确认清空受管文件后才设置
+  clearStatus?: InstanceClearStatus | null;
+  retiredSessionCount?: number;
+  clearStartedAt?: string;
+  remainingFiles?: number;
+  remainingBytes?: number;
+  clearErrorCount?: number;
+}
+interface PersonaInstanceRegistry {
+  schemaVersion: "persona-instances/1";
+  version?: number;              // 兼容旧登记；每次持久变更递增
+  selectedInstanceId: string;
+  autoLoad: boolean;
+  items: PersonaInstanceRecord[];
+}
+interface PersonaInstancesList {
+  items: Array<PersonaInstanceRecord & { loaded: boolean; selected: boolean }>;
+  activeInstanceId: string | null;
+  selectedInstanceId: string | null;
+  autoLoad: boolean;
+  error: { code: string; message: string } | null;
+  counts: { live: number; cleared: number };
+  clearedListComplete: boolean;
+}
+interface InstanceClearPreview {
+  instanceId: string;
+  name: string;
+  memoryRoot: string;
+  scope: string[];
+  excluded: string[];
+  files: number;                 // 当前实际文件数
+  bytes: number;                 // 当前实际字节数
+  requiresName: string;          // 必须精确匹配，不能先trim输入
+  confirmationToken: string;
+  version: string;               // 64位小写hex SHA256，不是整数版本
+  expiresAt: string;             // ISO时间；签发后5分钟到期
+}
+interface InstanceClearResult {
+  status: "cleared" | "partial";
+  instanceId: string;
+  deletedFiles: number;
+  remainingFiles: number;
+  remainingBytes: number;
+  errors: Array<{ path: string; code: string }>;
+}
+~~~
+
+实例登记默认位于初始人格目录旁的<初始目录名>.instances.json，归属文件位于该登记路径加.ownership.json；二者必须在所有受管人格库之外。新建人格只需name，可给autoLoad；后台生成与初始库同级的新UUID目录，不继承旧人格资料。高级memoryRoot入口可以登记兼容v3库，已清除旧根不能再次加载或拿来复用；根路径不能是磁盘根目录，不能经过链接、junction或重定向。清除前拒绝与其他实例根目录及管理文件重叠。
+
+归档先核当前工作、保存会话归属并停用，保留资料且关闭所选实例的自动加载；它不是一份独立备份。恢复只接受已归档、未进入清除状态的实例；activate:true才恢复并加载，缺省仅取消归档。普通load/select拒绝archivedAt或clearing/partial/cleared记录，重启也不自动加载这些记录。普通停用、切换或归档不触发文本清除，也不登录、退出或解绑共享平台账号。接入任务独立跟踪并固定原协调器/实例；停用先排空渠道，再关闭挂接入口、等待已登记接入完成，最后关闭协调器，避免渠道与生命周期队列互等。入口关闭后拒绝新挂接，旧任务不能改挂新实例。
+
+清除范围仅为目标根中白名单受管文本：config与库内registry、meta/self/global、人物资料和索引/原文/临时区、journal/WAL、形象与声音文字档案、宿主检查点及操作收据等；精确文件/目录白名单由instance-lifecycle.js扫描器核验，界面显示实际scope、excluded、files、bytes。writer.lock由原写者正常关闭释放，不由清除器越权删除。未知文件、未知目录、链接、根重叠及超扫描容量会阻断，不递归删除整个目录来绕过核验。
+
+目录外独立任务原件和完整任务档案、图片/视频/音频等作品二进制、共享账号/连接/密钥/权限、DSH旧会话历史与日志、外部备份和导出副本、实例登记及无正文归属墓碑均排除。清除不自动建立隐藏备份。文本库里的索引或收据被清除不等于对应外部作品、任务或平台消息也删除；普通明确遗忘仍沿原来源撤销契约，不与此生命周期操作混同。
+
+clearPreview只扫描、计算指纹并签发本进程内临时token，不删除人格文件。token绑定instanceId、实例名称/根、状态、登记版本与文件内容，最多保存8份，有效期300000ms；进程重启、淘汰或过期后需重新预览。clear只接收instanceId、confirmationToken和typedName，精确核名称、token有效性、磁盘登记指纹及资料版本，再核闲置与维护互斥并保存旧会话归属。停用后再次扫描；若停机收据或资料变化，返回INSTANCE_CLEAR_STALE，保持停用且尚未删除任何文件，必须重新预览。不能把一次预览当作以后任意清除的授权。
+
+进入删除前持久记录clearing；逐文件校验预览中的大小与SHA，再删除该受管文件。删除阶段遇到锁占用、权限失败或后续变化可能已经部分完成，不能一律宣称零删除。最终重新扫描能证明没有受管文件时才记cleared/clearedAt；否则保守记partial和剩余量/错误。partial/clearing不可加载、恢复或归档；重新预览、精确输入名称并明确确认后才能继续，程序不自动重试删除。完成后保留不可加载墓碑，不自动新建人格或切换其他实例；新的人格使用独立新根。
+
+清除确认固定的是预览列出的受管文本精确清单与内容、实例登记和目标状态，不是“全目录所有文件SHA”。库外ownership不属于删除清单，也不以其正常变化判定预览失效。
+
+会话归属文件schema为xiangxu-session-owners/1，持久保存SHA256(sessionId)→instanceId，无聊天正文。清除时capture在排他锁内重读并合并最新归属；合法外部新增可保留，归属冲突、锁忙或容量失败则在删除前拒绝，不覆盖已持久记录。归属冲突不覆盖；停用/切换/归档/清除前后采集实际接入和检查点中的会话。清除目标文本后此记录仍保留，用来拒绝把属于旧实例的DSH会话自动接入新实例；宿主旧日志本身没有被删除。它是技术隔离记录，不决定同一人格怎样认人或跨对象回忆。
+
+技术容量为最多16个未清除实例（归档与partial仍占用）、256个已清除墓碑；登记文件256KiB，归属文件2MiB，容量满明确拒绝而不淘汰归属/墓碑。list返回全部未清除记录与登记顺序尾部最多20条已清除记录，counts报告总量，clearedListComplete说明已清除列表是否完整。清除扫描最多20000个受管文件、累计256MiB；这些是管理操作技术帽，不扩大原有核心库容量或人格上下文预算。
+
+本节是结构与执行契约，当前版本验收状态以[管理说明的0.9.0最终验收](../../management-ui.md#090-final-acceptance)为准。

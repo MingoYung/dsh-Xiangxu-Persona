@@ -53,7 +53,7 @@ export const TOOL_PARAMETERS = {
   memory_search: { query: string, targetPersonId: string, scope: { type: 'string', enum: ['person', 'global', 'all'] }, limit: { type: 'integer' }, cursor },
   memory_forget: { ids: strings, targetPersonId: string, before: { type: 'number' }, reason: string,
     action: { type: 'string', enum: ['forget', 'correction'] }, replacementIds: strings, cursor },
-  persona_introspect: { targetPersonId: string, section: { type: 'string', enum: ['anchor', 'axes', 'facets', 'signatures', 'habits', 'relation', 'deep', 'state', 'all'] }, cursor },
+  persona_introspect: { targetPersonId: string, action: { type: 'string', enum: ['inspect', 'update_self'] }, section: { type: 'string', enum: ['self', 'anchor', 'axes', 'facets', 'signatures', 'habits', 'relation', 'deep', 'state', 'all'] }, selfPatch: { type: 'object', properties: Object.fromEntries(['name','pronouns','gender','ageDescription','birthday','background','selfDescription'].map(field => [field, { type: 'string', maxLength: 2400 }])), additionalProperties: false }, expectedVersion: { type: 'integer', minimum: 0 }, cursor },
   persona_decide: {
     identityPlan: nullable({ type: 'object', required: ['action'], properties: {
       action: { type: 'string', enum: ['new', 'associate', 'unknown'] }, personId: string, displayName: string, reason: string,

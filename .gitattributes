@@ -1,2 +1,5 @@
 # Preserve the exact UTF-8 source bytes and recorded source fingerprints across hosts.
 * -text
+
+# Preserve the existing CRLF package manifest while checking real whitespace.
+package.json whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

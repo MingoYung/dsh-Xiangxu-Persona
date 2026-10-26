@@ -300,7 +300,7 @@ export class PersonaRuntime {
   async search(input, context = {}) { return this.repository.search(input, { personId: this._person(context) }); }
   async forget(input, context = {}) { return this.repository.forget(input, { personId: this._person(context) }); }
   async introspect(input = {}, context = {}) { return this.repository.introspect(input, { personId: this._person(context) }); }
-  async compose(context = {}) {
+  async compose(context = {}, { contextTokenLimit, persist = true } = {}) {
     this._requireOpen(); const state = detached(await this.repository.getRuntime()), ctx = { ...this._context(context) };
     const material = await this.repository.getContext({ personId: ctx.personId });
     if (!own(ctx, 'capacity') && typeof this.repository.getCapacity === 'function') {
@@ -313,9 +313,59 @@ export class PersonaRuntime {
       }
     } else if (ctx.capacity != null) ctx.capacity = this._capacityFacts(ctx.capacity, state);
     const plan = ctx.retrievePlan ?? state.currentDecision?.retrievePlan;
-    if (!own(ctx, 'memories')) ctx.memories = plan?.action === 'search' ? (await this.repository.search(plan, { personId: ctx.personId })).items : [];
-    const snapshot = await buildSnapshot({ context: ctx, material, state, config: this.config, now: this.now(), counter: this.tokenCounter });
-    await this.repository.saveSnapshot(detached(snapshot)); return snapshot;
+    const suppliedMemories = own(ctx, 'memories');
+    if (!suppliedMemories) ctx.memories = plan?.action === 'search' ? (await this.repository.search(plan, { personId: ctx.personId })).items : [];
+    ctx.memoryAvailability = { ...(material.memoryAvailability ?? { storeContent: 'not_assessed' }),
+      personAssociation: ctx.personId ? 'associated' : 'unassociated',
+      retrieval: suppliedMemories ? 'provided' : plan?.action === 'search' ? (ctx.memories.length ? 'found' : 'no_matches') : 'not_requested',
+      returnedItems: ctx.memories.length };
+    if (contextTokenLimit !== undefined && (!Number.isSafeInteger(contextTokenLimit) || contextTokenLimit < 1)) throw new RangeError('Internal context token limit must be a positive integer');
+    const totalTokens = Math.min(this.config.contextBudget.totalTokens, contextTokenLimit ?? Infinity);
+    const config = totalTokens === this.config.contextBudget.totalTokens ? this.config
+      : { ...this.config, contextBudget: { ...this.config.contextBudget, totalTokens } };
+    let snapshot = await buildSnapshot({ context: ctx, material, state, config, now: this.now(), counter: this.tokenCounter });
+    if (totalTokens !== this.config.contextBudget.totalTokens) snapshot = freeze({ ...snapshot,
+      budgetAdjustments: [...snapshot.budgetAdjustments, { segment: 'total', configured: this.config.contextBudget.totalTokens, applied: totalTokens, reason: 'preserve_request_framing_and_pending_source' }] });
+    if (persist) await this.repository.saveSnapshot(detached(snapshot)); return snapshot;
+  }
+  async _prepareConversationRequest(context, { purpose, offsets = {}, preparedPage, transformPage } = {}) {
+    const inputBudget = this._inputBudget();
+    const attempt = async contextTokenLimit => {
+      const snapshot = await this.compose(context, { contextTokenLimit, persist: false });
+      let page = preparedPage ? detached(preparedPage) : await conversationPage(snapshot, context, { purpose,
+        counter: this.tokenCounter, maxTokens: inputBudget, offsets });
+      if (transformPage) page = transformPage(page);
+      const requestContext = { ...context, pending: page.records,
+        incoming: context.incoming ? { eventId: context.incoming.eventId, sourceSessionId: context.incoming.sourceSessionId, sourceEventId: context.incoming.sourceEventId } : null,
+        pendingPageInfo: { total: page.total, remaining: page.remaining } };
+      const messages = purpose === 'reply' ? replyMessages(snapshot, requestContext) : page.messages;
+      const tokens = await this.tokenCounter.count(JSON.stringify(messages));
+      if (tokens > inputBudget) throw Object.assign(new Error('Conversation framing and selected source page exceed the model input budget; no source was consumed'), { code: 'MODEL_INPUT_BUDGET' });
+      return { snapshot, page: { ...page, messages, tokens }, messages, requestContext };
+    };
+    let selected, failure;
+    try { selected = await attempt(this.config.contextBudget.totalTokens); }
+    catch (error) { if (error.code !== 'MODEL_INPUT_BUDGET') throw error; failure = error; }
+    if (!selected) {
+      // The local context cap is separate from the complete serialized request.
+      // Probe only optional context size, never model calls or source offsets.
+      // buildSnapshot protects complete route/time/identity facts at every cap.
+      let low = 1, high = this.config.contextBudget.totalTokens - 1;
+      while (low <= high) {
+        const limit = Math.floor((low + high) / 2);
+        // Stop at the first complete fit. Searching upward to the last possible
+        // context token would starve the current source down to one character.
+        try { selected = await attempt(limit); break; }
+        catch (error) {
+          if (error.code === 'ESSENTIAL_CONTEXT_BUDGET') low = limit + 1;
+          else if (error.code === 'MODEL_INPUT_BUDGET') high = limit - 1;
+          else throw error;
+        }
+      }
+      if (!selected) throw failure;
+    }
+    await this.repository.saveSnapshot(detached(selected.snapshot));
+    return selected;
   }
   _capacityFacts(value, state) {
     if (!value || typeof value !== 'object' || value.available === false) return { available: false,
@@ -364,10 +414,7 @@ export class PersonaRuntime {
     ctx.controlId = controlId;
     await this._lock(async () => { const current = await this._refresh(); current.execution = { ...current.execution,
       pendingControl: { controlId, reason: ctx.reason ?? null, context: compactContext(ctx) } }; await this._save(current); });
-    const snapshot = await this.compose(ctx);
-    const page = await conversationPage(snapshot, ctx, { purpose: 'control', counter: this.tokenCounter,
-      maxTokens: this._inputBudget(),
-      offsets: state.execution?.pendingOffsets ?? {} });
+    const { snapshot, page } = await this._prepareConversationRequest(ctx, { purpose: 'control', offsets: state.execution?.pendingOffsets ?? {} });
     ctx.pending = page.records;
     ctx.pendingPage = { completeEventIds: page.completeEventIds, progress: page.progress, total: page.total, remaining: page.remaining, tokens: page.tokens };
     let answer;
@@ -436,10 +483,8 @@ export class PersonaRuntime {
   }
   async _wake(context) {
     const pending = await this.repository.getPending();
-    const ctx = this._context(context), snapshot = await this.compose(ctx);
-    const page = await conversationPage(snapshot, { ...ctx, pending }, { purpose: 'control', counter: this.tokenCounter,
-      maxTokens: this._inputBudget(),
-      offsets: this.state.execution?.pendingOffsets ?? {} });
+    const ctx = this._context(context);
+    const { page } = await this._prepareConversationRequest({ ...ctx, pending }, { purpose: 'control', offsets: this.state.execution?.pendingOffsets ?? {} });
     const key = x => JSON.stringify([x.personId, x.channelId, x.sourceSessionId]);
     const totalGroups = Object.groupBy(pending, key);
     const groups = Object.values(Object.groupBy(page.records, key)).map(records => ({
@@ -496,11 +541,7 @@ export class PersonaRuntime {
       const selected = { ...record, text: Array.from(record.text).slice(slice.from, slice.to).join(''), chars: slice.to - slice.from };
       delete selected.fragment; return selected;
     });
-    const snapshot = await this.compose(ctx);
-    const page = ctx.pendingPrepared ? ctx.pendingPage : await conversationPage(snapshot, ctx, { purpose: 'reply', counter: this.tokenCounter,
-      maxTokens: this._inputBudget(),
-      offsets: Array.isArray(ctx.pendingSourceEventIds) ? {} : state.execution?.pendingOffsets ?? {} });
-    if (slices.size && !ctx.pendingPrepared) {
+    const transformPage = slices.size && !ctx.pendingPrepared ? page => {
       page.records = page.records.map(record => {
         const slice = slices.get(record.eventId); if (!slice) return record;
         const local = record.fragment ?? { from: 0, to: slice.to - slice.from, complete: true };
@@ -510,10 +551,11 @@ export class PersonaRuntime {
         if (!fragment.complete) page.completeEventIds = page.completeEventIds.filter(id => id !== record.eventId);
         return { ...record, fragment };
       });
-      page.remaining = Math.max(0, page.total - page.completeEventIds.length);
-    }
-    const replyContext = { ...ctx, pending: page.records, pendingPageInfo: { total: page.total, remaining: page.remaining } };
-    const raw = await this._call('reply', replyMessages(snapshot, replyContext), { context: replyContext });
+      page.remaining = Math.max(0, page.total - page.completeEventIds.length); return page;
+    } : null;
+    const { snapshot, page, messages, requestContext: replyContext } = await this._prepareConversationRequest(ctx, { purpose: 'reply',
+      offsets: Array.isArray(ctx.pendingSourceEventIds) ? {} : state.execution?.pendingOffsets ?? {}, preparedPage: ctx.pendingPrepared ? ctx.pendingPage : null, transformPage });
+    const raw = await this._call('reply', messages, { context: replyContext });
     const text = typeof raw === 'string' ? raw : raw?.text;
     if (typeof text !== 'string') throw new Error('Reply model did not return text');
     if (context.replyPlanFingerprint && fingerprint((await this.repository.getRuntime()).currentDecision?.replyPlan ?? null) !== context.replyPlanFingerprint) return { status: 'superseded' };

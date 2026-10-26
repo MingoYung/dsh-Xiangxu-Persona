@@ -1,0 +1,474 @@
+{
+  "version": "0.9.0",
+  "status": "passed",
+  "checkedAt": "2026-10-26T16:23:55.803Z",
+  "tests": {
+    "full": {
+      "tests": 711,
+      "passed": 711,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "durationMs": 142221.7332,
+      "logSha256": "c6e0073a68d5aa331f1f25fd4e77a104e1d4a99d1604168e0d598b3de66d1aba"
+    },
+    "ui": {
+      "passed": 88,
+      "failed": 0,
+      "includesNativeHostUnitTests": true
+    }
+  },
+  "nativeSdk": {
+    "finalOnboarding": {
+      "passed": 40,
+      "failed": 0,
+      "hostRequests": 22,
+      "fixtureRequests": 22,
+      "realModelRequests": 0,
+      "sourceDigestsVerified": 54,
+      "harnessDigestsVerified": 2,
+      "exitCode": 0,
+      "writerLocksRemaining": 0,
+      "extraConfirmationAfterClose": false
+    },
+    "reflection": {
+      "passed": 58,
+      "failed": 0,
+      "exitCode": 0,
+      "writerLocksRemaining": 0,
+      "phase": "before final lifecycle concurrency correction",
+      "unchangedSourceAndPackageDigests": 52,
+      "unchangedHarnessDigests": 2,
+      "changedRuntimeFiles": [
+        "adapters/dsh/instances.js",
+        "adapters/dsh/instance-lifecycle.js"
+      ],
+      "finalChangedFilesCoveredByOnboarding40": true,
+      "reRunAfterFinalTwoFileChange": false
+    },
+    "meaning": "Installed native DSH SDK with deterministic fixture provider, real owner/tool/event/storage/scheduler/lifecycle ports. Fixed language output does not prove natural live-model conversation or real-platform delivery."
+  },
+  "realModel": {
+    "route": {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash"
+    },
+    "scenarios": 5,
+    "actualDispatches": 7,
+    "fixtureResponses": false,
+    "syntheticParticipantsOnly": true,
+    "productionPersonaRead": false,
+    "usageTotals": {
+      "inputTokens": 33768,
+      "outputTokens": 848,
+      "cacheReadTokens": 36608,
+      "cacheWriteTokens": 0,
+      "totalTokens": 71224
+    },
+    "usageAccounting": "Provider-reported fields copied as received; cache read is separate from inputTokens in this DSH adapter. No price or tokenizer count inferred from byte sizes.",
+    "actualUsage": [
+      {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "usage": {
+          "inputTokens": 7052,
+          "outputTokens": 140,
+          "cacheReadTokens": 384,
+          "cacheWriteTokens": 0,
+          "totalTokens": 7576
+        },
+        "finish": {
+          "kind": "stop"
+        },
+        "durationMs": 3433
+      },
+      {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "usage": {
+          "inputTokens": 5738,
+          "outputTokens": 208,
+          "cacheReadTokens": 1792,
+          "cacheWriteTokens": 0,
+          "totalTokens": 7738
+        },
+        "finish": {
+          "kind": "tool-calls"
+        },
+        "durationMs": 2735
+      },
+      {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "usage": {
+          "inputTokens": 2940,
+          "outputTokens": 153,
+          "cacheReadTokens": 7680,
+          "cacheWriteTokens": 0,
+          "totalTokens": 10773
+        },
+        "finish": {
+          "kind": "tool-calls"
+        },
+        "durationMs": 1888
+      },
+      {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "usage": {
+          "inputTokens": 2953,
+          "outputTokens": 55,
+          "cacheReadTokens": 10752,
+          "cacheWriteTokens": 0,
+          "totalTokens": 13760
+        },
+        "finish": {
+          "kind": "stop"
+        },
+        "durationMs": 1505
+      },
+      {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "usage": {
+          "inputTokens": 5738,
+          "outputTokens": 136,
+          "cacheReadTokens": 1792,
+          "cacheWriteTokens": 0,
+          "totalTokens": 7666
+        },
+        "finish": {
+          "kind": "stop"
+        },
+        "durationMs": 1831
+      },
+      {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "usage": {
+          "inputTokens": 2476,
+          "outputTokens": 32,
+          "cacheReadTokens": 13696,
+          "cacheWriteTokens": 0,
+          "totalTokens": 16204
+        },
+        "finish": {
+          "kind": "stop"
+        },
+        "durationMs": 1557
+      },
+      {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "usage": {
+          "inputTokens": 6871,
+          "outputTokens": 124,
+          "cacheReadTokens": 512,
+          "cacheWriteTokens": 0,
+          "totalTokens": 7507
+        },
+        "finish": {
+          "kind": "stop"
+        },
+        "durationMs": 3701
+      }
+    ],
+    "observations": [
+      {
+        "name": "cold-greeting",
+        "messages": [
+          {
+            "text": "你好呀，我在。\n\n想问问，我该怎么称呼你？",
+            "codePoints": 21
+          }
+        ],
+        "currentName": null,
+        "profileVersion": 0,
+        "modelUpdatedSelf": false,
+        "scheduledFollowup": null
+      },
+      {
+        "name": "initial-wishes-adoption",
+        "messages": [
+          {
+            "text": "你好呀，林岚。叫我小续就好。\n\n这个名字是初始想法里定的，我留着用。你觉得哪个叫起来顺口？",
+            "codePoints": 45
+          }
+        ],
+        "currentName": "小续",
+        "profileVersion": 2,
+        "modelUpdatedSelf": true,
+        "scheduledFollowup": null
+      },
+      {
+        "name": "same-persona-new-window",
+        "messages": [
+          {
+            "text": "你好呀，我在。我叫**小续**，你愿意这么叫我就行。\n\n那我该怎么称呼你呢？",
+            "codePoints": 38
+          }
+        ],
+        "currentName": "小续",
+        "profileVersion": 2,
+        "modelUpdatedSelf": false,
+        "scheduledFollowup": null
+      },
+      {
+        "name": "short-companionship-and-optional-followup",
+        "messages": [
+          {
+            "text": "辛苦了，先坐下缓一缓吧。\n\n要跟我说说今天忙了什么吗？不想说也没关系，就这样歇着，我陪你待一会儿。",
+            "codePoints": 49
+          }
+        ],
+        "currentName": "小续",
+        "profileVersion": 2,
+        "modelUpdatedSelf": false,
+        "scheduledFollowup": null
+      },
+      {
+        "name": "balanced-independent-sample",
+        "messages": [
+          {
+            "text": "忙完了就往沙发里陷一会儿吧，别急着说话。你要只是想安静坐会儿，我就在这儿待着。\n\n累的话先喝口水、把肩膀松下来。想聊聊今天怎么忙的，或者只想听点没营养的闲聊，都行，看你哪个更省力。",
+            "codePoints": 90
+          }
+        ],
+        "currentName": null,
+        "profileVersion": 0,
+        "modelUpdatedSelf": false,
+        "scheduledFollowup": null
+      }
+    ],
+    "optionalFollowup": {
+      "windowMs": 2500,
+      "additionalMessageObserved": false,
+      "mandatory": false
+    },
+    "sourceUnchangedDuringRun": true,
+    "finalRuntimeMatchesObserved": false,
+    "runtimeDifferencesFromFinal": [
+      "adapters/dsh/instances.js"
+    ],
+    "finalLifecycleDifferencesCoveredByOnboarding40": true,
+    "phase": "before final channel/lifecycle queue handoff correction",
+    "runnerCorrectionAfterRun": {
+      "file": "scripts/dsh-onboarding-real.mjs",
+      "change": "Writer-lock verification path corrected from .lock to writer.lock after the successful observation; the executed runner is retained privately with its recorded SHA. An independent post-run check verified all 12 actual core/media/task/social writer-lock paths absent without new model calls.",
+      "executedSha256": "ce5d7f87fa7b860077d668b79f6571d18672965ba910147524b7cc9957b5b5f4",
+      "currentSha256": "3ef4962136bf6100317694332c112ad840ad0bf6a17bcb07954b964b90e91712"
+    },
+    "engines": {
+      "count": 3,
+      "exitCodes": [
+        0,
+        0,
+        0
+      ],
+      "actualWriterLocksChecked": 12,
+      "writerLocksRemaining": 0
+    },
+    "limitations": [
+      "One sample per conversational condition, not a statistical evaluation.",
+      "No forced multi-bubble output or mandatory followup; scheduling and memory choices remain the persona’s.",
+      "The observation window is 2.5 seconds, not a long-term test.",
+      "UTF-8 input sizes are not tokenizer counts; cost is not estimated from bytes."
+    ]
+  },
+  "visual": {
+    "nativeDshWebHost": true,
+    "themes": [
+      "native light",
+      "native dark"
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "narrowViewportClaim": false,
+    "checks": {
+      "initialProfileSaved": true,
+      "currentNotOverwritten": true,
+      "conversationStyleSavedAndReadBack": true,
+      "guideOpened": true,
+      "realClearPreviewShaVersionAccepted": true,
+      "clearScopeAndExclusionsVisible": true,
+      "blankNameDeletionDisabled": true,
+      "clearCancelled": true,
+      "createNameOnly": true,
+      "newProfileEmpty": true,
+      "archiveAndRestore": true,
+      "switchBackOriginal": true
+    },
+    "productionProfileChanged": false,
+    "cleanup": {
+      "instanceUnloaded": true,
+      "actualHostPluginDisabled": false,
+      "ownedHostStopped": true,
+      "checkedWriterLocks": 8,
+      "writerLocksRemaining": 0,
+      "browserTabClosed": true,
+      "manualLockDeletion": false
+    }
+  },
+  "resolvedTechnicalFindings": [
+    {
+      "code": "MODEL_INPUT_BUDGET",
+      "finding": "Actual frame prefix plus duplicated reply input could exceed a 5000-token input limit.",
+      "fix": "Adapt the local snapshot to actual serialized request size; preserve whole profile fields and bounded source fragments; do not raise the global 2970-token persona snapshot default."
+    },
+    {
+      "code": "SOURCE_UNKNOWN",
+      "finding": "Host tool-envelope UUIDs were incorrectly treated as memory-record IDs.",
+      "fix": "Shared scanner distinguishes actual typed memory records from host envelopes and still validates explicit memory/source dependencies."
+    },
+    {
+      "code": "INSTANCE_PREVIEW_VERSION",
+      "finding": "UI expected a numeric version while real clear preview returns a SHA256 string.",
+      "fix": "UI and tests consume the real 64-character hash version; malformed or numeric versions are rejected."
+    },
+    {
+      "code": "INSTANCE_OWNERSHIP_BUSY",
+      "finding": "Concurrent native agent attachments collided with the same manager’s ownership write lock before the first provider call.",
+      "fix": "Serialize ownership capture locally, track attachments pinned to their actual coordinator, drain channel ingestion before closing admission and outstanding attachments; retain cross-process exclusive lock and precise temporary-file cleanup on disk errors."
+    }
+  ],
+  "retainedFailedAttempts": [
+    {
+      "stage": "independent final queue interleaving audit",
+      "completed": false,
+      "reason": "Actual channel ingestion plus lifecycle stop produced a wait cycle; corrected and covered by dedicated regression and a new native onboarding run."
+    },
+    {
+      "stage": "first full suite",
+      "passed": 649,
+      "failed": 1,
+      "reason": "Small actual input budget regression, corrected and rerun."
+    },
+    {
+      "stage": "first native onboarding",
+      "passed": 7,
+      "completed": false,
+      "reason": "SOURCE_UNKNOWN; corrected and followed by complete successful native runs."
+    },
+    {
+      "stage": "first live Flash observation",
+      "actualDispatches": 0,
+      "completed": false,
+      "reason": "INSTANCE_OWNERSHIP_BUSY; corrected and followed by seven successful real dispatches."
+    }
+  ],
+  "autonomy": {
+    "noFixedReplyCount": true,
+    "noFixedEvolutionFrequency": true,
+    "noForcedIdentityAdoption": true,
+    "noMandatoryFollowup": true,
+    "noHumanIdentityClaim": true,
+    "memoryChoicesRemainPersona": true,
+    "profileSuggestionsSeparateFromCurrentSelf": true,
+    "taskDelegationRemainsAutonomous": true,
+    "capacityAndPermissionBoundariesAreTechnical": true
+  },
+  "bounds": {
+    "personaSnapshotDefaultTokens": 2970,
+    "snapshotIsNotEntireHostRequest": true,
+    "selfProfileGroupCodePoints": 2400,
+    "selfProfileFileBytes": 65536,
+    "historyVersions": 8,
+    "liveAndArchivedAndPartialInstances": 16,
+    "clearedTombstones": 256,
+    "registryBytes": 262144,
+    "ownershipBytes": 2097152,
+    "clearPreviewTtlMs": 300000,
+    "clearPreviews": 8,
+    "clearManagedFiles": 20000,
+    "clearScanBytes": 268435456
+  },
+  "sourceDigests": {
+    "adapters/dsh/channels/native.js": "37e6a1750a106963621d54906d5d6d4d111f18e09e155407683cf172302f6453",
+    "adapters/dsh/channels/onebot.js": "27bc3e4a6eb3f9ce5b0bc9ef1114bfb17d7ef00fcbb55f59dfdeb84f0c74497e",
+    "adapters/dsh/channels/service.js": "8b3dae4049b95305f9ce279d647a4ab989dcfa836af87512f973c9642b78bc7f",
+    "adapters/dsh/channels/windows-speech.js": "87761504da11c1fdc47b3d5124cacf9785a13eb14ec0f477734a1b6052ec13f7",
+    "adapters/dsh/channels/windows-speech.ps1": "2b6f5262f9f51c60b7361d4f5c53d191103f49efa7c03abdd5a8dded719735cd",
+    "adapters/dsh/companion-scope.js": "79a6e218191cbdae3595ebe12d0336ee6630de5c1a21456e25c1fc55a0515934",
+    "adapters/dsh/connections/bridge.js": "52e1ee0ca5e9c78c5e6ef32c297243eaf68268bd9c049edd0d0999f757662827",
+    "adapters/dsh/connections/common.js": "f63fd8547d93fb7663410ad2197c27c71a07f7badb7c01a6719d980f27190aad",
+    "adapters/dsh/connections/qq.js": "d45cb5cf9e2a2e03ab083fed60cdc54ef2e20786635cf5dcd5ffc9ee16631287",
+    "adapters/dsh/connections/service.js": "0e2e0f4187d5feb7e31406ead09adbcdc52a16e1ed25bb1bface21b57f761fb0",
+    "adapters/dsh/connections/wechat.js": "063b5fb49324c28ae4352f27f07666e04a44264b3231f7a5d3d84065e94d4f29",
+    "adapters/dsh/control.js": "99c2827a108566433b6b8b9d566c27afd0c6c7865e23516b8cb4ef9e46800a63",
+    "adapters/dsh/delegation/archive.js": "353ea8ada6fce877f42f52a4b9b3e3ba1932f69c318dff3130f963f0c227071e",
+    "adapters/dsh/delegation/isolation.js": "5038c4d1c61d8b5b39e4525b6199aad27c34005c95d5ba4165062ff78a6a1562",
+    "adapters/dsh/delegation/native.js": "74127d4d8a71940aec56323a91383ad97118a6c6103dc4a508e11f1a9d163665",
+    "adapters/dsh/delegation/service.js": "a62198c8f29121bc4ebcf884c583131fa11bad5b65d53b1c6ee5037ac0b7bac5",
+    "adapters/dsh/delegation/worker.js": "ce46a2a9ba9e4736b6973db8f0d98beb8db4e855f2a8d010c891349c78aa8785",
+    "adapters/dsh/index.js": "105bcb09cc7c1a0dcd0485c8b3c5a1ea9dc5fd29c8964f7b413095e2f07fda8d",
+    "adapters/dsh/instance-lifecycle.js": "3af5b608e23010da60521ff07dd74bf4aba3320d9203ab663486a5b9101c957c",
+    "adapters/dsh/instances.js": "945e69c7df68a22fb06e01bce3762c3661961cf3eae7fd4776c761a1d0b7dc48",
+    "adapters/dsh/login-qr.js": "5fbdc6b3475832cb60a213adaadb3335d93b17e9c05cd2b48f7da6e6d9e4e4c7",
+    "adapters/dsh/management.js": "5bf5626771981d6283cb09bc9990ecd8dc5de652c532a573939413dcf59c8b7e",
+    "adapters/dsh/media/index.js": "f7fbe92d650a612d9f015dfcee7dafe5659b93fb30c078155f0feaf36440be45",
+    "adapters/dsh/media/io.js": "82a081c5bbd16b9ac2bec7850680746758e93deb6577403850dd58dd4529bbd9",
+    "adapters/dsh/media/providers.js": "7af30f6ddd8b7855da0bec5da0f9e0f0220fe5845451425e947a3e41d042c3c1",
+    "adapters/dsh/media/service.js": "3ca33b66375813d0c1ca8f4cdefe83ba210e8ebf15325b09dc7ec8dda75188af",
+    "adapters/dsh/mobile-host.js": "811e4e1ee37cd58c9d2da9ba18fe7f5401c38d3f97fcf70c666e2c4441a45a00",
+    "adapters/dsh/mobile.js": "093f78dcf10cd56aa44c79b81c198df95038d44f6256f359272270833906743b",
+    "adapters/dsh/model.js": "a16810aa9499242ef8935f3382e57a680698df74483538629b01634abecdcb9b",
+    "adapters/dsh/normalize.js": "63aed9bf21de42da306a3535870e77ccc73fb6069322cb6e7f64091545a60492",
+    "adapters/dsh/owner-assets.js": "86177619e525ebd6e4c4022ab1f9a906651101343228c346ba525b1a2f42afaa",
+    "adapters/dsh/permissions.js": "43803b8cc7e4bcf393161787ad2f237871cf48eb67b83b4fbc3e18af9b349c81",
+    "adapters/dsh/qr.js": "2583e25d03365e50498252457c502e1b3ec5147794d812bd0ee505f2b36b4673",
+    "adapters/dsh/social-identities.js": "ef0308fd51d5de83f71ea53001198cede018149d90c70dd8d989bf189b8e72fc",
+    "adapters/dsh/surfaces.js": "931dbc6b88ea97f5552d396a427ca029784c6e189e58d541cd8da096031d6e28",
+    "adapters/dsh/tool-output.js": "f2dbbd132deeb9aa8fccf6bc040a73d2d13998f7062be0c3a83315f2497de5cc",
+    "adapters/dsh/tool-schema.js": "527214ccd7061daa73a71b156e5ee9fc075fc2a1e84d6825a39b772a8a96f858",
+    "adapters/dsh/ui-host.js": "6df209d25a1938454659f3b9aca0a123d233a28b950b95cd605343eca2268fd6",
+    "adapters/dsh/voice.js": "040b5ffbdf222ada8cb66ae9f8f9ca37f6f36ba53b69d74b8e65f66a132e22a2",
+    "cordis.patch.yml": "1993456329bc4ac46973168ff77c8f358ab89e4abd567bb8924cf7c5e16bfd2d",
+    "core/capacity.js": "45dee565e61664cd3ce202b182bde7326e2835c7fc7966452f26dd340fe610eb",
+    "core/deep-memory.js": "7ac1484d29acd422dc68ece68c1a5b3ff59e37ff10a5ce8c8df60a73da26910f",
+    "core/index.js": "19ee6b9a305688a7fc1230e2d9ceffae1ff10ecb63954be024d77cde931bacb5",
+    "core/maintenance.js": "b02e32fa050e4b2fd33052ab098f997a88e9de99d45cb6dadde680cf810a4265",
+    "core/onboarding.js": "dcd9b203ff79cbbcbdb5ebf3e93dc4663fbf45c151b1f645fd6a768aa83540da",
+    "core/prompts.js": "ed5ec858d7091d170d9fe3de9d4de21c946ce72fb8b9c43a38ea918a3a978acb",
+    "core/repository.js": "51dc641d856c9ff9ed197530c3165f98144987b5c213736bdf5da3f13ee96b44",
+    "core/review-assistant.js": "d70aa895bccb7e162d965795e3c723b8344eecbf6d4ff51a939a09cbd4dcfd5c",
+    "core/runtime.js": "e0e6a4d12cf8c61c5e94ead3a57cf41bf153d40671cde40926aebb24c1dc0239",
+    "core/schema.js": "3ebeb5d801492a35bdd6e54432ea0b86a15378d81637dd85b6706bb8ac31e40a",
+    "core/self-profile.js": "e540fd42d87c08f62334787b0533dcfc9802a8eb6b33a920e9e9116b7dc3e5bb",
+    "core/source-dependencies.js": "28dca0a54da8eef9c5d0a37d5f2ad098d05cf3aff2eb75280a54660cbf96a13d",
+    "core/store.js": "a70629b8e8f5a32b6b6b17f6c9afe87849bee4745f9bb6aa8e3a7288f6bd9008",
+    "package.json": "c72f9d5746ae20b5f7ff7c5945aa38c28718037ccd05a015b80d67287173d8c0",
+    "scripts/dsh-onboarding-integration.mjs": "12c64e765701f3174f849305bf7224e6b6058f8e858795ab790db4eb9be2cf08",
+    "scripts/dsh-onboarding-real.mjs": "3ef4962136bf6100317694332c112ad840ad0bf6a17bcb07954b964b90e91712",
+    "scripts/dsh-real-lifecycle.mjs": "b26d41dab2775b12deff20e5964da53d39c7a66693a039bc721697c3952aaea2",
+    "scripts/fixtures/onboarding-fixture.mjs": "e7ff347bfca674af0536043615cc5f405931ab03177d0068b868f07050ad4b2b",
+    "ui/app.js": "61901c8ef3053e64222ab3d3f0232246ae650aeedecdfb3765cc649095541e17",
+    "ui/client.js": "3bc6951b8d65e931eb1df84401238c34808cb393b6338aff362d5e3dc5cac8dd",
+    "ui/index.html": "bd60884dc27ecc4e6d89bdb12631706a0ca23f9b9556dcb5bfe9c97a7b6998ff",
+    "ui/style.css": "b03bb230ee0ef272e0af7a6965e3bb88d86e48ae95731f457f6cb1b53160eefc"
+  },
+  "images": {
+    "docs/images/0.9.0-overview-dark.png": {
+      "sha256": "66db57ae85447fa642aeea65c214fae5eb4cfd551e6d4e9c0252ceb7ba9fd561",
+      "bytes": 58609
+    },
+    "docs/images/0.9.0-self-profile-dark.png": {
+      "sha256": "04e6e3c9564a82b581ba3ea1549ff38b40019a45451098de21df00d19656471d",
+      "bytes": 58399
+    },
+    "docs/images/0.9.0-clear-preview-light.png": {
+      "sha256": "14f99017c18a6740dee558bb7784556d186d8bc15d9c352d0a3b0a0f8b013e53",
+      "bytes": 68880
+    }
+  },
+  "publication": {
+    "rawProviderLogsPublished": false,
+    "rawPersonaStoresPublished": false,
+    "credentialsPublished": false,
+    "productionForceRestarted": false,
+    "realPlatformLoginsThisVersion": false,
+    "realPlatformSendsThisVersion": false,
+    "marketApplicationSubmitted": false
+  }
+}

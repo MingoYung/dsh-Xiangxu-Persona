@@ -1,6 +1,6 @@
 # 十四模块实现映射
 
-本表说明代码落点；0.8.0当前交互及0.7.0能力、0.4.1／0.4.0历史测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
+本表说明代码落点；0.9.0新增交互和既有0.8.0布局、0.7.0能力、0.4.1／0.4.0历史测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |
 |---|---|---|
@@ -45,7 +45,7 @@ voice.js保存有界技术偏好，persona_voice由人格按需选择实际音�
 
 ## 0.5.0 陪伴范围、官方连接、权限与形象创作
 
-> 本节是0.5.0历史实现，当时七工具并禁止人格派发；当前0.8.0继续使用八工具与独立任务预设。
+> 本节是0.5.0历史实现，当时七工具并禁止人格派发；0.8.0时继续使用八工具与独立任务预设。
 
 | 扩展 | 实现与消费点 | 验证含义 |
 |---|---|---|
@@ -87,7 +87,7 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 | 接入聊天 | 单平台扫码步骤、能力权限、兼容桥分别呈现 | 账号资质、支持／许可／可用仍分别核对 |
 | 管理形象与作品 | 形象、图片服务、视频服务、生成、作品任务分开 | 不因保存或浏览自动生成，未知任务不自动重付费 |
 
-0.8.0只重整管理界面的导航、内容层次与交互流程，core/、adapters/和运行时schema相对0.7.0未改，八个人格工具与persona-memory/3保持兼容。本版[完整本地回归](verification/0.8.0-tests.json)605/605通过，失败／取消／跳过均为0；UI与宿主专项55/55（50项UI＋5项host）属于同批验证，不另算独立需求。[真实DSH界面](verification/0.8.0-native-ui.json)完成5个主入口与16项任务式旅程、浅深主题及保存回读，使用隔离样本、无真实模型或平台调用。[后端兼容回执](verification/0.8.0-backend-compatibility.json)逐SHA核对50份后台及配套文件，继承0.7.0 SDK证据，未声称重新执行本版SDK。0.7.0的583/58/35与当时九页GUI保留历史含义；远程CI和发布状态另以实际结果为准。
+0.8.0只重整管理界面的导航、内容层次与交互流程，core/、adapters/和运行时schema相对0.7.0未改，八个人格工具与persona-memory/3保持兼容。该历史版本[完整本地回归](verification/0.8.0-tests.json)605/605通过，失败／取消／跳过均为0；UI与宿主专项55/55（50项UI＋5项host）属于同批验证，不另算独立需求。[真实DSH界面](verification/0.8.0-native-ui.json)完成5个主入口与16项任务式旅程、浅深主题及保存回读，使用隔离样本、无真实模型或平台调用。[后端兼容回执](verification/0.8.0-backend-compatibility.json)逐SHA核对50份后台及配套文件，继承0.7.0 SDK证据，未声称重新执行本版SDK。0.7.0的583/58/35与当时九页GUI保留历史含义；远程CI和发布状态另以实际结果为准。
 
 ## 0.7.0 历史功能：深刻参考、整理供料与社交身份
 
@@ -103,3 +103,30 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 | QQ官方策略 | connections/qq.js及真实driver上下文 | 官方主动推送不可用；被动窗口按平台规则，桥按自身实际能力，不改人格判断 |
 
 详见[新增功能说明](memory-reflection-and-social-identities.md)。0.7.0[完整本地回归](verification/0.7.0-tests.json)583/583通过，失败／取消／跳过均为0；[真实DSH SDK](verification/0.7.0-sdk-fixture.json)分别完成新链58/58与委派链35/35，两套有重叠、分别列示，使用固定fixture且真实LLM／平台调用均为0。[原生九页GUI](verification/0.7.0-native-ui.json)使用合成数据、0模型调用；[自主性源码审查](verification/0.7.0-autonomy-audit.json)分列源码链、定向回归与交叉复核。远程CI结果不由本地回执推断；0.6.0的495/35及当时九页GUI、0.5.0和更早结果保留历史含义。0.7.0已修改核心，不能沿用0.6.0核心九文件未变的结论。
+
+## 0.9.0 自我连续性、用户引导与短聊参考
+
+本轮是十四模块的横向扩展，不以新增模块数代表完成率。
+
+| 扩展 | 实现与直接消费者 | 保留边界 |
+|---|---|---|
+| 自我档案 | core/self-profile.js、repository、self/profile.json→onboarding.selfProfileContext→prompts | initial/current分开、自由文字、来源/CAS/容量/撤销；不把性别年龄变成性格规则 |
+| 自我资料读写 | persona_introspect section:self / action:update_self与selfPatch/expectedVersion | 仍八工具；人格改current，用户初始化与确认状态独立 |
+| 状态供料 | runtime.compose.memoryAvailability→请求环境参考 | 关联与检索分别描述；未检索/无匹配不表示全库为空 |
+| 用户引导 | ui/app.js、self.get/self.update、status摘要、docs/user-guide.md | 可跳过、不阻聊天、保存不调用模型、跨实例过期回执不误用 |
+| 交流节奏 | config.conversationStyle→core/onboarding.js→既有nextCheckAt/原生消息/逐条回执 | 仅偏好，无硬条数/频率；不自动切句或伪造事件，可能增加模型调用 |
+| 有界身份供料 | contextBudget.selfProfileTokens默认350→动态总帽2970 | current字段完整展示或明确省略，历史按需读，不把全档案灌进每轮 |
+
+字段权威见[第20节](plan/persona/persona-schema.md#20-自我档案初始化与交流定位090)，操作见[使用说明](user-guide.md)与[管理界面](management-ui.md)。0.9.0已改变核心与适配，最终全量/SDK/GUI/真实模型结果统一见[当前验收状态](management-ui.md#090-final-acceptance)，不能继承0.8.0“后台未变”的结论。
+
+## 0.9.0 人格生命周期横向实现
+
+| 用户动作 | 实现与消费点 | 边界 |
+|---|---|---|
+| 新建与切换 | instances.js → owner instances.create/load/select → 人格管理 | 名称式新建独立根、实际active/list；单活动写者、忙碌拒绝、保留原库 |
+| 归档与恢复 | instances.archive/restore与归属捕获 | 停用并保留，非独立备份；恢复需明确，clearing/partial/cleared不可恢复 |
+| 文本清除 | instance-lifecycle.js扫描/token/维护门/SHA → instances.clearPreview/clear → 名称确认UI | 五分钟token；停机变化零删除重新预览；部分失败不可加载、重新确认；外部资料排除 |
+| 旧会话隔离 | 库外xiangxu-session-owners/1 → canAttachAgent/attachAgent | 只保存会话ID哈希与实例归属，清除后仍有效，不删除宿主日志 |
+| 技术容量 | INSTANCE_LIMITS → registry/ownership/list/scan | 16未清除+256墓碑，登记尾部20墓碑列表显式完整性，不自动淘汰或改人格判断 |
+
+字段与范围集中在[第21节](plan/persona/persona-schema.md#21-人格实例生命周期与文本清除090)，最终0.9.0结果以[验收状态](management-ui.md#090-final-acceptance)为准。

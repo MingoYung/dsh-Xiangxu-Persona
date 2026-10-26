@@ -1,10 +1,10 @@
 # DSH 扩展点与 P0 接入验证
 
-当前0.8.0把管理界面重组为“相处、记忆、连接、创作、设置”五个主入口；人格、成长、独立任务和维护改从页内目的入口进入，复杂配置按所选任务分开显示。沿用DSH主题，取消原生三角折叠，先展示可读内容，再由明确按钮查看来源和技术字段。普通资料编辑一次保存；实际付费操作、扩大权限、遗忘和恢复继续明确确认。只变更界面编排，core/、adapters/、八工具和persona-memory/3不变，不增加人格回忆、进化、主动或睡眠规则。当前操作见[管理说明](../../management-ui.md)。0.8.0只重整管理界面的导航、内容层次与交互流程，core/、adapters/和运行时schema相对0.7.0未改，八个人格工具与persona-memory/3保持兼容。本版[完整本地回归](../../verification/0.8.0-tests.json)605/605通过，失败／取消／跳过均为0；UI与宿主专项55/55（50项UI＋5项host）属于同批验证，不另算独立需求。[真实DSH界面](../../verification/0.8.0-native-ui.json)完成5个主入口与16项任务式旅程、浅深主题及保存回读，使用隔离样本、无真实模型或平台调用。[后端兼容回执](../../verification/0.8.0-backend-compatibility.json)逐SHA核对50份后台及配套文件，继承0.7.0 SDK证据，未声称重新执行本版SDK。0.7.0的583/58/35与当时九页GUI保留历史含义；远程CI和发布状态另以实际结果为准。
+当前0.9.0在既有八工具和owner桥上扩展自我资料读写，分次交流复用自主再判断；新增链路需本轮独立验收。
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
-修订日期：2026-10-26。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
+修订日期：2026-10-27。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
 
 本文保留上一轮从本机安装包、官方 README 和既有插件读取的宿主出处，同时收回把“接口存在”直接写成“端到端行为成立”的结论。本次文档修订没有运行宿主探针，不能据此声称事件完整性、idle agent 自动启动、睡眠静默、请求作用域或最终送达已经实测。
 
@@ -221,4 +221,35 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 
 顶层五个入口始终保留；打开任务式子页后，“返回”回到实际来处，当前主入口保持选中。相处提供日常状态、主动联系开关、了解人格和独立任务；记忆把可读原文、深刻经历、人物与成长记录分开；连接把QQ、微信、声音、社交身份分开，单平台再分扫码步骤、能力权限和兼容桥；创作分形象、图片服务、视频服务、生成与作品任务；设置再分实例列表、启动时加载、使用其他记忆库、交流时间、资料助手、分类容量和维护；同实例切换容量类别保留草稿，一次保存已改字段，不同实例草稿隔离。成长记录分整理进度／人格变化／手动操作，任务先显示摘要、技术元信息按需要打开。命名按钮替代原生details三角，不把所有表单同时摊开。
 
-0.8.0只重整管理界面的导航、内容层次与交互流程，core/、adapters/和运行时schema相对0.7.0未改，八个人格工具与persona-memory/3保持兼容。本版[完整本地回归](../../verification/0.8.0-tests.json)605/605通过，失败／取消／跳过均为0；UI与宿主专项55/55（50项UI＋5项host）属于同批验证，不另算独立需求。[真实DSH界面](../../verification/0.8.0-native-ui.json)完成5个主入口与16项任务式旅程、浅深主题及保存回读，使用隔离样本、无真实模型或平台调用。[后端兼容回执](../../verification/0.8.0-backend-compatibility.json)逐SHA核对50份后台及配套文件，继承0.7.0 SDK证据，未声称重新执行本版SDK。0.7.0的583/58/35与当时九页GUI保留历史含义；远程CI和发布状态另以实际结果为准。
+0.8.0只重整管理界面的导航、内容层次与交互流程，core/、adapters/和运行时schema相对0.7.0未改，八个人格工具与persona-memory/3保持兼容。该历史版本[完整本地回归](../../verification/0.8.0-tests.json)605/605通过，失败／取消／跳过均为0；UI与宿主专项55/55（50项UI＋5项host）属于同批验证，不另算独立需求。[真实DSH界面](../../verification/0.8.0-native-ui.json)完成5个主入口与16项任务式旅程、浅深主题及保存回读，使用隔离样本、无真实模型或平台调用。[后端兼容回执](../../verification/0.8.0-backend-compatibility.json)逐SHA核对50份后台及配套文件，继承0.7.0 SDK证据，未声称重新执行本版SDK。0.7.0的583/58/35与当时九页GUI保留历史含义；远程CI和发布状态另以实际结果为准。
+
+## 0.9.0 自我档案接口与再判断
+
+现有八工具保持不变。persona_introspect增加section:self的完整档案读取，以及action:update_self、selfPatch、expectedVersion的当前自我资料更新；主体、真实来源、版本、容量和错误按[唯一字段契约第20节](persona-schema.md#20-自我档案初始化与交流定位090)执行，不把owner初始化元数据写权限交给人格工具。
+
+原生管理桥复用owner认证与64KiB请求/2MiB响应载体，增加self.get与self.update（顶层expectedVersion），status仅附mode/version/onboardingAcknowledged。config.update白名单包含conversationStyle三个枚举；无模型调用的保存与已有定时决定恢复分别看待。UI新增资料页、可跳过引导与[使用说明](../../user-guide.md)，不另开手机服务或平台权限。
+
+多次表达继续使用persona_decide.nextCheckAt选时再判断，不额外注册“发一句空消息”或自行构造宿主assistant事件。原生assistant/message及平台每条回执仍是实际说过的证据；QQ官方主动限制不因短聊偏好放宽。0.9.0真实SDK、最终GUI和模型链结果统一见[当前验收状态](../../management-ui.md#090-final-acceptance)，不能把0.8.0继承后台不变的证据套到已修改的适配层。
+
+定向续聊需一并保留当前replyPlan.target，单独设置时间不保证回到原会话。到期重新读取pending和当前上下文，不播放旧台词；生成开始后新来信可能下一原生轮次才处理，这不是实时打断机制。globalMuted与QQ官方等实际能力限制继续适用。
+
+## 0.9.0 人格实例管理接口
+
+这些动作复用已认证owner管理桥、既有请求/响应容量和单活动写者，不加入九个人格工具，也不交给模型一个任意目录删除工具。字段、清除范围、token与技术容量唯一权威为[第21节](persona-schema.md#21-人格实例生命周期与文本清除090)。
+
+| owner动作 | 输入与真实结果 |
+|---|---|
+| instances.list | 无目标写入；返回items、activeInstanceId、selectedInstanceId、autoLoad、error、counts与clearedListComplete；item原始主键为instanceId |
+| instances.create | {name,autoLoad?:boolean}；后台分配新UUID根，返回实际list形态；UI明确创建后可进入自我档案，不默认复制资料 |
+| instances.load / select | {instanceId?,memoryRoot?,name?,autoLoad?}；显式加载/切换；返回实际list，归档及清除状态拒绝 |
+| instances.unload | {instanceId}；停止当前目标、保留资料并返回list |
+| instances.archive | {instanceId}；闲置核验、归属持久化、停用并归档，返回list；归档不是备份 |
+| instances.restore | {instanceId,activate?:boolean}；只恢复已归档资料；activate:true明确恢复并加载，返回list |
+| instances.clearPreview | {instanceId}；返回实际scope/excluded/files/bytes、requiresName、confirmationToken、64位hex版本和expiresAt；仅预览不删文件 |
+| instances.clear | {instanceId,confirmationToken,typedName}；返回cleared或partial及实际已删/剩余量和错误，完成后UI重新读list |
+
+clear不接收客户端自由路径或客户端自报文件列表，版本由token绑定而非另传expectedVersion。确认固定的是受管文本精确清单/内容、实例登记与目标状态；库外ownership只存会话哈希归属，capture在排他锁内重读合并最新记录，合法外部新增不使预览无意义失效，冲突或超限在删除前拒绝。token五分钟过期；预览后登记、实例状态或文件变化均要求重新预览。主动实例停止后若产生新收据，INSTANCE_CLEAR_STALE表示此轮零删除且保持停用；进入逐文件删除后的异常则可能为partial，必须按实际结果报告。忙碌、未知文件、链接、维护锁与容量失败不能被界面解释为已清空。
+
+UI先显示真实范围，再要求精确名称确认；关闭/取消预览不写入，归档或切换不隐含清除。写RPC及其回执绑定原实例和页面代次，确认后再次核对，旧页控件不作用于后来选择。清除完成保留不可加载标记；“新建人格”仍需用户明确输入名称并提交，不自动创建或将旧会话带入新库。
+
+最终owner桥、GUI与模型验收以[当前验收状态](../../management-ui.md#090-final-acceptance)为准，不从历史接口存在推定通过。

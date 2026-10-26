@@ -295,6 +295,19 @@ summary::marker{content:""}
 
 .reading-text{font:inherit;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;margin:16px 0}
 
+/* Optional first-use guidance stays light and uses the host's existing colors. */
+.onboarding-hint{padding:14px 0 18px;margin:0 0 14px;min-width:0}
+.onboarding-hint .row-actions{margin-top:12px}
+.inline-choice{flex:0 1 160px;min-width:0;max-width:100%;min-height:36px;padding:6px 9px;border:1px solid color-mix(in srgb,var(--ink) 35%,transparent);border-radius:6px;background:var(--surface);color:var(--ink);font-size:.9rem}
+.self-profile-page .destination-list{margin-top:18px}
+.self-profile-page .kv-row dd{white-space:pre-wrap;overflow-wrap:anywhere}
+.self-initial-fields{max-width:68ch}
+.user-guide{max-width:70ch;min-width:0}
+.user-guide .guide-intro{font-size:1rem;line-height:1.85}
+.user-guide .reading-section{margin:26px 0}
+.user-guide .reading-section p{margin:0;overflow-wrap:anywhere}
+@media(max-width:420px){.setting-row:has(.inline-choice){flex-wrap:wrap;gap:10px}.inline-choice{flex-basis:100%;width:100%}}
+
 /* State and action cues stay visible even when a host theme makes every surface transparent. */
 .navigation button.active::after,.navigation button[aria-current=page]::after{content:"";position:absolute;left:26%;right:26%;bottom:2px;height:3px;border-radius:2px;background:currentColor}
 .navigation button:hover,.navigation button:active{background:color-mix(in srgb,var(--ink) 8%,transparent)}

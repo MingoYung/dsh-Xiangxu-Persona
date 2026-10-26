@@ -1,6 +1,7 @@
 import { SCHEMA_VERSION, newId } from './schema.js';
 import { extractSourceDependencies } from './source-dependencies.js';
 import { fitDeepMemoryReferences } from './deep-memory.js';
+import { selfProfileContext, conversationOrientation } from './onboarding.js';
 
 export function detached(value) { return value === undefined ? undefined : structuredClone(value); }
 export function freeze(value) {
@@ -66,21 +67,23 @@ export async function buildSnapshot({ context = {}, material = {}, state = {}, c
     : { available: false, errorCode: capacity?.errorCode ?? null };
   const essential = { now, timezone: context.timezone ?? context.environment?.timezone ?? config.timezone,
     target, sleep: state.sleep?.state ?? 'awake',
-    resources,
+    resources, memoryAvailability: context.memoryAvailability ?? material.memoryAvailability ?? { storeContent: 'not_assessed', retrieval: 'not_requested' },
     consolidation: { mode: config.consolidationMode,
       opportunity: state.execution?.consolidationOpportunity ?? null,
       jobs: Object.values(state.execution?.consolidationJobs ?? {}).slice(-3).map(job => ({ jobId: job.jobId, status: job.status })) } };
   const essentialText = `[environment]\n${stringify(essential)}\n`;
   const essentialTokens = await counter.count(essentialText);
   if (essentialTokens > budgets.totalTokens) throw Object.assign(new Error('The request budget cannot carry the complete current route/time facts; no incomplete target was injected'), { code: 'ESSENTIAL_CONTEXT_BUDGET' });
-  const environmentBudget = Math.max(budgets.environmentTokens, essentialTokens);
+  const environmentBudget = Math.min(budgets.totalTokens, Math.max(budgets.environmentTokens, essentialTokens));
   const budgetAdjustments = environmentBudget > budgets.environmentTokens
     ? [{ segment: 'environment', configured: budgets.environmentTokens, applied: environmentBudget, reason: 'preserve_complete_route_and_time' }] : [];
+  let selfProfile;
   const segments = [
     ['environment', environmentBudget, stringify(essential) + '\n' + stringify({ environment: context.environment ?? null,
       activePlan: state.currentDecision ? { reply: state.currentDecision.replyPlan?.action, replyAt: state.currentDecision.replyPlan?.replyAt,
         nextCheckAt: state.schedule?.nextCheckAt, recheckOn: state.schedule?.recheckOn } : null,
       sleep: state.sleep, capacity: context.capacity ?? null })],
+    ['self_profile', budgets.selfProfileTokens ?? 350, null],
     ['anchor', budgets.anchorTokens, persona.anchor?.text ?? ''],
     ['persona', budgets.personaTokens, { axes: Object.values(persona.axes ?? {}).map(description),
       facets: relevant(facets).map(x => ({ id: x.id, desc: description(x), epistemic: x.epistemic })),
@@ -96,15 +99,37 @@ export async function buildSnapshot({ context = {}, material = {}, state = {}, c
   const result = [];
   for (const [name, budget, value] of segments) {
     const raw = typeof value === 'string' ? value : stringify(value);
-    let text;
+    const prefix = result.map(segment => segment.text).join('');
+    const available = Math.max(0, budgets.totalTokens - await counter.count(prefix));
+    let effectiveBudget = Math.min(budget, available), text, truncated;
     if (name === 'environment') {
       // Fit only the optional tail. Mandatory routing facts are never cut mid-ID.
       const tail = raw.slice(stringify(essential).length + 1);
-      let optional = await fit(tail ? tail + '\n' : '', Math.max(0, budget - essentialTokens), counter);
-      while (optional && await counter.count(essentialText + optional) > budget) optional = Array.from(optional).slice(0, -1).join('');
+      const completeTail = tail ? tail + '\n' : '';
+      let optional = await fit(completeTail, Math.max(0, effectiveBudget - essentialTokens), counter);
+      while (optional && await counter.count(essentialText + optional) > effectiveBudget) optional = Array.from(optional).slice(0, -1).join('');
       text = essentialText + optional;
-    } else text = await fit(raw ? `[${name}]\n${raw}\n` : '', budget, counter);
-    result.push({ name, budget, text, tokens: await counter.count(text), truncated: text !== (raw ? `[${name}]\n${raw}\n` : '') });
+      truncated = optional !== completeTail;
+    } else if (name === 'self_profile') {
+      // The environment's actual text, including its optional tail, has already
+      // consumed budget. Select whole profile fields from the true remainder.
+      // Re-measure the concatenation because tokenizer counts are not additive.
+      selfProfile = await selfProfileContext(material.selfProfile, { counter, budget: effectiveBudget });
+      while (selfProfile.text && await counter.count(prefix + selfProfile.text) > budgets.totalTokens) {
+        effectiveBudget = Math.max(0, effectiveBudget - 1);
+        selfProfile = await selfProfileContext(material.selfProfile, { counter, budget: effectiveBudget });
+      }
+      text = selfProfile.text; truncated = selfProfile.omitted.length > 0;
+    } else {
+      const complete = raw ? `[${name}]\n${raw}\n` : '';
+      text = await fit(complete, effectiveBudget, counter);
+      while (text && await counter.count(prefix + text) > budgets.totalTokens) {
+        effectiveBudget = Math.max(0, effectiveBudget - 1);
+        text = await fit(complete, effectiveBudget, counter);
+      }
+      truncated = text !== complete;
+    }
+    result.push({ name, budget: effectiveBudget, text, tokens: await counter.count(text), truncated });
     if (name === 'habits' && (material.deepMemories ?? []).length) {
       const prefix = result.map(segment => segment.text).join('');
       let referenceBudget = Math.min(budgets.deepMemoryTokens ?? 600, Math.max(0, budgets.totalTokens - await counter.count(prefix)));
@@ -118,26 +143,21 @@ export async function buildSnapshot({ context = {}, material = {}, state = {}, c
         referenceOnly: true, automaticRecall: false, total: deepReferences.total, shown: deepReferences.shown });
     }
   }
-  let text = result.map(x => x.text).join(''), tokens = await counter.count(text);
-  // Tokenization of concatenated text need not equal the sum of isolated segment counts.
-  if (tokens > budgets.totalTokens) {
-    const deepIndex = result.findIndex(segment => segment.name === 'deep_memory_reference');
-    const protectedText = deepIndex < 0 ? essentialText : result.slice(0, deepIndex + 1).map(segment => segment.text).join('');
-    const protectedTokens = await counter.count(protectedText);
-    let tail = await fit(text.slice(protectedText.length), Math.max(0, budgets.totalTokens - protectedTokens), counter);
-    while (tail && await counter.count(protectedText + tail) > budgets.totalTokens) tail = Array.from(tail).slice(0, -1).join('');
-    text = protectedText + tail; tokens = await counter.count(text);
-  }
+  const text = result.map(x => x.text).join(''), tokens = await counter.count(text);
+  // Each segment was admitted against the actual concatenated prefix. Never
+  // repair an overflow by cutting an already admitted profile or deep card.
+  if (tokens > budgets.totalTokens) throw Object.assign(new Error('Context segment accounting exceeded the total budget; no partial structured profile was injected'), { code: 'CONTEXT_SEGMENT_BUDGET' });
   const snapshot = {
     schemaVersion: SCHEMA_VERSION, requestId: context.requestId ?? newId('req'), sessionId: context.sessionId ?? context.environment?.sessionId ?? '',
-    personId: ownId, personaVersion: persona.version ?? 0, relationVersion: relation.version ?? null,
+    personId: ownId, conversationStyle: config.conversationStyle ?? 'short_chat', personaVersion: persona.version ?? 0, relationVersion: relation.version ?? null,
     environmentVersion: context.environment?.version ?? context.environmentVersion ?? 0,
     now, timezone: context.timezone ?? context.environment?.timezone ?? config.timezone,
+    selfProfileReference: { version: material.selfProfile?.version ?? 0, shown: selfProfile.shown, omitted: selfProfile.omitted, fullProfileAvailable: Boolean(material.selfProfile) },
     deepMemoryReference: { referenceOnly: true, automaticRecall: false, total: deepReferences.total, shown: deepReferences.shown, truncated: deepReferences.truncated, ids: deepReferences.shownIds },
     injectedIds: [...new Set([...memories, ...relevant(facets), ...relevant(signatures), ...(persona.habits ?? []), ...(material.deepMemories ?? []).filter(item => deepReferences.shownIds.includes(item.id))].map(x => x.id).filter(id => id && text.includes(JSON.stringify(id))))],
     injectedText: text, tokens, tokenAccounting: counter.method, budgetAdjustments, routeFacts: target, segments: result,
   };
-  const dependencies = extractSourceDependencies({ sourceDependencies: material.sourceDependencies,
+  const dependencies = extractSourceDependencies({ selfProfile: selfProfile.sourceDependencies, sourceDependencies: material.sourceDependencies,
     persona: { anchor: persona.anchor, axes: persona.axes, facets: relevant(facets), signatures: relevant(signatures), habits: relevant(persona.habits ?? []) },
     relationship: relation, interpretations: material.interpretations, codes: material.codes, memories, deepMemories: (material.deepMemories ?? []).filter(item => deepReferences.shownIds.includes(item.id)), injectedIds: snapshot.injectedIds });
   snapshot.sourceDependencies = { refs: dependencies.refs, recordIds: dependencies.recordIds };
@@ -155,7 +175,7 @@ export function controlMessages(snapshot, context = {}) {
 }
 
 export function replyMessages(snapshot, context = {}) {
-  return [{ role: 'system', content: snapshot.injectedText },
+  return [{ role: 'system', content: conversationOrientation(snapshot.conversationStyle) }, { role: 'system', content: snapshot.injectedText },
     { role: 'user', content: stringify({ environment: context.environment, target: context.target, incoming: context.incoming,
       pending: context.pending, pendingPage: context.pendingPageInfo, wakeSummary: wakeDescriptor(context.wakeSummary), instruction: 'Express what you choose to say now. Remember source subjects and do not claim an intended action already occurred.' }) }];
 }

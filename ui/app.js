@@ -65,7 +65,7 @@ function destinations(...items) { return element('div', { class: 'destination-li
 function sectionTabs(items) { return element('nav', { class: 'module-tabs', 'aria-label': '当前页面内容' }, items.map(([view, label]) => button(label, () => openSection(view, false), 'module-tab', { class: 'module-tab' + ((state.view ?? '') === view ? ' active' : ''), 'aria-current': (state.view ?? '') === view ? 'page' : 'false' }))); }
 let pageScrollRequested = false;
 const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overview', maintenance: 'settings' };
-const viewTitles = { startup: '启动时加载', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格与记忆库', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
+const viewTitles = { 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
 async function openSection(view, remember = true) { pageScrollRequested = true; if (remember) state.trail.push({ page: state.page, view: state.view }); state.view = view || null; await renderPage(); }
 async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? null; await renderPage(); }
 
@@ -171,7 +171,7 @@ async function connect() {
   } finally { connecting = false; }
 }
 function updateInstanceBar() {
-  const select = $('active-instance'); replace(select, state.instances.map(item => element('option', { value: item.id, selected: item.id === state.instanceId }, `${item.name ?? item.id}${item.loaded ? '' : ' · 未加载'}${item.active ? ' · 默认' : ''}`)));
+  const select = $('active-instance'); replace(select, state.instances.map(item => element('option', { value: item.id, selected: item.id === state.instanceId, disabled: item.archivedAt != null || item.clearedAt != null || Boolean(item.clearStatus) }, `${item.name ?? item.id}${item.clearedAt != null || item.clearStatus === 'cleared' ? ' · 已清除' : item.clearStatus ? ' · 清除未完成' : item.archivedAt != null ? ' · 已归档' : item.loaded ? '' : ' · 未加载'}${item.active ? ' · 默认' : ''}`)));
   if (!state.instances.length) select.append(element('option', { value: '' }, '尚无实例'));
   select.disabled = !state.instances.length;
   const selected = state.instances.find(item => item.id === state.instanceId); $('instance-root').textContent = selected?.memoryRoot ?? state.status?.memoryRoot ?? '未配置目录'; $('instance-root').title = $('instance-root').textContent;
@@ -187,7 +187,7 @@ async function navigate(page, view = null) {
 async function renderPage() {
   for (const cleanup of [...pageCleanups]) cleanup();
   const [title, , description] = pages[state.page];
-  $('page-title').textContent = viewTitles[state.view] ?? title; $('page-description').textContent = state.view ? ({ chat: '选择连接方式后，按步骤完成接入。', media: '设置只作用于当前人格；创作使用已保存的服务。', settings: '按需要调整这一项，保存后生效。', memory: '查看已保留的内容，回忆与记忆变化仍由人格自己决定。' }[state.page] ?? description) : description;
+  $('page-title').textContent = viewTitles[state.view] ?? title; $('page-description').textContent = ({ 'instances': '分别管理当前、其它和已归档的人格，清除前核对文本资料范围。', 'user-guide': '了解初次认识、记忆、休息和日常操作。', 'self-profile': '初始想法与当前自我描述分别保存，资料可以慢慢确定。' }[state.view] ?? (state.view ? ({ chat: '选择连接方式后，按步骤完成接入。', media: '设置只作用于当前人格；创作使用已保存的服务。', settings: '按需要调整这一项，保存后生效。', memory: '查看已保留的内容，回忆与记忆变化仍由人格自己决定。' }[state.page] ?? description) : description));
   const back = $('page-back'); back.hidden = !state.view && !routeParents[state.page]; back.textContent = '返回' + (viewTitles[state.trail.at(-1)?.view] ?? pages[state.trail.at(-1)?.page ?? routeParents[state.page] ?? state.page]?.[0] ?? '上一页');
   document.querySelectorAll('[data-page]').forEach(node => { node.classList.toggle('active', node.dataset.page === (routeParents[state.page] ?? state.page)); if (node.dataset.page === (routeParents[state.page] ?? state.page)) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current'); });
   replace($('page-actions'));
@@ -196,7 +196,8 @@ async function renderPage() {
   try {
     state.status = await request('status'); updateInstanceBar();
     let content;
-    if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('启用或选择人格', () => navigate('settings', 'instances'), 'primary'));
+    if (state.view === 'user-guide') content = userGuidePage();
+    else if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('启用或选择人格', () => navigate('settings', 'instances'), 'primary'));
     else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage, tasks: tasksPage })[state.page]();
     if (generation !== state.generation) return;
     replace($('page-content'), content); if (pageScrollRequested) { document.querySelector?.('.app-shell')?.scrollIntoView?.({ block: 'start', behavior: 'instant' }); pageScrollRequested = false; } $('last-updated').textContent = '上次读取 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
@@ -247,6 +248,17 @@ function stat(label, value, sub, icon, usage) {
 }
 async function overviewPage() {
   const status = state.status, runtime = status.runtime ?? {}, capacity = status.capacity ?? {}, jobs = runtime.jobCounts ?? {};
+  const instanceId = state.instanceId, generation = state.generation;
+  const alive = () => state.instanceId === instanceId && state.page === 'overview' && state.generation === generation;
+  const savedStyle = status.config?.conversationStyle ?? 'short_chat';
+  const conversationStyle = element('select', { id: 'conversation-style', class: 'inline-choice', 'aria-label': '交流节奏' }, [['short_chat', '自然短聊'], ['balanced', '按内容决定'], ['detailed', '完整展开']].map(([value, label]) => element('option', { value, selected: savedStyle === value }, label)));
+  conversationStyle.addEventListener('change', async event => {
+    const input = event.currentTarget, value = input.value; input.value = savedStyle;
+    if (!alive() || value === savedStyle) return; input.disabled = true;
+    try { await request('config.update', { instanceId, config: { conversationStyle: value } }); if (alive()) { toast('交流偏好已保存。'); await renderPage(); } }
+    catch (error) { if (alive()) showError(error); }
+    finally { if (input.isConnected) input.disabled = false; }
+  });
   const persistent = capacity.persistentChars ?? capacity.longTermChars?.used, persistentLimit = capacity.longTermTargetChars ?? capacity.longTermChars?.limit;
   const hot = capacity.hotChars ?? capacity.tempChars?.used, hotLimit = capacity.tempTargetChars ?? capacity.tempChars?.limit;
   const gaps = runtime.memoryGapCounts?.unresolved ?? runtime.memoryGaps?.filter(item => !item.resolvedAt).length;
@@ -262,19 +274,105 @@ async function overviewPage() {
       element('p', {}, sleeping ? '相续正在休息，期间的来信会保留。叫醒后，由它决定如何回应。' : '可以接收来信，是否回应由相续决定。')),
       sleeping ? button('现在叫醒', () => control('wake'), 'secondary') : null),
     element('div', { class: 'setting-row' }, element('div', { class: 'setting-copy' }, element('label', { class: 'setting-title', for: 'proactive-allowed' }, '允许主动找我聊天'),
-      element('p', {}, '允许相续自主选择时机开口；关闭后仍可接收来信。')), proactive));
+      element('p', {}, '允许相续自主选择时机开口；关闭后仍可接收来信。')), proactive),
+    element('div', { class: 'setting-row' }, element('div', { class: 'setting-copy' }, element('label', { class: 'setting-title', for: 'conversation-style' }, '交流节奏'),
+      element('p', {}, '这是表达偏好，复杂内容仍可展开。分次补充可能增加模型调用，不保证每次发多条。')), conversationStyle));
   replace($('page-actions'));
   const controls = element('div', { class: 'row-actions' }, button('查看完整运行态', () => inspectDocument('state.get', {}, '完整运行状态'), 'secondary compact'), button('整理一批', () => control('consolidate'), 'secondary compact'));
   if (state.view === 'runtime') return element('div', {}, element('div', { class: 'stats-grid' }, stat('长期记忆', number(persistent), '上限 ' + number(persistentLimit) + ' 字符'), stat('临时资料', number(hot), '上限 ' + number(hotLimit) + ' 字符')),
     kv({ '当前状态': labels[runtime.sleep?.state] ?? '未知', '唤醒方式': ({ at_time: '相续选择的时间', consolidation_complete: '所选整理完成后', explicit_wake: '等你叫醒' })[runtime.sleep?.wakeCondition] ?? '尚未选择', '计划唤醒': date(runtime.sleep?.wakeAt), '下次判断': date(runtime.schedule?.nextCheckAt), '来源缺口': number(gaps), '接入会话': number(status.agents?.length), '排队整理': number(jobs.queued ?? 0), '物理占用': number(capacity.physicalBytes) + ' bytes' }), controls,
     status.agents?.length ? card('已接入的会话', '', status.agents.map(agent => kv({ '会话': agent.sessionId, '关系': personName(agent.personId), '渠道': agent.channelId }))) : empty('还没有接入人格会话', '回到 DSH 对话，选择“相续人格”预设即可开始。'));
-  return element('div', {}, daily,
+  return element('div', {}, onboardingHint(), daily,
     !status.agents?.length ? element('p', { class: 'getting-started' }, '在 DSH 对话中选择“相续人格”预设，即可开始聊天。') : null,
     destinations(destination('了解相续', '它如何描述自己，以及留下的性格与习惯。', () => navigate('persona')),
       destination('独立任务与资料', '查看委派出去的任务和完整结果。', () => navigate('tasks')),
-      destination('运行与用量', '查看记忆容量、会话接入和当前运行状态。', () => openSection('runtime'))));
+      destination('运行与用量', '查看记忆容量、会话接入和当前运行状态。', () => openSection('runtime')),
+      destination('使用说明', '从初次认识到记忆、休息和可选功能。', () => openSection('user-guide'))));
 }
+const selfFields = [
+  ['name', '名字'], ['pronouns', '称呼与代词'], ['gender', '性别表达'], ['ageDescription', '设定或外观年龄'],
+  ['birthday', '设定生日'], ['background', '背景设定'], ['selfDescription', '自我描述'],
+];
+const selfModeLabels = { together: '一起确定', autonomous: '由相续选择', unset: '暂不设置' };
+function selfValues(value) { return Object.fromEntries(selfFields.filter(([key]) => typeof value?.[key] === 'string' && value[key].trim()).map(([key, label]) => [label, value[key]])); }
+function onboardingHint() {
+  const summary = state.status.selfProfile;
+  if (summary?.mode !== 'unset' || summary.onboardingAcknowledged !== false) return null;
+  const instanceId = state.instanceId, generation = state.generation;
+  const alive = () => state.instanceId === instanceId && state.page === 'overview' && state.generation === generation;
+  return element('section', { class: 'onboarding-hint', 'aria-label': '初次使用提示' },
+    element('div', { class: 'setting-copy' }, element('h2', {}, '先认识一下，也可以直接聊天'), element('p', {}, '可以一起确定名字与初始形象，或留给相续选择。暂不设置也不影响相处。')),
+    element('div', { class: 'row-actions' }, button('设置初始资料', () => navigate('persona', 'self-profile'), 'secondary'),
+      button('以后再说', async () => { if (!alive()) return; try { await request('self.update', { instanceId, patch: { mode: 'unset', onboardingAcknowledged: true }, expectedVersion: summary.version }); } catch (error) { if (alive()) throw error; return; } if (alive()) await renderPage(); }, 'link'),
+      button('先看使用说明', () => openSection('user-guide'), 'link')));
+}
+async function selfProfilePage() {
+  const instanceId = state.instanceId, generation = state.generation;
+  const alive = () => state.instanceId === instanceId && state.page === 'persona' && state.view === 'self-profile' && state.generation === generation;
+  const profile = await request('self.get');
+  const mode = field('self-mode', '初始身份怎么确定？', profile.mode ?? 'unset', { choices: [['together', '一起确定'], ['autonomous', '由相续选择'], ['unset', '暂不设置']], hint: '保存的是相处的起点，不要求人格一直照着设定表演。所有资料都可以留空。' });
+  const inputs = Object.fromEntries(selfFields.map(([key, label]) => [key, field('self-initial-' + key, key === 'selfDescription' ? '你想给相续的一点初始想法' : label, profile.initial?.[key] ?? '', { multiline: ['selfDescription', 'background'].includes(key), placeholder: key === 'name' ? '可以建议一个名字，也可以让相续自己取' : key === 'selfDescription' ? '例如初次想怎样认识彼此。可以留空。' : undefined })]));
+  const initialForm = element('div', { class: 'self-initial-fields' }, inputs.name.wrapper, inputs.selfDescription.wrapper,
+    disclosure({}, element('summary', {}, '更多身份资料'), element('div', { class: 'form-grid' }, inputs.pronouns.wrapper, inputs.gender.wrapper, inputs.ageDescription.wrapper, inputs.birthday.wrapper), inputs.background.wrapper),
+    element('p', { class: 'subtle-note' }, '这一组资料合计最多 2,400 个字符。年龄与生日按你的描述保存，不据此规定性格、成熟程度或成长速度。背景设定与实际共同经历分别保留。'));
+  const modeNote = element('p', { class: 'subtle-note' });
+  function updateMode() {
+    initialForm.hidden = mode.input.value !== 'together';
+    modeNote.hidden = mode.input.value === 'together';
+    modeNote.textContent = mode.input.value === 'autonomous' ? '由相续选择或暂时保持未定。已有的初始想法仍保留，不会因为切换方式而删除。' : '先保留空白，随时可以回来补充，也可以直接在聊天中认识彼此。已有资料不会因此被清空。';
+  }
+  mode.input.addEventListener('change', updateMode); updateMode();
+  const save = button('保存初始资料', async () => {
+    if (!alive()) return;
+    const patch = { mode: mode.input.value, onboardingAcknowledged: true };
+    if (patch.mode === 'together') {
+      patch.initial = Object.fromEntries(selfFields.map(([key]) => [key, inputs[key].input.value]));
+      if (Object.values(patch.initial).reduce((sum, text) => sum + Array.from(text).length, 0) > 2400) throw new Error('初始资料合计不能超过 2,400 个字符，请保留最想表达的部分。');
+    }
+    try { await request('self.update', { instanceId, patch, expectedVersion: profile.version }); }
+    catch (error) { if (alive()) throw error; return; }
+    if (!alive()) return;
+    toast('初始资料已保存。相续的当前自我描述保持独立。'); await renderPage();
+  }, 'primary', { dataset: { action: 'save-self-profile' } });
+  const current = selfValues(profile.current), initial = selfValues(profile.initial);
+  const currentSection = card('当前自我描述', '这是当前保存的自我资料。你提出的初始想法不会自动覆盖这里。',
+    Object.keys(current).length ? kv(current) : element('p', { class: 'muted' }, '当前自我档案还没有描述。已有的身份基调仍然保留；不需要为了填满这里而生成资料。'));
+  const history = Array.isArray(profile.history) ? profile.history : [];
+  const historyPanel = disclosure({}, element('summary', {}, '查看过去的资料与保存信息'),
+    kv({ '当前资料版本': profile.version, '初始化方式': selfModeLabels[profile.mode] ?? '尚未选择', '自我档案首次保存': profile.createdAt ? date(profile.createdAt) : '尚未保存或旧资料未记录', '最近更新': profile.updatedAt ? date(profile.updatedAt) : '尚未保存' }),
+    element('p', { class: 'subtle-note' }, '首次保存时间只说明这份自我档案何时建立，不是人格的生日或年龄。历史保留有容量上限。'),
+    history.length ? element('div', { class: 'record-list' }, history.map(item => element('article', { class: 'record' }, element('h3', {}, '资料版本 ' + (item.version ?? '—')), Object.keys(selfValues(item.current)).length ? kv(selfValues(item.current)) : element('p', { class: 'muted' }, '这一版还没有当前自我描述。'), disclosure({}, element('summary', {}, '查看这一版的初始想法与来源'), data(item))))) : element('p', { class: 'muted' }, '当前没有已保留的旧版本。'));
+  return element('div', { class: 'self-profile-page' }, currentSection,
+    card('你想怎样认识相续', '你可以建议一个起点，是否接受以及后续怎样理解自己，由相续在相处中决定。',
+      mode.wrapper, initialForm, modeNote, element('div', { class: 'form-footer' }, element('p', {}, '这里只保存资料，不会调用模型，也不直接改写当前自我描述。'), save)),
+    Object.keys(initial).length ? disclosure({}, element('summary', {}, '查看已保存的初始想法'), kv(initial)) : null,
+    destinations(destination('身份基调', '查看随着经历形成的共同人格描述。', () => openSection('anchor')),
+      destination('形象档案', '管理外貌描述与参考图，保持作品中的形象连续。', () => navigate('media', 'identity')),
+      destination('声音', '查看可用音色及当前的声音选择。', () => navigate('chat', 'voice')),
+      destination('使用说明', '了解身份、记忆、主动联系和日常操作。', () => openSection('user-guide'))), historyPanel);
+}
+const userGuideTopics = [
+  ['开始相处', '在 DSH 对话中选择“相续人格”预设即可开始。可以直接打招呼，也可以在“了解相续 → 自我档案”给出名字、称呼或形象方面的初始想法；由相续选择或暂不设置都可以。初始资料与当前采用的自我描述分别保存。'],
+  ['同一个人格，新的聊天窗口', '继续使用同一人格实例时，新开窗口不等于重新创建人格。不同实例分别保存资料。换了平台、昵称或群聊环境，可能需要提醒相续你希望被怎样称呼；账号和称呼是线索，不保证一定认对人。'],
+  ['记住、想起与检索', '接收记录、当前回忆和长期整理是不同过程。本次没有提起过去，不代表资料已经被删除；尚未检索、检索未找到、记忆库为空和读取失败也不同。记什么、怎样理解和何时回忆，由相续决定。你可以在“记忆”里查看已保留内容，并在理解有误时直接纠正。'],
+  ['短句与分条表达', '在“相处 → 交流节奏”选择自然短聊、按内容决定或完整展开。这是表达偏好，不是字数、条数或频率硬限制，复杂内容仍可展开。可以分次表达，但不保证每次发多条；每次补充可能增加一次模型调用。分不分条、说几句、是否继续，由相续结合实际交流决定；不会按消息条数要求人格进化。各渠道以实际能力和逐条回执为准。'],
+  ['允许主动找我聊天', '开启表示允许相续自主选择联系时机，不保证每天或每隔多久发一次。关闭后仍可接收你的来信；是否回应、如何相处仍由相续判断。'],
+  ['休息与现在叫醒', '休息期间来信会保留。相续可以选择时间、整理完成或等你叫醒；“现在叫醒”结束这次休息，让相续看到保留的来信。唤醒可能调用模型，醒来后是否以及怎样回应仍由相续决定。'],
+  ['模型与思考强度', '模型和思考强度会影响等待时间、用量与复杂判断，相关后台整理也可能沿用对应会话的选择。强度不是感情深度，也不保证越高越自然；计费按当前模型服务和实际用量计算。'],
+  ['形象、声音与身份资料', '形象与声音可以按需设置或交由相续选择。头像年龄、虚拟设定年龄、设定生日与实际建立时间分别看待；音色不会自动决定性别、性格或成熟程度。当前形象参考与旧作品分别保留。'],
+  ['连接 QQ、微信与其他平台', '在“连接”里按实际驱动扫码或配置兼容桥。连接支持范围、你的许可和当前可用状态分别查看；接通账号不等于能使用平台全部功能。当前官方 QQ 为 Bot 接入，微信官方接入为私聊；普通微信群、朋友圈或实时通话不能仅靠扫码获得。'],
+  ['容量、备份与遗忘', '记忆有存储与上下文容量限制，不承诺永久保存全部原话。你可以查看容量、创建备份或明确遗忘；实际作用范围以操作说明和回执为准。文本备份不包含外部图片、视频、平台凭据或供应商保存的副本。用于生成的材料会交给你选择的模型服务处理。'],
+  ['认错人、记错事或表达不自然', '可以直接告诉相续你的感受，说明哪一处理解不对。若反复声称刚认识你、把未检索说成完全没有记忆，或身份资料前后矛盾，可记录使用的人格实例、模型、原话与时间；在“设置 → 数据维护与诊断”查看实际状态，再区分表达问题与技术故障。'],
+];
+function userGuidePage() {
+  return element('article', { class: 'user-guide' },
+    element('p', { class: 'guide-intro' }, '相续是一位可以保留经历、形成持续自我描述的 AI 伙伴。你可以从一句话开始，身份资料和可选功能以后再慢慢确定。'),
+    element('p', { class: 'subtle-note' }, '这份说明介绍产品怎样使用，不是要求人格必须变成某种性格。查看说明不会启动模型、登录账号或执行管理操作。'),
+    ...userGuideTopics.map(([title, text]) => element('section', { class: 'reading-section' }, element('h2', {}, title), element('p', {}, text))));
+}
+
 async function personaPage() {
+  if (state.view === 'self-profile') return selfProfilePage();
   let section = 'anchor', personaGeneration = 0;
   const content = element('div'), modules = [['anchor', '身份基调'], ['axes', '性格维度'], ['facets', '性格与偏好'], ['signatures', '常见反应'], ['habits', '习惯'], ['retired', '过去的描述']];
   const tabs = element('div', { class: 'module-tabs' });
@@ -295,7 +393,7 @@ async function personaPage() {
     node.append(button('查看当前模块原始字段', () => inspectDocument('persona.get', { section }, title), 'link')); replace(content, node);
   }
   for (const [key, label] of modules) tabs.append(button(label, () => load(key), 'module-tab', { class: `module-tab${key === section ? ' active' : ''}`, dataset: { section: key } }));
-  await load(section); return element('div', {}, tabs, content);
+  await load(section); return element('div', {}, destinations(destination('自我档案', '初始想法与当前自我描述分别保存，名字与形象可以慢慢确定。', () => openSection('self-profile'))), tabs, content);
 }
 function memoryRecord(record, open) {
   const role = record.recordType === 'deep' ? '人格记忆' : record.role ?? record.sourceRole ?? record.srcRefs?.[0]?.sourceRole;
@@ -402,28 +500,126 @@ const configGroups = [
 ];
 const getPath = (object, path) => path.split('.').reduce((value, key) => value?.[key], object);
 function setPath(object, path, value) { const keys = path.split('.'); let node = object; for (const key of keys.slice(0, -1)) node = node[key] ??= {}; node[keys.at(-1)] = value; }
+function instanceLifecyclePanel(instances, { alive }) {
+  async function refresh(preferId, { useActualSelection = false } = {}) {
+    try {
+      const latest = await request('instances.list', { instanceId: undefined });
+      if (!alive()) return;
+      const items = instanceItems(latest), nextId = preferId ?? (useActualSelection ? latest.activeInstanceId ?? latest.selectedInstanceId : state.instanceId) ?? latest.selectedInstanceId ?? latest.activeInstanceId ?? items[0]?.id ?? null;
+      const viewed = items.find(item => item.id === nextId);
+      const people = viewed?.loaded ? getItems(await request('people.list', { instanceId: nextId, pageSize: 100 })) : [];
+      if (!alive()) return;
+      state.instances = items; state.instanceId = nextId; state.people = people; state.budgetDraft = null; state.memoryPerson = null;
+      const nextGeneration = state.generation + 1; await renderPage();
+      if (state.instanceId === nextId && state.generation === nextGeneration) return { instanceId: nextId, loaded: Boolean(viewed?.loaded) };
+    } catch (error) { if (alive()) showError(error); }
+  }
+  async function change(item, action, { title, description, accept = '确认执行', activate = false, guard = alive } = {}) {
+    if (!guard()) return;
+    const confirmation = await confirmOperation({ title, description, preview: { 人格: item.name ?? item.id, 目录: item.memoryRoot }, accept });
+    if (!confirmation || !guard()) return;
+    let result;
+    try { result = await request(action, { instanceId: item.id, ...(action === 'instances.restore' ? { activate: true } : {}) }); }
+    catch (error) { if (guard()) showError(error); return; }
+    if (!guard()) return;
+    if ($('detail-dialog').open) { state.detailGeneration++; $('detail-dialog').close(); }
+    toast('操作已返回，正在读取人格的实际状态。');
+    await refresh(activate ? result?.activeInstanceId ?? item.id : undefined);
+  }
+  const archive = (item, guard = alive) => change(item, 'instances.archive', { title: '归档这个人格', description: '停止使用并保留这个人格的资料，之后可以恢复。归档不是独立备份；不会清除记忆、作品或退出共享平台账号，当前有工作时由后端检查。', accept: '归档并保留资料', guard });
+  async function clearPreview(item) {
+    if (!alive()) return;
+    let preview;
+    try { preview = await request('instances.clearPreview', { instanceId: item.id }); }
+    catch (error) { if (alive()) showError(error); return; }
+    if (!alive()) return;
+    if (preview?.instanceId !== item.id || preview.memoryRoot !== item.memoryRoot || typeof preview.requiresName !== 'string' || !preview.requiresName || typeof preview.confirmationToken !== 'string' || !preview.confirmationToken || typeof preview.version !== 'string' || !/^[a-f0-9]{64}$/.test(preview.version) || !Number.isSafeInteger(preview.files) || preview.files < 0 || !Number.isSafeInteger(preview.bytes) || preview.bytes < 0 || !Array.isArray(preview.scope) || !preview.scope.length || preview.scope.some(value => typeof value !== 'string')) throw new Error('无法核实清除预览，尚未发起清除。请重新读取人格管理。');
+    const generation = startDetail('清除人格文本资料前，请核对', 'PERSONA / CLEAR');
+    const panelAlive = () => alive() && state.detailGeneration === generation && $('detail-dialog').open;
+    const name = field('instance-clear-name', '输入人格名称以确认', '', { placeholder: preview.requiresName, hint: '请完整输入：' + preview.requiresName });
+    const note = element('p', { class: 'subtle-note' }, '尚未输入名称，不会执行清除。'), resultArea = element('div'); let clearing = false;
+    const submit = element('button', { type: 'button', class: 'button danger', disabled: true, dataset: { action: 'confirm-clear-instance' }, onclick: async () => {
+      if (!panelAlive() || clearing || name.input.value !== preview.requiresName) return;
+      clearing = true; name.input.disabled = true; submit.disabled = true;
+      replace(resultArea, notice('正在执行这次明确清除。关闭页面不会撤回已经提交的操作；不要重复提交。'));
+      try {
+        const result = await request('instances.clear', { instanceId: item.id, confirmationToken: preview.confirmationToken, typedName: name.input.value });
+        if (!alive()) return;
+        if (state.detailGeneration === generation) { state.detailGeneration++; $('detail-dialog').close(); }
+        toast(result?.status === 'partial' ? '清除未完成，旧实例保持不可加载。请重新预览再决定是否继续。' : '清除请求已返回，正在读取实际结果。'); await refresh();
+      } catch (error) { if (panelAlive()) replace(resultArea, notice(errorText(error), 'error')); }
+      finally { clearing = false; name.input.disabled = false; if (panelAlive()) updateName(); }
+    } }, '确认清除人格文本资料');
+    function updateName() { submit.disabled = clearing || name.input.value !== preview.requiresName; note.textContent = name.input.value === preview.requiresName ? '名称已匹配。点击下方按钮才会提交清除。' : '名称尚未匹配，不会执行清除。'; }
+    name.input.addEventListener('input', updateName);
+    replace($('detail-content'), notice('清除会删除下列已登记的人格文本资料，完成后旧实例不能再次加载；如果只是暂时不用，建议先归档保留。', 'warning'),
+      kv({ '人格名称': preview.name, '记忆目录': preview.memoryRoot, '实际文件数': typeof preview.files === 'number' ? number(preview.files) : Array.isArray(preview.files) ? number(preview.files.length) : '以预览范围为准', '实际大小': typeof preview.bytes === 'number' ? number(preview.bytes) + ' bytes' : '以预览范围为准' }),
+      element('section', { class: 'reading-section' }, element('h3', {}, '本次实际清除范围'), element('ul', {}, preview.scope.map(text => element('li', {}, text)))),
+      Array.isArray(preview.excluded) && preview.excluded.length ? element('section', { class: 'reading-section' }, element('h3', {}, '本次不会清除'), element('ul', {}, preview.excluded.map(text => element('li', {}, text)))) : null,
+      notice('DSH旧会话日志、其它实例、共享平台账号不在清除范围。目录外作品、独立任务原件和外部备份也保留；未知文件会阻止清除并保留。归档、切换或取消此页都不会删除资料。'), name.wrapper, note, resultArea);
+    replace($('detail-footer'), item.archivedAt == null && item.clearStatus !== 'partial' ? button('先归档保留', () => archive(item, panelAlive), 'secondary') : null,
+      button('取消，保留资料', () => { state.detailGeneration++; $('detail-dialog').close(); }, 'secondary'), submit);
+  }
+  function record(item) {
+    const cleared = item.clearedAt != null || item.clearStatus === 'cleared', partial = item.clearStatus === 'partial' || item.clearStatus === 'clearing', archived = item.archivedAt != null;
+    const actions = cleared ? element('div', {}, element('p', { class: 'subtle-note' }, '人格文本资料已清除，旧实例不能再次加载或恢复。需要继续相处时，可以新建人格，后台会使用新的独立目录。'), button('新建人格', () => openSection('new-persona'), 'primary compact')) : partial ? element('div', {}, notice('上次清除尚未完成，旧实例保持不可加载。请重新预览实际剩余范围，再决定是否继续。', 'warning'), button('重新预览并继续清除', () => clearPreview(item), 'danger compact')) : element('div', { class: 'row-actions' },
+      archived ? button('恢复并使用', () => change(item, 'instances.restore', { title: '恢复并使用这个人格', description: '恢复这份保留的资料并加载使用，当前其他人格会停止使用。旧会话日志仍保留；请为恢复后的人格新开会话。', accept: '恢复并使用', activate: true }), 'primary compact') : [
+        button(item.loaded ? '停用实例' : '加载实例', () => change(item, item.loaded ? 'instances.unload' : 'instances.load', { title: item.loaded ? '停用这个人格实例' : '加载这个人格实例', description: item.loaded ? '停止接收、调度和写入，保留原资料。进行中的对话或整理会阻止切换。' : '加载所选目录的资料，并停用当前其他活动实例；不迁移、合并或清除旧资料。', activate: !item.loaded }), item.loaded ? 'secondary compact' : 'primary compact'),
+        !item.active ? button('切换到此实例', () => change(item, 'instances.select', { title: '切换人格实例', description: '停止当前实例并加载所选人格，作为后续新会话使用的实例。资料分别保留，不迁移、合并或删除；忙碌时由后端拒绝切换。', activate: true }), 'secondary compact') : null,
+        button('归档保留', () => archive(item), 'secondary compact')],
+      button('清除文本资料…', () => clearPreview(item), 'danger compact'));
+    return element('article', { class: `record instance-card${item.id === state.instanceId ? ' active' : ''}`, dataset: { instanceId: item.id } },
+      element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.name ?? item.id), cleared ? tag('已清除') : partial ? tag('清除未完成') : archived ? tag('已归档') : pill(item.loaded ? 'running' : 'paused')),
+      element('div', { class: 'record-meta' }, item.active && !cleared && !partial && !archived ? tag('新会话默认人格') : null, item.id === state.instanceId ? tag('正在查看') : null, item.retiredSessionCount ? tag('已关闭旧会话接入 ' + number(item.retiredSessionCount) + ' 个') : null),
+      element('div', { class: 'instance-path' }, item.memoryRoot), archived ? element('p', { class: 'subtle-note' }, '归档保留资料，可恢复后新开会话继续使用。') : null, actions);
+  }
+  const items = instanceItems(instances), groups = [
+    ['当前人格', items.filter(item => item.clearedAt == null && !item.clearStatus && item.archivedAt == null && (item.active || item.loaded))],
+    ['其它人格', items.filter(item => item.clearedAt == null && !item.clearStatus && item.archivedAt == null && !item.active && !item.loaded)],
+    ['已归档', items.filter(item => item.clearedAt == null && !item.clearStatus && item.archivedAt != null)],
+    ['清除未完成', items.filter(item => item.clearedAt == null && ['partial', 'clearing'].includes(item.clearStatus))],
+    ['已清除', items.filter(item => item.clearedAt != null || item.clearStatus === 'cleared')],
+  ];
+  const panel = element('div', {}, groups.filter(([, list]) => list.length).map(([title, list]) => element('section', { class: 'reading-section' }, element('h3', {}, title), element('div', { class: 'record-list' }, list.map(record)))),
+    items.length ? null : empty('还没有登记的人格', '可以从一个新的独立目录开始。'));
+  panel.refreshLifecycle = refresh; return panel;
+}
+
 async function settingsPage() {
   const instanceId = state.instanceId, generation = state.generation, alive = () => state.instanceId === instanceId && state.page === 'settings' && state.generation === generation;
   const container = element('div'), current = state.status.available ? await request('config.get') : null;
   if (!state.view) return element('div', {}, destinations(
-    destination('人格与记忆库', '启用或切换人格，设置启动时的加载方式。', () => openSection('instances')),
+    destination('人格管理', '切换、归档保留或明确清除人格，分别管理已有资料。', () => openSection('instances')),
     destination('交流与时间', '时区，以及整理机会的呈现方式。', () => openSection('general')),
     destination('整理资料助手', '可选的资料保真建议，由人格决定是否采纳。', () => openSection('assistant'), current ? current.reviewAssistant?.enabled ? '已开启' : '已关闭' : '加载后查看'),
     destination('容量与模型预算', '按需要调整资源上限，通常保持默认即可。', () => openSection('budgets')),
-    destination('数据维护与诊断', '备份、恢复、校验以及运行诊断。', () => navigate('maintenance'))));
+    destination('数据维护与诊断', '备份、恢复、校验以及运行诊断。', () => navigate('maintenance')),
+    destination('使用说明', '查看日常操作、记忆方式与可选功能的说明。', () => openSection('user-guide'))));
   if (state.view === 'assistant') return current ? reviewAssistantSettings(current) : empty('先启用当前人格', '启用后即可保存这套人格的助手设置。');
   const instances = await request('instances.list', { instanceId: undefined }); state.instances = instanceItems(instances); updateInstanceBar();
-  const instanceCards = state.instances.map(item => element('article', { class: `record instance-card${item.id === state.instanceId ? ' active' : ''}` }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.name ?? item.id), pill(item.loaded ? 'running' : 'paused')), element('div', { class: 'record-meta' }, item.active ? tag('新会话默认实例') : null, item.id === state.instanceId ? tag('正在查看') : null), element('div', { class: 'instance-path' }, item.memoryRoot), element('div', { class: 'row-actions' },
-    button(item.loaded ? '停用实例' : '加载实例', async () => { const result = await mutate(item.loaded ? 'instances.unload' : 'instances.load', { instanceId: item.id }, { title: item.loaded ? '停用这个人格实例' : '加载这个人格实例', description: item.loaded ? '停止此实例的接收、调度和写入，释放写者；保留原记忆目录。进行中的对话或整理会阻止切换。' : '从已登记目录加载实例，恢复其真实持久状态，并停用当前其他实例。一个目录只允许一个活动写者。', preview: { instanceId: item.id, memoryRoot: item.memoryRoot }, refresh: false }); if (result) { if (!item.loaded) state.instanceId = result.activeInstanceId ?? item.id; await connect(); } }, item.loaded ? 'secondary compact' : 'primary compact'),
-    !item.active ? button('切换到此实例', async () => { const result = await mutate('instances.select', { instanceId: item.id }, { title: '切换人格实例', description: '停用当前实例并加载所选目录，作为后续人格会话使用的实例。不迁移或合并旧记录；对话或整理执行中会拒绝切换。', preview: { instanceId: item.id, memoryRoot: item.memoryRoot }, refresh: false }); if (result) { state.instanceId = result.activeInstanceId ?? item.id; await connect(); } }, 'secondary compact') : null)));
+  const instanceCards = instanceLifecyclePanel(instances, { alive });
+  async function setupInstance(args, options, action = 'instances.load') {
+    if (!alive()) return;
+    const confirmation = await confirmOperation({ ...options, preview: args });
+    if (!confirmation || !alive()) return;
+    let result;
+    try { result = await request(action, { instanceId: action === 'instances.create' ? undefined : instanceId, ...args }); }
+    catch (error) { if (alive()) showError(error); return; }
+    if (!alive()) return;
+    toast('操作已返回，正在读取实际状态。');
+    const refreshed = await instanceCards.refreshLifecycle(result?.activeInstanceId ?? result?.selectedInstanceId ?? args.instanceId, { useActualSelection: action === 'instances.create' });
+    if (action === 'instances.create' && refreshed?.loaded && state.instanceId === refreshed.instanceId && state.page === 'settings' && state.view === 'new-persona') await navigate('persona', 'self-profile');
+  }
   const newName = field('instance-new-name', '显示名称', '', { placeholder: '例如 日常相续' }), newRoot = field('instance-new-root', '记忆目录绝对路径', '', { placeholder: 'C:\\Users\\...\\persona-new', hint: '使用独立目录。更换实例不等于移动、合并或覆盖旧数据；实例编号由服务生成。' });
   const autoLoad = element('input', { type: 'checkbox', id: 'instance-auto-load', checked: Boolean(instances.autoLoad) });
-  if (['instances', 'startup', 'new-instance'].includes(state.view)) {
-    if (state.view === 'instances') container.append(card('已保存的人格', '启用决定哪套记忆实际运行；查看不会自动切换。', element('div', { class: 'record-list' }, instanceCards)), destinations(
+  if (['instances', 'startup', 'new-instance', 'new-persona'].includes(state.view)) {
+    if (state.view === 'instances') container.append(card('已保存的人格', '切换只改变使用对象；归档保留资料；清除需要先核对实际范围并输入名称。', instanceCards), destinations(
+      destination('新建人格', '只需填写名称，自动使用新的独立资料目录。', () => openSection('new-persona')),
       destination('启动时加载', '设置下次启动是否自动启用已选人格。', () => openSection('startup')),
-      destination('使用其他记忆库', '打开已有的独立目录，或新建一套人格数据。', () => openSection('new-instance'))));
-    if (state.view === 'startup') container.append(card('启动时加载', '保存时会重新加载已选人格，并记住下次启动的选择；不会删除或合并记忆。', element('label', { class: 'field-checkbox' }, autoLoad, '下次启动 DSH 时自动启用已选人格'), button('保存并加载', async () => { const target = instances.selectedInstanceId ?? instances.activeInstanceId; if (!target) throw new Error('请先登记并选择实例。'); const result = await mutate('instances.load', { instanceId: target, autoLoad: autoLoad.checked }, { title: '应用启动加载方式', description: '本次会重新加载已选实例，并保存下次启动是否自动加载的选择。关闭自动加载不会删除数据，当前这次仍会加载。', preview: { instanceId: target, autoLoad: autoLoad.checked }, refresh: false }); if (result) { state.instanceId = target; await connect(); } }, 'secondary')));
-    if (state.view === 'new-instance') container.append(card('使用其他记忆库', '选择独立目录。已有数据会加载；空目录会初始化新的人格，不合并旧记忆。', newName.wrapper, newRoot.wrapper, button('登记并加载', async () => { if (!newRoot.input.value.trim()) throw new Error('请填写绝对记忆目录。'); const result = await mutate('instances.load', { name: newName.input.value.trim() || '相续人格', memoryRoot: newRoot.input.value.trim() }, { title: '登记并加载实例', description: '打开所选目录的记忆，或在不存在数据的独立目录初始化新实例；当前其他实例会停用。不复制测试经历，也不自动合并已有记忆。', preview: { name: newName.input.value || '相续人格', memoryRoot: newRoot.input.value }, refresh: false }); if (result) { state.instanceId = result.activeInstanceId ?? result.selectedInstanceId; await connect(); } }, 'primary')));
+      destination('使用其他记忆库', '高级：手工选择已有或新的绝对目录。', () => openSection('new-instance'))));
+    if (state.view === 'new-persona') { const name = field('persona-new-name', '人格名称', '', { placeholder: '例如 日常相续', hint: '只填写名称即可。资料使用新的独立目录，不复制或合并旧人格。' }); container.append(card('新建人格', '创建后可以一起确定初始资料，也可以直接开始聊天。', name.wrapper, button('创建并使用', async () => { if (!alive()) return; const value = name.input.value.trim(); if (!value) throw new Error('请填写人格名称。'); await setupInstance({ name: value, autoLoad: true }, { title: '创建并使用新的人格', description: '为这个名字建立独立资料目录并加载。当前人格停止使用但保留资料，不从旧人格或旧会话复制经历。' }, 'instances.create'); }, 'primary'))); }
+    if (state.view === 'startup') container.append(card('启动时加载', '保存时会重新加载已选人格，并记住下次启动的选择；不会删除或合并记忆。', element('label', { class: 'field-checkbox' }, autoLoad, '下次启动 DSH 时自动启用已选人格'), button('保存并加载', async () => { if (!alive()) return; const target = instances.selectedInstanceId ?? instances.activeInstanceId, item = state.instances.find(value => value.id === target); if (!target) throw new Error('请先登记并选择实例。'); if (item?.archivedAt != null || item?.clearedAt != null || item?.clearStatus) throw new Error('请先在“人格管理”选择可用的人格；归档、已清除或清除未完成的实例不能直接加载。'); await setupInstance({ instanceId: target, autoLoad: autoLoad.checked }, { title: '应用启动加载方式', description: '本次会重新加载已选实例，并保存下次启动是否自动加载的选择。关闭自动加载不会删除数据，当前这次仍会加载。' }); }, 'secondary')));
+    if (state.view === 'new-instance') container.append(card('使用其他记忆库', '选择独立目录。已有数据会加载；空目录会初始化新的人格，不合并旧记忆；已清除的旧目录不能重用。', newName.wrapper, newRoot.wrapper, button('登记并加载', async () => { if (!alive()) return; if (!newRoot.input.value.trim()) throw new Error('请填写绝对记忆目录。'); await setupInstance({ name: newName.input.value.trim() || '相续人格', memoryRoot: newRoot.input.value.trim() }, { title: '登记并加载实例', description: '打开所选目录的记忆，或在不存在数据的独立目录初始化新实例；当前其他实例会停用。不复制测试经历，也不自动合并已有记忆。' }); }, 'primary')));
     return container;
   }
   if (!current) { container.append(notice('当前查看的实例未加载，加载后可修改其技术配置。', 'warning')); return container; }
