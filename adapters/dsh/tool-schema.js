@@ -15,6 +15,18 @@ const target = nullable({ type: 'object', required: ['channelId', 'sessionId', '
 const recheckOn = { type: 'array', items: { type: 'string', enum: ['new_message', 'environment_change', 'explicit_wake'] } };
 const cursor = { type: 'string', description: 'Use a returned nextCursor with the same other arguments to read the same result, without executing the operation again.' };
 export const TOOL_PARAMETERS = {
+  persona_task: {
+    action: { type: 'string', enum: ['inspect', 'create', 'list', 'status', 'read', 'cancel', 'retain', 'archive_file'] },
+    prompt: { type: 'string', maxLength: 16000 }, title: { type: 'string', maxLength: 128 },
+    workspace: { type: 'string', maxLength: 4096, description: 'Optional actual authorized working directory; omission uses the current session workspace. It does not grant new filesystem access.' },
+    taskId: { type: 'string', maxLength: 256 }, documentId: { type: 'string', maxLength: 256 },
+    path: { type: 'string', maxLength: 4096, description: 'A real file in this task workspace to snapshot; no arbitrary URL or new filesystem grant.' },
+    pageCursor: { type: 'string', maxLength: 2048, description: 'Continue a task listing; distinct from the bounded tool-result cursor.' },
+    offset: { type: 'integer', minimum: 0, description: 'Unicode character offset within the selected document; continue with its returned nextOffset. cursor only pages a single tool response.' }, maxChars: { type: 'integer', minimum: 1, maximum: 8000 },
+    documentOffset: { type: 'integer', minimum: 0 }, documentLimit: { type: 'integer', minimum: 1, maximum: 20 },
+    expectedSha256: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+    limit: { type: 'integer', minimum: 1, maximum: 20 }, refresh: { type: 'boolean' }, cursor,
+  },
   persona_media: {
     action: { type: 'string', enum: ['inspect', 'identity', 'update_identity', 'assets', 'asset', 'generate', 'job', 'jobs', 'cancel_job'] },
     kind: { type: 'string', enum: ['image', 'video'] }, prompt: { type: 'string', maxLength: 4000 },

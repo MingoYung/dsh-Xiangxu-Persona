@@ -1,3 +1,5 @@
+import { isDelegationMetadata } from './delegation/isolation.js';
+
 /** Pure translation of the DSH event envelope. No personality decisions. */
 export const AUTOMATIC_SOURCE_KINDS = new Set([
   'runtime-context', 'agent-instructions', 'skill-catalog', 'agent-message',
@@ -21,6 +23,7 @@ export function textOf(content) {
 }
 
 export function normalizeDshEvent(session, event, options = {}) {
+  if (options.executionRole === 'worker') return { dialogue: null, hot: [], ignored: 'delegation_worker_session' };
   const hostMessage = event?.type === 'assistant/message' ? event.data?.message : event?.type === 'user/message' ? event.data : null;
   const messageId = options.sourceEventId ?? hostMessage?.id;
   if (!session?.id || !event || (!messageId && !Number.isSafeInteger(event.seq))) return { dialogue: null, hot: [], ignored: 'missing_stable_source' };
@@ -69,7 +72,8 @@ export function normalizeDshEvent(session, event, options = {}) {
           kind: block.type === 'text' ? 'dialogue' : 'reasoning', content: { mode: 'cached', text: block.text, chars: [...block.text].length }, navigationSummary: null });
       } else if (block?.type === 'tool-call') {
         const text = JSON.stringify({ name: block.name, arguments: block.arguments, callId: block.id });
-        hot.push({ ...actorBase, blockIndex: index, sourceKind, sourceRef: sourceRef(sourceKind, 'assistant', origin), origin,
+        const blockSourceKind = isDelegationMetadata(block) ? 'persona-task:metadata' : sourceKind;
+        hot.push({ ...actorBase, blockIndex: index, sourceKind: blockSourceKind, sourceRef: sourceRef(blockSourceKind, 'assistant', origin), origin,
           kind: 'tool_call', content: { mode: 'cached', text, chars: [...text].length }, navigationSummary: null });
       }
     }
@@ -79,7 +83,8 @@ export function normalizeDshEvent(session, event, options = {}) {
   }
   if (event.type === 'tool/result') {
     const text = JSON.stringify(event.data ?? null);
-    hot.push({ ...base, speakerId: null, sourceKind: 'tool/result', sourceRef: sourceRef('tool/result', 'assistant', 'system'), origin: 'system', kind: 'tool_result',
+    const sourceKind = isDelegationMetadata(event.data) ? 'persona-task:metadata' : 'tool/result';
+    hot.push({ ...base, speakerId: null, sourceKind, sourceRef: sourceRef(sourceKind, 'assistant', 'system'), origin: 'system', kind: 'tool_result',
       content: { mode: 'cached', text, chars: [...text].length }, navigationSummary: null });
   }
   return { dialogue: null, hot, ignored: hot.length ? null : 'not_memory_input' };

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "version": "0.6.0",
+  "status": "passed",
+  "checkedAt": "2026-10-26T05:08:09.348Z",
+  "host": "DSH NEXT 0.2.1-rc.2",
+  "scope": "isolated native settings UI; synthetic archive seed, not real-model evidence",
+  "pages": [
+    {
+      "page": "运行总览",
+      "heading": true,
+      "errors": false
+    },
+    {
+      "page": "共同人格",
+      "heading": true,
+      "errors": false
+    },
+    {
+      "page": "记忆与关系",
+      "heading": true,
+      "errors": false
+    },
+    {
+      "page": "进化与变更",
+      "heading": true,
+      "errors": false
+    },
+    {
+      "page": "设置与加载",
+      "heading": true,
+      "errors": false
+    },
+    {
+      "page": "聊天渠道与语音",
+      "heading": true,
+      "errors": false
+    },
+    {
+      "page": "形象与创作",
+      "heading": true,
+      "errors": false
+    },
+    {
+      "page": "维护与诊断",
+      "heading": true,
+      "errors": false
+    },
+    {
+      "page": "任务与资料",
+      "heading": true,
+      "errors": false
+    }
+  ],
+  "task": {
+    "title": "界面验收样本（模拟任务）",
+    "documents": 8,
+    "complete": true
+  },
+  "paging": {
+    "first": [
+      0,
+      4000
+    ],
+    "next": [
+      4000,
+      8000
+    ],
+    "totalUnicodeCharacters": 31000,
+    "pageReplacesPreview": true,
+    "partialNotice": true
+  },
+  "downloads": [
+    {
+      "filename": "中文报告.md",
+      "bytes": 59,
+      "sha256": "403a81f99252b73a29e3f99dc70197194f06e59d78fa3bf08c5d37d79ed5ea2b"
+    },
+    {
+      "filename": "empty.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "capacity": {
+    "default4096": true,
+    "unchangedSaveProducedNoDialog": true,
+    "saved4097AndReadBack": true,
+    "restored4096": true
+  },
+  "consoleErrors": [],
+  "realModelRequests": 0,
+  "realSocialAccounts": 0,
+  "screenshots": [
+    "docs/images/0.6.0-task-overview.png",
+    "docs/images/0.6.0-task-page.png"
+  ],
+  "sourceDigests": {
+    "package.json": "83e364ec513c4d17735e59ea2d6939b5324da08a08d62ce2b94ebaf92c59155d",
+    "scripts/build-ui.mjs": "7ec4a665bdfcb83d78acae50ad031cbbcb9f45fbcd744b790eee3c6f923f7113",
+    "ui/index.html": "ade36b0d4f32b6fad1ab2b101d0ca54e71b3aaf8bab6dbc475450ea7d77cc4b5",
+    "ui/style.css": "444aa28020fa397dbb474ab9af712aca0fcf30f853db6a5b6629a2cb1e1411e5",
+    "ui/app.js": "633dd25df533a86b278ced4059a4e48b86797cc375b4b19d2f332da4d73cb2e3",
+    "ui/client.js": "b79fb49e1e024a8d5aa26e252fe5a281a750962c8dfff808a23cd07cdf95d061"
+  },
+  "cleanup": {
+    "writerLocksRemaining": 0,
+    "mediaWriterLocksRemaining": 0,
+    "taskWriterLocksRemaining": 0,
+    "dedicatedHostRemaining": 0,
+    "instanceUnloadedBeforeStop": true,
+    "hostExit": {
+      "code": 1,
+      "signal": null
+    },
+    "ownedHostTerminatedAfterUnload": true,
+    "productionForceRestarted": false
+  }
+}

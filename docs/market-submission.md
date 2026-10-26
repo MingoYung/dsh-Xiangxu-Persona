@@ -4,7 +4,9 @@
 
 依据：[awesome-dsh-plugin 贡献指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)，核对日期2026-10-26。
 
-插件根package.json同时声明dsh.bundle和dsh.client；cordis.patch.yml提供协调器与可选相续人格预设，ui/client.js是预构建的宿主客户端。0.5.0沿用DSH原生主题，提供八页设置、陪伴工具隔离、QQ官方Bot／微信iLink扫码、已有OneBot高级接入、实际能力权限、本机语音、形象档案及可选图片／视频服务。图片／视频默认关闭，视频需用户实际可运行的ComfyUI工作流。QQ扫码不是桌面个人账号接管；微信官方只支持私聊，朋友圈、实时通话和官方WAV语音发送未实现。当前没有本人真实扫码、真实平台往返或付费媒体生成验收。个人移动端应用／网页与Telegram仍留接口，不在本版发布入口。安装不要求新增前端依赖或自动启动模型，不复制宿主或其它插件。
+插件根package.json同时声明dsh.bundle和dsh.client；cordis.patch.yml提供协调器与可选相续人格预设，ui/client.js是预构建的宿主客户端。0.6.0沿用DSH原生主题，提供九页设置、persona_task自主委派、独立工作预设与任务档案、陪伴工具范围、QQ官方Bot／微信iLink扫码、已有OneBot高级接入、实际能力权限、本机语音、形象档案及可选图片／视频服务。图片／视频默认关闭，视频需用户实际可运行的ComfyUI工作流。QQ扫码不是桌面个人账号接管；微信官方只支持私聊，朋友圈、实时通话和官方WAV语音发送未实现。当前没有本人真实扫码、真实平台往返或付费媒体生成验收。个人移动端应用／网页与Telegram仍留接口，不在本版发布入口。安装不要求新增前端依赖或自动启动模型，不复制宿主或其它插件。
+
+自主委派使用独立新会话和xiangxu-task-worker预设，任务过程／完整报告在外置档案保留，主会话按需读取并自主retain；委派封套的kind:user不会自动成为人类对话。用户已有DSH权限继续执行，工作预设不是额外OS沙箱；任务不规定人格派发或记忆频率。使用及资源边界见[自主委派与任务档案](delegation-and-task-archives.md)。
 
 收录草稿在[market/MingoYung__dsh-Xiangxu-Persona.yml](../market/MingoYung__dsh-Xiangxu-Persona.yml)。以后申请时，将该文件放到收录仓库的data/plugins/同名位置并发起PR；无需手工改收录仓库生成的README。草稿使用memory分类，只描述已实现功能，不宣称长期人格质量保证。
 
@@ -24,6 +26,8 @@ npm test
 npm run check
 node scripts/check-docs.mjs
 npm pack --dry-run
+# Windows已安装DSH时，可另跑隔离的真实宿主确定性委派专项
+node scripts/dsh-delegation-integration.mjs
 ```
 
-GitHub Actions使用Node24，在Windows与Linux分别运行不调用真实模型的测试。实际DSH UI、模拟平台/模型的渠道专项、已生成WAV及此前真实模型验证的范围、失败与未测边界见[管理界面说明](management-ui.md)和[渠道接入](channel-integration.md)。本轮真实回执以0.5.0版本记录为准，0.4.1及更早数字保持历史含义。不要在公开issue、日志或交付中上传记忆库、模型凭据、浏览器owner URL或认证cookie。
+GitHub Actions使用Node24，在Windows与Linux分别运行不调用真实模型的测试。实际DSH UI、模拟平台/模型的渠道专项、已生成WAV及此前真实模型验证的范围、失败与未测边界见[管理界面说明](management-ui.md)和[渠道接入](channel-integration.md)。本轮回执以0.6.0版本记录为准：完整回归495/495、真实DSH加固定fixture专项35/35，仓库可复用脚本另一次35/35；真实语言模型调用数为0。原生GUI只按实际检查记录，不预填结果。0.5.0的422项／85＋22项及0.4.1和更早数字保持历史含义。不要在公开issue、日志或交付中上传记忆库、模型凭据、浏览器owner URL或认证cookie。

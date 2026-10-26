@@ -8,10 +8,11 @@ const pages = {
   evolution: ['进化与变更', 'EVOLUTION', '跟踪已选整理作业、未完成进度和已保留的变更历史。'],
   settings: ['设置与加载', 'SETTINGS', '管理实例、加载状态和技术资源；保存配置不会要求人格必须改变。'],
   chat: ['聊天渠道与语音', 'CHANNELS & VOICE', '在熟悉的聊天软件里继续交流，让同一个人格走进私聊和群聊。'],
+  tasks: ['任务与资料', 'TASKS', '查看独立任务、按需读取完整资料；记什么仍由相续自己决定。'],
   media: ['形象与创作', 'IDENTITY & MEDIA', '保存同一个形象，选择性接入图片和视频创作服务。'],
   maintenance: ['维护与诊断', 'MAINTENANCE', '查看可用诊断、校验和备份恢复结果。写入操作都作用于明确选择的实例。'],
 };
-const labels = { awake: '清醒', sleeping: '休息中', queued: '待执行', running: '执行中', paused: '已暂停', committed: '已提交', completed: '已完成', prepared: '已准备', failed: '失败', invalidated: '已失效', no_work: '无工作', delivered: '已交付', pending: '待处理', cancelled: '已取消', unknown: '结果未知', deferred: '已暂缓', submitted: '已提交到服务', revoked: '来源已撤销' };
+const labels = { starting: '准备启动', awake: '清醒', sleeping: '休息中', queued: '待执行', running: '执行中', paused: '已暂停', committed: '已提交', completed: '已完成', prepared: '已准备', failed: '失败', invalidated: '已失效', no_work: '无工作', delivered: '已交付', pending: '待处理', cancelled: '已取消', unknown: '结果未知', deferred: '已暂缓', submitted: '已提交到服务', revoked: '来源已撤销' };
 const pretty = value => typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 const number = value => typeof value === 'number' && Number.isFinite(value) ? new Intl.NumberFormat('zh-CN').format(value) : '—';
 const date = value => typeof value === 'number' && Number.isFinite(value) ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '未选择时间';
@@ -159,7 +160,7 @@ async function renderPage() {
     state.status = await request('status'); updateInstanceBar();
     let content;
     if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('前往设置与加载', () => navigate('settings'), 'primary'));
-    else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage })[state.page]();
+    else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage, tasks: tasksPage })[state.page]();
     if (generation !== state.generation) return;
     replace($('page-content'), content); $('last-updated').textContent = '上次读取 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
   } catch (error) { if (generation === state.generation) { showError(error); replace($('page-content'), card('暂时无法读取', '', notice(errorText(error), 'error'), button('重新读取', renderPage, 'secondary'))); } }
@@ -697,6 +698,52 @@ async function mediaPage() {
     card('作品与参考图库', '只在查看时读取作品。主参考与临时缓存分开保存，资产容量以实际用量为准。', view.usage ? kv({ '资产用量': view.usage.assetBytes == null ? '按实际清单查看' : number(view.usage.assetBytes) + ' bytes', '总容量': number(limits.assetBytes) + ' bytes' }) : null, gallery,
       button('导出资产清单', async () => { const manifest = await mediaRequest('media.exportManifest'); startDetail('资产备份清单'); replace($('detail-content'), notice('此处是文件名、摘要与参考关系清单。原始图片／视频仍需一并备份；清单不包含 API 密钥。'), data(manifest)); replace($('detail-footer'), button('复制完整清单', () => copyText(JSON.stringify(manifest, null, 2)), 'secondary'), button('关闭', () => $('detail-dialog').close(), 'secondary')); }, 'secondary')));
   return container;
+}
+
+async function tasksPage() {
+  const instanceId = state.instanceId, view = await request('tasks.inspect'), container = element('div', { class: 'section-stack' }), listing = element('div');
+  const current = () => state.page === 'tasks' && state.instanceId === instanceId;
+  async function readDocument(taskId, doc) {
+    const generation = startDetail(doc.name ?? '任务资料', 'TASK / ARCHIVE'); let offset = 0, sha = doc.sha256;
+    async function page(next = 0) {
+      const result = await request('tasks.read', { instanceId, taskId, documentId: doc.documentId, offset: next, maxChars: 4000, expectedSha256: sha });
+      if (generation !== state.detailGeneration || !current()) return; offset = result.offset; sha = result.sha256;
+      replace($('detail-content'), kv({ '资料': doc.kind ?? '档案', '指纹': sha, '已读位置': result.encoding === 'utf8' ? `${number(result.offset)} → ${number(result.nextOffset)} / ${number(result.totalChars)} 字符` : `${number(doc.bytes)} bytes` }),
+        result.encoding === 'utf8' ? element('pre', { class: 'data-preview' }, result.text) : notice('这是二进制资料，请下载原文件查看。'),
+        result.complete ? notice('已到原文末尾。') : notice('当前仅显示这一页；完整资料仍保留，下一页继续读取。'));
+      replace($('detail-footer'), offset > 0 ? button('上一页', () => page(Math.max(0, offset - 4000)), 'secondary') : null,
+        !result.complete && result.encoding === 'utf8' ? button('下一页', () => page(result.nextOffset), 'primary') : null,
+        button('下载原文件', () => request('ui.task.download', { instanceId, taskId, documentId: doc.documentId }), 'secondary'),
+        button('返回任务', () => openTask(taskId), 'secondary'), button('关闭', () => $('detail-dialog').close(), 'secondary'));
+    }
+    await page();
+  }
+  async function openTask(taskId, documentOffset = 0) {
+    const generation = startDetail('独立任务', 'TASK'), result = await request('tasks.get', { instanceId, taskId, documentOffset, documentLimit: 20 });
+    if (generation !== state.detailGeneration || !current()) return;
+    const summary = typeof result.summary === 'string' ? result.summary : result.summary?.text;
+    replace($('detail-content'), kv({ '任务': result.title || result.taskId, '状态': labels[result.status] ?? result.status, '任务编号': result.taskId, '创建': date(result.createdAt), '资料数': number(result.documentCount), '资料已收齐': result.capture?.complete ? '是' : '尚未确认', '实际错误码': result.capture?.errorCode ?? result.errorCode ?? '无' }),
+      summary ? element('div', {}, element('h3', {}, '结果摘要'), element('pre', { class: 'data-preview' }, summary), result.summary?.truncated ? notice('摘要不是完整报告，完整结果在下方资料中。') : null) : null,
+      result.capture?.complete === false ? notice('任务状态与资料完整性分别记录；当前仍有未收齐资料或来源缺口。', 'warning') : null,
+      element('h3', {}, '原始任务、过程与产物'), (result.documents ?? []).length ? element('div', { class: 'record-list' }, result.documents.map(doc => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, doc.name ?? doc.documentId), tag(doc.kind)), element('p', { class: 'small muted' }, `${number(doc.bytes)} bytes · ${doc.sha256}`), button('按页查看', () => readDocument(taskId, doc), 'secondary compact'), button('下载原文件', () => request('ui.task.download', { instanceId, taskId, documentId: doc.documentId }), 'secondary compact')))) : empty('暂无已归档资料', '只呈现实际保存的数据。'));
+    replace($('detail-footer'), result.nextDocumentOffset != null ? button('下一页资料', () => openTask(taskId, result.nextDocumentOffset), 'secondary') : null,
+      documentOffset > 0 ? button('返回首批资料', () => openTask(taskId), 'secondary') : null,
+      button('刷新实际状态', () => openTask(taskId, documentOffset), 'secondary'),
+      !['completed', 'failed', 'cancelled', 'revoked'].includes(result.status) ? button('取消此任务', async () => { const confirmed = await confirmOperation({ title: '取消独立任务', description: '停止这个任务后续执行，并保留已产生的资料。已经执行的工作目录修改不会自动回滚。', preview: { taskId }, accept: '取消任务' }); if (!confirmed) return; await request('tasks.cancel', { instanceId, taskId }); await openTask(taskId); }, 'secondary') : null,
+      button('关闭', () => $('detail-dialog').close(), 'secondary'));
+  }
+  let listGeneration = 0, pageNumber = 1;
+  async function load(cursor) {
+    const generation = ++listGeneration, result = await request('tasks.list', { instanceId, limit: 10, ...(cursor ? { cursor } : {}) }); if (!current() || generation !== listGeneration) return;
+    pageNumber = cursor ? pageNumber + 1 : 1;
+    replace(listing, getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(task => element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, task.title || task.taskId), tag(labels[task.status] ?? task.status)), element('p', { class: 'small muted' }, `${date(task.createdAt)} · ${number(task.documentCount)} 份资料 · ${task.capture?.complete ? '资料已收齐' : '资料完整性待确认'}`), button('查看任务与资料', () => openTask(task.taskId), 'secondary compact')))) : empty('尚无独立任务', '相续可以自主选择委派。浏览此页不会创建任务或调用模型。'), paginator(result, load, { pageNumber }));
+  }
+  container.append(card('自主委派与独立资料', '相续决定是否委派、读哪些结果、记住什么。子任务使用独立工作预设，详细过程单独保存；查询资料本身不会写入人格记忆。',
+    view.host?.available === false ? notice('当前宿主的原生派发服务尚不可用；已有档案仍可查看。', 'warning') : null,
+    kv({ '任务记录': `${number(view.usage?.tasks ?? view.tasks)} / ${number(view.limits?.maxTasks)}`, '资料用量': `${number(view.usage?.bytes ?? view.usedBytes)} / ${number(view.limits?.maxArchiveBytes)} bytes` }), button('刷新任务列表', () => load(), 'secondary'), listing));
+  const labelsByKey = { maxTasks: '最多保留的任务记录数', maxArchiveBytes: '全部任务资料容量（bytes）', maxTaskBytes: '单个任务容量（bytes）', maxDocumentBytes: '单份资料容量（bytes）' }, fields = Object.entries(labelsByKey).map(([key, label]) => ({ key, ...field('tasks-limit-' + key, label, view.limits?.[key], { type: 'number', required: true }) }));
+  container.append(element('details', { class: 'advanced-section' }, element('summary', {}, '高级：任务资料容量'), element('div', { class: 'advanced-body' }, element('p', { class: 'small muted' }, '容量满时明确报告并停止新增资料，不自动淘汰完整原件或防重收据。并发、深度与执行权限沿 DSH 已有设置；此处不规定人格派发或成长频率。'), element('div', { class: 'field-grid' }, fields.map(item => item.wrapper)), button('保存任务容量', async () => { const changed = Object.fromEntries(fields.map(item => [item.key, Number(item.input.value)]).filter(([key, value]) => value !== view.limits?.[key])); if (!Object.keys(changed).length) return toast('容量没有变化。'); await mutate('tasks.configureLimits', { instanceId, ...changed }, { title: '修改任务资料容量', description: '仅调整存储技术上限；不会清理资料、派发任务或要求人格改变。', preview: changed, accept: '保存容量' }); }, 'secondary'))));
+  await load(); return container;
 }
 
 async function maintenancePage() {

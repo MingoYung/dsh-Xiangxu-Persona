@@ -1,6 +1,6 @@
 # 人格与记忆字段契约：persona-memory/3
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.5.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.6.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -126,7 +126,7 @@ interface RecentEntry {
 
 适配器必须核对真实`sourceKind`与content块，不能仅因事件叫`user/message`或消息`role:user`就判为真人。实际历史可能在该角色下承载runtime-context、agent-instructions、插件状态卡、agent-message等自动注入；这些不投影为C1用户原话，也不成为“用户要求/自述”的人格证据。C1只收实际参与者的对话正文，混合块逐块分类，不能将真实正文与注入一起全收或全丢。`contentClass:"participant_dialogue"`是适配器已经完成分类的断言，不是照抄消息role；具体源kind与块类型须在P0通过真人输入、自动注入、代理消息和工具事件对照核验。`origin:"system"`只用于系统来源材料，不能通过user角色伪装真人对话。
 
-`hot.jsonl` 是这次梳理的完整过程工作区：可以缓存可用的完整对话、思考与工具原件，也可用宿主 trace 指针分页读取。`navigationSummary` 只是导航，不能冒称完整上下文。`host_trace.available:false` 时记录降级，不伪造当时的推理。未知对象的临时过程进入 `staging/hot.jsonl`。
+`hot.jsonl` 是普通主人格对话供本次梳理的过程工作区：可以缓存可用的对话、思考与工具原件，也可用宿主 trace 指针分页读取。0.6.0独立任务的工程正文保存在任务档案；主会话任务控制／结果仅留可信导航元数据，不能通过trace自动展开原文；人格显式retain的实际选段仍可进入原有自主整理。`navigationSummary` 只是导航，不能冒称完整上下文。`host_trace.available:false` 时记录降级，不伪造当时的推理。未知对象的临时过程进入 `staging/hot.jsonl`。
 
 原始聊天活动段追加，梳理提交后可通过轮转/重写删除人格决定不再保留的原文；这不是永久事件溯源库。近期视图优先存引用，读取时再取正文，避免为了“10 万字视图”永久复制第二份全文。若实施选择缓存副本，副本也计入实例容量。
 
@@ -580,7 +580,7 @@ token必须用实际模型对应的统一计数方法。S6宿主历史、工具�
 实现版本0.1.0仍使用persona-memory/3。以下增加的是已约定能力的表达与恢复元数据，没有增加人格资格或行为干预：
 
 - identityPlan 在同一控制工具表达自主认人。new可由程序生成稳定人物键，associate使用人格选择的键和来源，unknown明确保持未知。它不是认证制度；sessionId不自动变人物键。
-- 当前七工具（memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform）可带可选cursor阅读同一次有界结果，返回nextCursor、明确fragment与来源。翻页不重复执行决定/遗忘；游标绑定原参数和结果快照，过期明确报告。memory_forget另支持action:"forget"|"correction"、replacementIds。实际JSON字段使用camelCase needsTarget/needsSelection。
+- 当前八工具（memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task）可带可选cursor阅读同一次有界结果，返回nextCursor、明确fragment与来源。翻页不重复执行决定/遗忘；游标绑定原参数和结果快照，过期明确报告。memory_forget另支持action:"forget"|"correction"、replacementIds。实际JSON字段使用camelCase needsTarget/needsSelection。
 - RequestSnapshot增加tokenAccounting、segments及可选budgetAdjustments。完整时间、时区和真实目标不能被裁掉一半；120段预算不足可在总预算内借用并记理由，总预算放不下时报资源错误。没有模型tokenizer端口时明确估计，provider实际usage另记。稳定协议、工具、宿主历史和输出预留也占完整请求，本实现未证明全DSH请求受精确tokenizer硬限制。
 - RuntimeState增加有界execution：最后路由上下文、pendingControl、pendingWake、pendingEffects、effectReceipts及pendingOffsets。分别保存控制ID、醒来页、决定副作用进度、幂等收据和已实际阅读的Unicode偏移；不保存无限第二份聊天。queued不等于已经阅读/交付，只有匹配实际通知才确认。
 - ConsolidationRun增加inputSlices及记录fragment；未读完原件不越过消费游标。明确遗忘会失效并清除仍冻结着被撤销来源的prepared run，不能重试旧批次复活内容。
@@ -619,9 +619,9 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 有限存储不能保证无限原文永不丢失。保真指真实来源/角色/主体、未读不冒充已读、失败不冒充提交、未消费尾部可续、容量不足可见、仍可用原件可回查。摘要不是原文的可逆编码，原件和外部日志均淘汰后不得声称还能完整还原。[自主整理、容量与补充唤醒验证](../../evolution-and-wake-validation.md)提供本轮实测边界。
 
-## 13. 原生管理界面与操作契约（0.5.0，0.3.0引入）
+## 13. 原生管理界面与操作契约（0.6.0，0.3.0引入）
 
-管理界面以DSH现有Connection的owner认证载体调用persona-memory.manage，不新建网络服务或读取模型密钥。参数action与args使用明确动作白名单；前端八页、主协议、页面/收据上限与操作边界见[相续人格管理界面与验收](../../management-ui.md)。产品与包名改为dsh-Xiangxu-Persona / dsh-xiangxu-persona，预设展示名相续人格；内部presetId persona-memory、schemaVersion persona-memory/3和既有来源ID保留。
+管理界面以DSH现有Connection的owner认证载体调用persona-memory.manage，不新建网络服务或读取模型密钥。参数action与args使用明确动作白名单；前端九页、主协议、页面/收据上限与操作边界见[相续人格管理界面与验收](../../management-ui.md)。产品与包名改为dsh-Xiangxu-Persona / dsh-xiangxu-persona，预设展示名相续人格；内部presetId persona-memory、schemaVersion persona-memory/3和既有来源ID保留。
 
 主动联系开关只切换用户是否允许主动联系，不规定人格必须主动或回复；“现在叫醒”仅睡眠时显示，沿既有explicit_wake路径执行。界面沿用DSH宿主颜色、字体和透明背景，不另设独立主题；内容高度由宿主协调。
 
@@ -635,7 +635,7 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 ## 14. 聊天渠道与本机声音技术契约（0.5.0，0.4.0引入）
 
-这是DSH适配配置；核心schema仍为persona-memory/3，不改变人格决定与成长频率。当前七工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。相续人格预设在普通DSH、IM、主动与唤醒中统一restrict({allow:[]})再仅注册这些工具，不暴露子agent派发、Harness、编码或文件工具；其它DSH预设不变。插件内部创建／恢复接收通道的ctx.agents.create/resume保留，不等于人格可以派发子agent。
+这是DSH适配配置；核心schema仍为persona-memory/3，不改变人格决定与成长频率。当前八工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task。相续人格预设在普通DSH、IM、主动与唤醒中仍restrict({allow:[]})再注册这八工具；persona_task提供自主派发及按需回收，实际子任务显式使用独立工作预设。主会话不直接恢复裸派发、Harness或编码工具；其它DSH预设不变。内部创建／恢复接收通道的ctx.agents.create/resume保留。独立任务与原件来源契约见第16节。
 
 ### 14.1 平台配置、环境与owner管理
 
@@ -700,3 +700,37 @@ MEDIA_LIMITS当前值：imageBytes=8388608、videoBytes=67108864、assetBytes=26
 owner传输API uploadBegin／uploadChunk／uploadFinish／uploadCancel、readAssetChunk只在认证管理路径；每块raw<=32768，上传图<=8MiB、2个在途／5分钟、完成回执16条／5分钟；下载<=64MiB、单资产缓存60秒。父桥核同资产、顺序、长度和完整SHA再Blob下载，iframe仍allow-scripts。通用请求65536、响应2097152字节帽不扩大；原管理明细131072字节帽不变，大工作流不能通过这个UI完整提交时明确拒绝。
 
 明确遗忘同步核心永久meta撤销，撤销相关作业、派生资产与档案历史；每次服务消费／迟到提交核永久撤销，无法确认撤销状态时不假装可读。用户独立导入／明确确认的同一资产依据可单独保留。删除或遗忘清owner缓存；本地清理失败与远程副本／运行状态分别报告。exportManifest仅元数据／相对文件／SHA，不复制作品；文本备份不含外部资产与凭据，完整备份另存作品原文件。操作、容量解释与未测边界见[形象与创作](../../media-and-identity.md)。
+
+
+## 16. 自主委派、任务档案与来源隔离（0.6.0）
+
+persona_task.action=inspect|create|list|status|read|cancel|retain|archive_file。create参数prompt最多16000字符、title最多128字符，workspace是实际已有授权工作目录；requestId由宿主真实session与tool callId构造，不由模型填入。taskId=task-加32位小写十六进制，子会话稳定使用xiangxu-task-键；子预设固定xiangxu-task-worker，明确新上下文，不默认fork陪伴历史。是否委派及任务内容由人格自己选择。
+
+状态含prepared／starting／running／completed／failed／cancelled／unknown／revoked。任务执行status与capture:{afterSeq,complete,errorCode?}表示不同事实；completed不能冒充档案已完整采集。默认persona_task.status返回紧凑card，含documentCount、resultDocumentId和至多120字的summary导航预览，不自动返回完整目录；显式documentOffset／documentLimit时附documents页、documentsComplete和nextDocumentOffset。owner tasks.get仍按其目录分页接口工作；完整报告通过resultDocumentId读取。persona_task.read按Unicode offset／maxChars最多8000字符分页，返回nextOffset和complete；后续文档页传offset=nextOffset，完整性与expectedSha256分别核对。通用工具nextCursor通过cursor续同一次有界结果，list.pageCursor只续任务列表；owner／内部archive.read的nextCursor属于其自身文档读取协议。二进制走owner有界readChunk下载，不塞进模型上下文。
+
+独立档案保留完整委派prompt、实际宿主事件和最终报告；archive_file复制任务工作区内明确文件的当时字节、SHA与指纹，不自动保存整个工程目录或宿主未暴露的内部思考。默认maxTasks=4096、maxArchiveBytes=1073741824、maxTaskBytes=67108864、maxDocumentBytes=67108864，owner可显式configureLimits；分块65536 bytes，任务／总容量及索引元数据帽一起核验。容量不足拒绝新副作用或将未采集尾部明确标为不完整，旧原件和幂等凭据不静默淘汰；增大预算不保证实际磁盘空间。
+
+可信宿主登记worker真实sessionId／parentSessionId／taskId和assistant_delegation来源，不能靠模型消息自报身份。worker即使收到kind:user的原生委派封套，也跳过人格C1／H1。parent任务工具调用和结果的prompt、报告正文、标题／文件名与自由错误文本均不自动进入H1；只留状态、动作、真实任务／资料ID、页范围、完整性等元数据。实时、回放、trace回读沿同一投影；callId来源无法解析时明确sourceResolution:unavailable，原始资料仍按实际保存范围回查。普通主人格回复、思考、其它工具与真实用户原话不被技术话题过滤。
+
+retain从实际资料中选取有界文本片段，保留taskId／documentId／SHA／offset和真实AI资料sourceRef，沿既有captureHot／自主整理进入候选材料；它不是直接写人格、不是必须记住该片段，也不改变任一主观条目的成立门槛。worker没有共享人格写入工具。明确遗忘按原始sourceRefs／recordIds撤销相关任务与材料，旧资料不能在重启、回读或重建时复活；外部宿主日志和其它副本并未因此保证删除。
+
+owner动作tasks.inspect/list/get/read/readChunk/configureLimits/collect/cancel/archiveFile，list/get/read/download不会新派发模型；新增“任务与资料”页（当前共九页）无默认手动create入口。原始派发权限、工作目录访问、网络与shell仍受DSH用户已有权限控制；工作预设的工具范围不是full-access模式下额外的OS沙箱。完整消费者、资源与验证范围见[任务与资料说明](../../delegation-and-task-archives.md)。
+
+
+## 0.6.0 自主委派与任务资料隔离
+
+主人格可自主选择经persona_task委派工程、研究或其它需要的任务，不设必须派发的题型、固定次数或记忆门槛。当前八工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task；原始全局派发／Harness／编码工具仍不直接加入主预设，独立工作预设使用宿主已有工作能力和用户权限。
+
+任务新建独立上下文并显式选择xiangxu-task-worker，可信宿主登记taskId、真实子会话、父会话和AI委派来源后才启动。宿主初始封套即使为source.kind:user，也不会作为真人C1或共享人格H1接收。主会话的任务工具调用及结果仅把安全导航元数据投影进H1；实时、回放和trace回读采用同一投影，不能把指针重新展开成工程原文。普通主人格回复、思考、其它工具和真实用户原话保留原意义。
+
+完整委派prompt、宿主实际可取得的会话事件、工具结果与最终报告保存在独立.tasks档案；显式archive_file将所选工作区产物复制成带SHA的快照，不等于自动备份整个工程目录。默认总容量1GiB、单任务与单资料64MiB、任务收据4096条；owner可在“任务与资料”页高级设置调整资源上限。容量满保留旧资料／幂等凭据并明确报错，未归档尾部标capture.complete:false；删除／关闭任务不假称已经保存全部原件。
+
+父会话通过status/read查询实际状态及按需读取；status默认只返回紧凑任务卡，显式documentOffset／documentLimit才附带资料目录页。retain选择真实资料的有界片段送入既有自主整理，不直接写人格、不要求任何模块变化。资料保留真实AI／工具／网页来源与原件定位，完整性、SHA与分页状态分别报告。明确遗忘通过源依赖撤销相关任务档案，旧原始宿主日志或外部副本不被冒称已删除；unknown任务不因重载自动重新执行。
+
+完整动作、存储范围、权限与验收口径见[自主委派与任务档案](../../delegation-and-task-archives.md)。工作预设的能力限制继承DSH用户权限；full-access模式下没有额外OS沙箱。普通对话是否关注、回复、主动、睡眠以及是否整理的原有契约未变。
+
+### 0.6.0 自动化验证与资源边界
+
+本版最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](../../verification/0.6.0-tests.json)、[两阶段原生SDK](../../verification/0.6.0-sdk-fixture.json)及[静态自主性审查](../../verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](../../management-ui.md)单独维护。
+
+status默认只返回紧凑任务卡和至多120字的导航摘要，不自动展开完整资料目录；明确传documentOffset／documentLimit可分页取目录，正文按documentId和Unicode offset／maxChars读取，返回nextOffset，下页传offset=nextOffset；通用工具cursor只续同一次有界响应，list.pageCursor只续任务列表。UI单次文件下载上限64MiB，不随档案扩容自动提高。archive_file虽按64KiB读取源文件，归档时仍组合受单资料容量限制的整份文件缓冲，内存随该文件大小增长；DSH冷查询也可能内部载入目标子会话日志，不能将逐页采集宣称为宿主恒定RAM。明确遗忘清理插件任务正文并保留永久撤销凭据，清理失败如实报告；它不会删除DSH原始会话历史或用户另存的工程副本。

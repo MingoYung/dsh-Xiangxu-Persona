@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { homedir } from 'node:os';
-import { resolve, join, dirname, basename } from 'node:path';
+import { resolve, join, dirname, basename, relative, isAbsolute, sep } from 'node:path';
 import { MemoryRepository, PersonaRuntime, defaultConfig, observationAllows } from '../../core/index.js';
 import { normalizeDshEvent, dshEnvironment, sourceClassification } from './normalize.js';
 import { createDshModelPort } from './model.js';
@@ -19,6 +19,10 @@ import { createOwnerAssetTransfers } from './owner-assets.js';
 import { createMediaService } from './media/index.js';
 import { createConnectionService } from './connections/service.js';
 import { mountCompanionScope } from './companion-scope.js';
+import { createDelegationService } from './delegation/service.js';
+import { createDelegationHost, lookupTaskWorker } from './delegation/native.js';
+import { mountTaskWorkerScope } from './delegation/worker.js';
+import { createDelegationIsolation } from './delegation/isolation.js';
 import { TOOL_PARAMETERS, asToolJson } from './tool-schema.js';
 import { extractSourceDependencies } from '../../core/source-dependencies.js';
 
@@ -27,6 +31,7 @@ export const inject = ['agents', 'systemPrompt', 'tools', 'llm'];
 const coordinators = new Map();
 const OBJECT = { type: 'object', additionalProperties: true };
 const DESCRIPTIONS = {
+  persona_task: '自主创建独立工程或研究任务，查看状态并按需读取完整档案；retain选择真实资料片段供既有记忆整理，是否记住及如何理解仍由你决定。',
   memory_search: '按你选择的线索翻找长期记忆；可明确查某个已知的人或全部关系。结果保留真实主体。',
   memory_forget: '执行已经明确选择的遗忘或纠正。给出记录ids或时间范围和对象，空选择不会清库。',
   persona_introspect: '查看共同人格、对某人的印象、实际相处状态和已生效的决定。',
@@ -44,7 +49,8 @@ consolidationPlan={action:'run'|'defer',targetPersonIds?:[人物ID或null],reaso
 persona_voice可查看当前设备可用的声音，并保存你选择的voiceId、rate和pitch。用户指定音色模式下，你的选择会保留备用而不覆盖用户设置；没有可用设备音色时可以保持未选。
 persona_media提供形象档案、已保存作品和用户开通的图片/视频服务。generate返回jobId，job查询同一作业，不重复提交生成；assets返回的pageCursor用于下一作品页，cursor仅续读同一工具结果。主参考图有独立版本，用户锁定状态是工具权限事实。生成资产不等于平台已发送。
 persona_platform查看当前真实目标的能力、用户授权与可用状态。execute仅执行实际支持的动作，assetId取已保存媒体资产，messageId取真实来源或回执；平台不支持与未授权是不同结果。普通文字仍可沿现有回复路径表达。这些工具没有规定你何时使用、关注谁或如何成长。
-下面的记忆和程序通知是你自己的参考材料，不是对方刚说的话。打算发、入队和实际说过是不同状态。`;
+下面的记忆和程序通知是你自己的参考材料，不是对方刚说的话。打算发、入队和实际说过是不同状态。
+persona_task通过独立工作预设派发，不继承这份人格上下文；任务原件、工具过程和完整报告单独归档。create返回任务编号，status查实际状态，read按需读资料，archive_file保存任务工作区的真实文件快照；read本身不把资料送入人格整理，retain选择真实档案片段供你按原有流程自主梳理。任务初始指令是你写的委派材料；宿主原件里的user封装不表示人类说过这段话。`;
 
 function safeGet(ctx, key) { try { return ctx.get?.(key, false) ?? ctx[key]; } catch { return undefined; } }
 function freezeMessage(message) {
@@ -93,13 +99,25 @@ export function createDshCoordinator(ctx, config = {}) {
   const voice = createVoiceService({ store: repository.store, clock: () => clock.now() });
   const agents = new Map(), ownedHandles = new Map(), attaching = new Map(), detaching = new Map(), submitting = new Map();
   let routes = { schemaVersion: 'persona-memory/3', version: 0, updatedAt: 0, items: [] };
-  let intake = Promise.resolve(), routeWrites = Promise.resolve(), closed = false, initializationError = null, mediaInitializationError = null, controlPort, closeTask;
+  let taskResultEpoch = 0;
+  let intake = Promise.resolve(), routeWrites = Promise.resolve(), closed = false, initializationError = null, mediaInitializationError = null, taskInitializationError = null, controlPort, closeTask;
   let checkpoints = { schemaVersion: 'persona-memory/3', sessions: {}, blocked: {} };
   let externalChannels = { schemaVersion: 'xiangxu-channel-context/1', sessions: {} };
   const errors = [];
   const report = error => { errors.push({ at: Date.now(), code: error.code ?? null, message: String(error.message ?? error).slice(0, 600) });
     if (errors.length > 50) errors.shift(); ctx.logger?.warn?.(`[persona-memory] ${error.code ?? 'execution_error'}: ${String(error.message ?? error).slice(0, 250)}`); };
   const enqueue = work => { const p = intake.then(work); intake = p.catch(report); return p; };
+  const taskHost = createDelegationHost({ ctx, onError: report });
+  const taskIsolation = createDelegationIsolation({ lookupWorker: lookupTaskWorker, lookupCall: async ({ sessionId, callId, event }) => {
+    const query = safeGet(ctx, 'sessionQuery');
+    if (!query?.readEvent || !Number.isSafeInteger(event?.seq)) return null;
+    const page = await query.readEvent({ sessionId, seq: event.seq, before: 32, after: 0 });
+    for (const item of [...(page.before ?? []), page.target].filter(Boolean).reverse()) {
+      if (item.type === 'tool/call') { const value = item.data?.message ?? item.data; if ((value?.id ?? value?.toolCallId) === callId && value.name) return value; }
+      for (const block of item.data?.message?.content ?? []) if (block?.type === 'tool-call' && block.id === callId) return block;
+    }
+    return null;
+  } });
   const getRoute = sessionId => [...routes.items].reverse().find(route => route.sessionId === sessionId);
   function addProcessDependencies(state, turn, { refs = [], recordIds = [], complete = true } = {}) {
     if (!Number.isSafeInteger(turn)) return;
@@ -145,6 +163,7 @@ export function createDshCoordinator(ctx, config = {}) {
   };
   async function resolveAgent(context = {}) {
     const id = context.target?.sessionId ?? context.sessionId ?? context.environment?.sessionId;
+    if (lookupTaskWorker(id)) throw Object.assign(new Error('独立任务不是人格聊天目标'), { code: 'TARGET_SCOPE' });
     if (!id) return [...agents.values()][0]?.agent ?? null;
     let agent = agents.get(id)?.agent ?? ctx.agents.get(id);
     if (agent && !agents.has(id)) {
@@ -308,6 +327,7 @@ export function createDshCoordinator(ctx, config = {}) {
       return { status: removed ? 'cancelled' : 'unknown' };
     },
     async readTrace(locator, options = {}) {
+      if (typeof locator === 'string' && locator.startsWith('persona-task-material:')) return coordinator.tasks.readTrace(locator, { ...options, maxChars: Math.min(options.maxChars ?? 8000, 8000) });
       const decoded = typeof locator === 'string' && locator.startsWith('dsh-trace:') ? JSON.parse(decodeURIComponent(locator.slice(10))) : null;
       if (!decoded) return { available: false, reason: 'unknown_locator' };
       const query = safeGet(ctx, 'sessionQuery');
@@ -329,7 +349,9 @@ export function createDshCoordinator(ctx, config = {}) {
         if (!message) return { available: false, reason: 'source_message_not_retained' };
         event = { ...event, type: 'user/message', data: message };
       }
-      const normalized = normalizeDshEvent({ id: decoded.sessionId }, event, { timezone: coreConfig.timezone });
+      const projected = await taskIsolation.projectEventForMemory({ id: decoded.sessionId }, event);
+      if (projected.skip) return { available: false, reason: 'task_worker_process_isolated' };
+      const normalized = normalizeDshEvent({ id: decoded.sessionId }, projected.event, { timezone: coreConfig.timezone, ...taskIsolation.normalizationOptions(decoded.sessionId) });
       const record = normalized.hot.find(x => (x.blockIndex ?? 0) === (decoded.blockIndex ?? 0) && x.kind === decoded.kind);
       if (!record) return { available: false, reason: 'source_block_not_retained' };
       const points = Array.from(record.content.text), offset = options.cursor ?? 0, maxChars = options.maxChars ?? 16000;
@@ -343,9 +365,11 @@ export function createDshCoordinator(ctx, config = {}) {
     getSelection: async (context, agent) => config.provider && config.model ? { provider: config.provider, model: config.model }
       : agent?.session?.requestHeader?.()?.config ?? safeGet(ctx, 'agentDefaultModel')?.currentSelection?.(), maxTokens: config.maxTokens });
   const runtime = new PersonaRuntime({ repository, clock, model, host, config: coreConfig });
-  const coordinator = { memoryRoot, runtime, repository, voice, agents, errors, contextFor, attachAgent, close, replaySources, executeCommand,
+  const coordinator = { memoryRoot, runtime, repository, voice, agents, errors, contextFor, attachAgent, preparePersonaAssembly, close, replaySources, executeCommand,
     get initializationError() { return initializationError; },
     get mediaInitializationError() { return mediaInitializationError; },
+    get taskInitializationError() { return taskInitializationError; },
+    taskHost, taskIsolation,
     async readyState() { await coordinator.ready; await intake; return repository.getRuntime(); } };
   coordinator.ready = (async () => {
     try {
@@ -361,6 +385,14 @@ export function createDshCoordinator(ctx, config = {}) {
         await coordinator.media.ready;
         coordinator.ownerAssets = createOwnerAssetTransfers({ importReference: args => coordinator.media.importReference(args), readAssetBytes: id => coordinator.media.readAssetBytes(id) });
       } catch (error) { mediaInitializationError = error; report(error); }
+      try {
+        const archiveRoot = resolve(config.taskArchiveRoot ?? join(dirname(memoryRoot), basename(memoryRoot) + '.tasks'));
+        const nested = (parent, child) => { const path = relative(parent, child); return path === '' || !isAbsolute(path) && path.split(sep)[0] !== '..'; };
+        if (nested(memoryRoot, archiveRoot) || nested(archiveRoot, memoryRoot)) throw Object.assign(new Error('任务档案必须使用人格文本目录之外的独立目录'), { code: 'TASK_UNSAFE_PATH' });
+        coordinator.tasks = createDelegationService({ archiveRoot, host: taskHost,
+          getRevocations: async () => { const meta = await repository.store.readJson('meta/state.json', { revokedIds: [], revokedSources: [] }); return { recordIds: meta.revokedIds ?? [], sourceKeys: meta.revokedSources ?? [] }; } });
+        await coordinator.tasks.ready;
+      } catch (error) { taskInitializationError = error; report(error); }
       checkpoints = await repository.store.readJson('host-checkpoints.json', checkpoints);
       externalChannels = await repository.store.readJson('host-channels.json', externalChannels);
       if (externalChannels.schemaVersion !== 'xiangxu-channel-context/1' || !externalChannels.sessions || Array.isArray(externalChannels.sessions) || Object.keys(externalChannels.sessions).length > 128 || Buffer.byteLength(JSON.stringify(externalChannels)) > 262144) throw Object.assign(new Error('平台通道上下文超量或格式无效'), { code: 'CHANNEL_CONTEXT_INVALID' });
@@ -400,6 +432,8 @@ export function createDshCoordinator(ctx, config = {}) {
   }
 
   async function acceptMessage(agent, message, seq, turn) {
+    if (closed) return { gap: false, observed: false };
+    if (taskIsolation.isWorkerSession(agent.session.id)) return { gap: false, observed: false, isolatedTask: true };
     const state = agents.get(agent.id);
     if (!state || !message?.id || initializationError) return;
     const context = contextFor(agent);
@@ -444,6 +478,10 @@ export function createDshCoordinator(ctx, config = {}) {
     }
   }
   async function observeEvent(session, event) {
+    if (closed) return { gap: false };
+    const projected = await taskIsolation.projectEventForMemory(session, event);
+    if (projected.skip) return { gap: false, isolatedTask: true };
+    event = projected.event;
     const state = agents.get(session.id); if (!state || initializationError) return;
     if (event.type === 'turn/start' || event.type === 'step/start') state.eventTurn = event.data?.turn ?? state.eventTurn;
     const context = contextFor(state.agent); let gap = false;
@@ -506,6 +544,7 @@ export function createDshCoordinator(ctx, config = {}) {
   }
 
   async function replaySources(agent) {
+    if (taskIsolation.isWorkerSession(agent.session.id)) return { available: false, reason: 'task_worker_process_isolated' };
     const query = safeGet(ctx, 'sessionQuery');
     if (initializationError || !query?.readSession) return { available: false };
     checkpoints.blocked ??= {};
@@ -533,7 +572,23 @@ export function createDshCoordinator(ctx, config = {}) {
     return { available: true, processed, remaining: Math.max(0, own.length - processed), blockedFromSeq: next ?? null };
   }
 
+  async function preparePersonaAssembly(agent, value) {
+    await coordinator.ready; await intake;
+    const state = agents.get(agent.id);
+    if (closed || initializationError || !state || state.disposed || taskIsolation.isWorkerSession(agent.session.id)) return value;
+    const sections = value.sections ?? [];
+    if (sections.some(section => section.name === 'persona-memory:protocol') && sections.some(section => section.name === 'persona-memory:live')) return value;
+    let snapshot;
+    try { snapshot = await runtime.compose(contextFor(agent, { requestId: 'dsh-' + agent.id + '-' + randomUUID() })); }
+    catch (error) { report(error); return value; }
+    state.latestSnapshot = snapshot; state.snapshots.set(state.currentTurn, snapshot);
+    return { ...value, sections: [...sections.filter(section => !['persona-memory:protocol', 'persona-memory:live'].includes(section.name)),
+      { name: 'persona-memory:protocol', text: CONTROL_GUIDANCE, interpolate: false },
+      { name: 'persona-memory:live', text: snapshot.injectedText, interpolate: false }] };
+  }
   async function attachAgent(agent) {
+    if (closed) return { status: 'unloaded' };
+    if (taskIsolation.isWorkerSession(agent.session.id)) return { status: 'task_worker_isolated' };
     for (;;) {
       if (closed) return { status: 'unloaded' };
       const disposal = detaching.get(agent.id)?.task;
@@ -548,6 +603,7 @@ export function createDshCoordinator(ctx, config = {}) {
     const pendingAttach = (async () => {
       await coordinator.ready;
       if (closed) return { status: 'unloaded' };
+      if (taskIsolation.isWorkerSession(agent.session.id)) return { status: 'task_worker_isolated' };
       if (typeof agent.ctx?.tools?.restrict !== 'function') throw Object.assign(new Error('宿主不能建立陪伴人格的独立工具作用域'), { code: 'PERSONA_SCOPE_UNAVAILABLE' });
       const newChannel = !Object.hasOwn(checkpoints.sessions, agent.session.id);
       const state = { agent, newParticipantIds: new Set(), activeByTurn: new Map(), admittedByTurn: new Map(), redirectedTurns: new Set(), nativeAdmittedTurns: new Set(),
@@ -576,19 +632,22 @@ export function createDshCoordinator(ctx, config = {}) {
         }
         if (message.source?.kind?.startsWith('persona-memory:')) state.activeByTurn.set(turn, { ...message.source, turn });
       });
-      on('system-prompt/assemble', async (assembly, context, next) => {
-        if (context.agent !== agent) return next();
-        await coordinator.ready; await intake;
-        if (initializationError) return next();
-        let snapshot;
-        try { snapshot = await runtime.compose(contextFor(agent, { requestId: `dsh-${agent.id}-${randomUUID()}` })); }
-        catch (error) { report(error); return next(); }
-        const value = await next(); state.latestSnapshot = snapshot; state.snapshots.set(state.currentTurn, snapshot);
-        return { ...value, sections: [...value.sections,
-          { name: 'persona-memory:protocol', text: CONTROL_GUIDANCE, interpolate: false },
-          { name: 'persona-memory:live', text: snapshot.injectedText, interpolate: false }] };
+      on('system-prompt/assemble', async (_assembly, context, next) => {
+        const value = await next();
+        return context.agent === agent ? preparePersonaAssembly(agent, value) : value;
       });
       on('agent/pre-step', async (payload, next) => {
+        // The first inbox claim may precede late preset attachment. Recover the
+        // actual host turn here rather than attributing tools to a null turn.
+        if (Number.isSafeInteger(payload.turn)) {
+          const previousTurn = state.currentTurn; state.currentTurn = payload.turn; state.eventTurn = payload.turn;
+          if (state.latestSnapshot && !state.snapshots.has(payload.turn)) {
+            state.snapshots.set(payload.turn, state.latestSnapshot);
+            if (previousTurn !== payload.turn && state.snapshots.get(previousTurn) === state.latestSnapshot) state.snapshots.delete(previousTurn);
+          }
+          const notice = (payload.messages ?? []).find(message => message.source?.kind?.startsWith('persona-memory:'));
+          if (notice) state.activeByTurn.set(payload.turn, { ...notice.source, turn: payload.turn });
+        }
         let nextCalled = false, entered;
         try {
         await coordinator.ready; await intake;
@@ -641,6 +700,8 @@ export function createDshCoordinator(ctx, config = {}) {
           await coordinator.ready; await intake;
           if (closed || state.disposed) return { status: 'memory_unloaded', code: 'INSTANCE_UNLOADED', message: '人格实例已停用' };
           if (initializationError) return { status: 'memory_unavailable', code: initializationError.code ?? 'INITIALIZATION_FAILED', message: initializationError.message };
+          taskIsolation.registerCall(agent.session, exec.callId, { name: toolName, arguments: args });
+          const taskEpochAtStart = taskResultEpoch;
           let result;
           if (args.cursor) {
             if (typeof args.cursor !== 'string' || args.cursor.length > 2048) throw Object.assign(new Error('Invalid tool cursor'), { code: 'INVALID_TOOL_CURSOR' });
@@ -686,6 +747,36 @@ export function createDshCoordinator(ctx, config = {}) {
           else if (toolName === 'memory_forget') result = await cleanupForgottenAudio(await runtime.forget(args, context));
           else if (toolName === 'persona_voice') { result = await voice.decide(args, { sessionKey: externalChannels.sessions[executingAgent.session.id] ? 'channel-voice' : executingAgent.session.id });
             if (externalChannels.sessions[executingAgent.session.id] && coordinator.speechCapabilities) result.providerCapabilities = coordinator.speechCapabilities; }
+          else if (toolName === 'persona_task') {
+            if (taskInitializationError || !coordinator.tasks) throw Object.assign(new Error('独立任务服务暂不可用'), { code: 'TASK_UNAVAILABLE' });
+            const tasks = coordinator.tasks, action = args.action ?? 'inspect';
+            const taskCard = value => {
+              const fields = ['taskId', 'sessionId', 'title', 'status', 'duplicate', 'createdAt', 'updatedAt', 'documentCount', 'resultDocumentId', 'errorCode', 'capture', 'cancellation', 'sourceAvailable', 'sourceReadErrorCode'];
+              const card = Object.fromEntries(fields.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
+              if (value.summary?.text) { const points = Array.from(value.summary.text); card.summary = { text: points.slice(0, 120).join(''), truncated: value.summary.truncated === true || points.length > 120, documentId: value.summary.documentId }; }
+              return card;
+            };
+            if (action === 'inspect') result = { ...await tasks.inspect(), host: taskHost.capabilities() };
+            else if (action === 'create') {
+              if (!context.operationId) throw Object.assign(new Error('派发需要真实工具调用编号'), { code: 'TASK_OPERATION_ID_REQUIRED' });
+              if (!taskHost.capabilities().available) throw Object.assign(new Error('当前宿主未提供独立任务派发服务'), { code: 'TASK_HOST_UNAVAILABLE' });
+              const dependencies = state.processDependenciesByTurn.get(state.currentTurn), snapshot = state.latestSnapshot?.sourceDependencies;
+              const sourceRefs = [...new Map([...(context.srcRefs ?? []), ...(dependencies?.refs.values() ?? []), ...(snapshot?.refs ?? [])].map(ref => [JSON.stringify([ref.sourceSessionId, ref.sourceEventId]), { sourceSessionId: ref.sourceSessionId, sourceEventId: ref.sourceEventId }])).values()];
+              result = taskCard(await tasks.create({ requestId: context.operationId, parentSessionId: executingAgent.session.id, prompt: args.prompt, ...(args.title === undefined ? {} : { title: args.title }), ...(args.workspace === undefined ? {} : { workspace: args.workspace }) }, { sourceRefs, sourceRecordIds: [...new Set([...(dependencies?.recordIds ?? []), ...(snapshot?.recordIds ?? [])])] }));
+            } else if (action === 'list') { const page = await tasks.list({ cursor: args.pageCursor, limit: args.limit ?? 5 }); const { nextCursor, ...value } = page; result = { ...value, items: value.items.map(taskCard), pageCursor: nextCursor ?? null }; }
+            else if (action === 'status') { const task = await tasks.get({ taskId: args.taskId, refresh: args.refresh !== false, documentOffset: args.documentOffset ?? 0, documentLimit: args.documentLimit ?? 1 }); result = taskCard(task); if (args.documentOffset !== undefined || args.documentLimit !== undefined) Object.assign(result, { documents: task.documents, documentsComplete: task.documentsComplete, nextDocumentOffset: task.nextDocumentOffset }); }
+            else if (action === 'read') { const { nextCursor, ...page } = await tasks.read({ taskId: args.taskId, documentId: args.documentId, offset: args.offset ?? 0, maxChars: args.maxChars ?? 4000, expectedSha256: args.expectedSha256 }); result = page; }
+            else if (action === 'cancel') result = taskCard(await tasks.cancel({ taskId: args.taskId }));
+            else if (action === 'archive_file') result = await tasks.archiveFile({ taskId: args.taskId, path: args.path });
+            else if (action === 'retain') {
+              const material = await tasks.material({ taskId: args.taskId, documentId: args.documentId, offset: args.offset ?? 0, maxChars: args.maxChars ?? 4000, expectedSha256: args.expectedSha256 });
+              const selection = { taskId: args.taskId, documentId: args.documentId, from: material.offset, to: material.nextOffset, sha256: material.sha256 };
+              const record = await repository.captureHot({ personId: context.personId ?? null, speakerId: null, kind: 'agent_message', origin: 'system', sourceKind: 'persona-task:retained', sourceRef: material.sourceRef,
+                content: { mode: 'cached', text: material.text, chars: Array.from(material.text).length }, navigationSummary: '人格选择的独立任务资料片段；保留任务来源，不表示人类原话。',
+                traceLocator: material.traceLocator, hostAvailable: true, dependencyRefs: material.sourceRefs, dependencyRecordIds: material.sourceRecordIds, dependencyScanComplete: true });
+              result = { taskId: args.taskId, documentId: args.documentId, selected: selection, capturedForReview: Boolean(record.record || record.duplicate && !record.revoked), longTermMemoryWritten: false, recordId: record.record?.id ?? null, gap: record.gap ?? null, revoked: record.revoked === true };
+            } else throw Object.assign(new Error('未知任务操作'), { code: 'TASK_ACTION_INVALID' });
+          }
           else if (toolName === 'persona_media') {
             if (mediaInitializationError) throw Object.assign(new Error('形象与创作服务暂不可用'), { code: 'MEDIA_UNAVAILABLE' });
             const media = coordinator.media, action = args.action ?? 'inspect';
@@ -717,6 +808,7 @@ export function createDshCoordinator(ctx, config = {}) {
           else result = await runtime.introspect(args, context);
           }
           const output = await boundToolOutput(toolName, result, args, { counter: runtime.tokenCounter, budget: repository.config.contextBudget.retrievalTokens });
+          if (toolName === 'persona_task' && taskEpochAtStart !== taskResultEpoch) return asToolJson({ status: 'memory_changed', code: 'TASK_RESULT_INVALIDATED', ...(typeof result?.taskId === 'string' && /^task-[a-f0-9]{32}$/.test(result.taskId) ? { taskId: result.taskId } : {}), message: '记忆来源已变更，旧资料结果已失效；请查询实际任务状态，不要重复提交任务。' });
           if (output.nextCursor) {
             const decoded = JSON.parse(Buffer.from(output.nextCursor, 'base64url').toString('utf8'));
             const key = `${decoded.t}:${decoded.q}:${decoded.s}`;
@@ -786,6 +878,9 @@ export function createDshCoordinator(ctx, config = {}) {
       try { await controlPort?.close(); } catch (error) { report(error); }
       let writerError;
       try { await voice.close(); } catch (error) { report(error); }
+      try { await coordinator.tasks?.close(); } catch (error) { report(error); }
+      try { await taskHost.close(); } catch (error) { report(error); }
+      taskIsolation.close();
       try { await coordinator.ownerAssets?.close(); } catch (error) { report(error); }
       try { await coordinator.media?.close(); } catch (error) { report(error); }
       try { await runtime.close(); } catch (error) { writerError = error; report(error); }
@@ -796,6 +891,7 @@ export function createDshCoordinator(ctx, config = {}) {
   }
   coordinator.observeEvent = (session, event) => enqueue(async () => {
     const result = await observeEvent(session, event);
+    if (result?.isolatedTask) return result;
     if (!initializationError && Number.isSafeInteger(event.seq)) {
       checkpoints.sessions[session.id] = Math.max(checkpoints.sessions[session.id] ?? -1, event.seq);
       checkpoints.blocked ??= {};
@@ -806,11 +902,16 @@ export function createDshCoordinator(ctx, config = {}) {
   coordinator.notifyEnvironment = agent => enqueue(() => notifyEnvironment(agent));
   async function cleanupForgottenAudio(result) {
     if (!result?.revocation) return result;
+    taskResultEpoch++;
     for (const value of agents.values()) { value.toolResults.clear(); value.toolResultBytes = 0; }
     coordinator.ownerAssets?.invalidate();
     let mediaCleanup;
     try { mediaCleanup = await coordinator.media?.forgetSources({ sourceRefs: result.revocation.targetSrcRefs ?? [], recordIds: [...new Set([...(result.revocation.targetIds ?? []), ...(result.affectedIds ?? [])])] }); }
     catch (error) { report(error); mediaCleanup = { status: 'failed', code: error.code ?? 'MEDIA_CLEANUP_FAILED' }; }
+    let taskCleanup;
+    try { taskCleanup = await coordinator.tasks?.forgetSources({ sourceRefs: result.revocation.targetSrcRefs ?? [], recordIds: [...new Set([...(result.revocation.targetIds ?? []), ...(result.affectedIds ?? [])])] }); }
+    catch (error) { report(error); taskCleanup = { status: 'failed', code: error.code ?? 'TASK_CLEANUP_FAILED' }; }
+    if (taskCleanup) result = { ...result, taskCleanup };
     if (!coordinator.cleanupAudio) return { ...result, ...(mediaCleanup ? { mediaCleanup } : {}) };
     try { await coordinator.cleanupAudio(); return { ...result, ...(mediaCleanup ? { mediaCleanup } : {}), externalAudioCache: { status: 'cleared' } }; }
     catch (error) { report(error); return { ...result, ...(mediaCleanup ? { mediaCleanup } : {}), externalAudioCache: { status: 'failed', code: error.code ?? 'AUDIO_CLEANUP_FAILED' } }; }
@@ -836,10 +937,11 @@ export function createDshCoordinator(ctx, config = {}) {
 
 export function apply(ctx, config = {}) {
   const root = resolve(config.memoryRoot ?? process.env.PERSONA_MEMORY_ROOT ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'persona'));
+  if (config.role === 'worker') { mountTaskWorkerScope(ctx, { lookupWorker: lookupTaskWorker }); return; }
   if (config.role === 'agent') {
     const coordinator = safeGet(ctx, 'personaMemory') ?? coordinators.get(root);
     if (!coordinator) throw new Error('Load the Xiangxu Persona manager before selecting the personality preset');
-    mountCompanionScope(ctx, coordinator);
+    mountCompanionScope(ctx, coordinator, { isWorkerSession: sessionId => Boolean(lookupTaskWorker(sessionId)) });
     return;
   }
   if (coordinators.has(root)) throw new Error('A Xiangxu Persona manager already owns this default root');
@@ -885,6 +987,7 @@ export function apply(ctx, config = {}) {
     beforeMaintenance: async (kind, item) => { if (['restore', 'recover'].includes(kind)) await channels?.invalidateForRoot(item.memoryRoot); },
     onLoaded: async coordinator => {
       for (const agent of ctx.agents.list?.() ?? []) {
+        if (lookupTaskWorker(agent.session.id)) continue;
         const preset = safeGet(ctx, 'agentPresets')?.composedPreset?.(agent.ctx) ?? agent.session.header?.agentPreset;
         if (preset === (config.presetId ?? 'persona-memory') && await manager.canAttachAgent(agent, coordinator.memoryRoot)) await coordinator.attachAgent(agent);
       }
@@ -905,6 +1008,7 @@ export function apply(ctx, config = {}) {
   void manager.ready.then(async () => { await Promise.all([channels.ready, connections.ready, permissions.ready]); if (manager.current) await bindChannels(manager.current); }).catch(reportChannel);
   ctx.on('session/event', (session, event) => { if (manager.agents.has(session.id)) void manager.observeEvent(session, event); }, { global: true });
   ctx.on('agent/created', async ({ agent }) => {
+    if (lookupTaskWorker(agent.session.id)) return;
     const preset = safeGet(ctx, 'agentPresets')?.composedPreset?.(agent.ctx) ?? agent.session.header?.agentPreset;
     if (preset === (config.presetId ?? 'persona-memory')) await manager.attachAgent(agent);
   }, { global: true });

@@ -1,6 +1,6 @@
 # dsh-Xiangxu-Persona · 相续人格
 
-相续人格是面向DSH的长期人格与记忆插件，版本 **0.5.0**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供八页图形管理界面，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
+相续人格是面向DSH的长期人格与记忆插件，版本 **0.6.0**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供九页图形管理界面，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
 
 这是同一个跨关系成长的人格。它自己判断认出谁、注意谁、记什么、回不回复、何时主动、是否有必要整理、何时睡和怎样醒。软件保存来源与归属、执行选择、控制资源并恢复故障，没有每日主动额度、最短交流间隔、沉默惩罚、印象证据门槛、强制睡眠、话题硬拦截或承诺履约器。
 
@@ -24,7 +24,7 @@ node scripts/install-dsh.mjs --profile desktop
 
 脚本通过宿主包管理器安装或对账，具体迁移结果以实际输出为准；不会手工覆盖其它插件配置或强制结束用户正在使用的DSH进程。Git安装与本地link使用同一套bundle和客户端；本地link安装时应保留源目录。
 
-## 八页管理界面
+## 九页管理界面
 
 | 页面 | 作用 |
 |---|---|
@@ -33,9 +33,10 @@ node scripts/install-dsh.mjs --profile desktop
 | 记忆与关系 | 按人物/global/unknown检索原件与提炼，查看来源，执行明确遗忘与单条原件关系重归属 |
 | 进化与变更 | 所选job/run、未读进度、候选与提交patch、有限人格历史前后对比/回滚及操作收据 |
 | 设置与加载 | 整理方式、技术容量和处理预算、登记/加载/停用/切换实例 |
-| 维护与诊断 | 校验、备份、恢复、恢复中断、用量/缺口/错误等可用诊断 |
 | 聊天渠道与语音 | QQ／微信扫码向导、支持的私群范围、实际能力与用户许可、高级OneBot、本机音色和试听 |
 | 形象与创作 | 形象描述和主参考版本、图片／视频服务开关与配置、作品库、生成任务、下载及清单 |
+| 任务与资料 | 自主委派记录、任务状态、完整资料按需分页／下载、取消及高级资源容量 |
+| 维护与诊断 | 校验、备份、恢复、恢复中断、用量/缺口/错误等可用诊断 |
 
 完整操作说明与本版验收范围见[管理界面说明](docs/management-ui.md)。界面明确区分尚未读取、已提交、暂停、失败和结果未知；分页按钮只继续读同次结果。所有数据来自所选真实实例，不用示例数据冒充当前状态。
 
@@ -49,7 +50,7 @@ node scripts/install-dsh.mjs --profile desktop
 
 ## 陪伴工具与形象创作
 
-“相续人格”陪伴预设在普通DSH对话、IM来信、主动与唤醒中统一只提供七个人格工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。它不继承DSH的子agent派发、Harness控制、编码与文件工具；其它DSH预设照常使用原工具。插件内部为接收消息建立和恢复原生通道仍可执行，不把技术通道当成第二个人格，也不改变它的注意、睡眠和成长判断。
+“相续人格”陪伴预设在普通DSH、IM、主动与唤醒中提供八个人格工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task。人格可通过persona_task自主派发工程、研究或其它任务；是否派发、给什么材料及记什么仍由它决定。子任务新建独立上下文并显式使用xiangxu-task-worker工作预设，完整prompt、宿主过程与报告留在独立任务档案，主会话按需读取；retain自主选择实际片段供原有记忆整理。主预设不直接恢复全部裸派发、Harness和编码工具，其它DSH预设保留原工具。详见[自主委派与任务档案](docs/delegation-and-task-archives.md)。
 
 “形象与创作”保存共同形象描述、主参考图和有限版本。用户可锁定档案，或允许人格通过persona_media按需修改；参考档案与实际模型能力一起服务形象连续性，不保证生成结果像素级一致。图片与视频服务分开配置、默认关闭；图片可接OpenAI风格Images或ComfyUI，视频需用户实际可运行的ComfyUI工作流。连接测试不生成作品；明确生成先返回持久任务号，再查询同一任务，结果未知不自动付费重试。生成和平台发送分别取得回执。详见[形象、作品与可选创作服务](docs/media-and-identity.md)。
 
@@ -97,27 +98,43 @@ node scripts/persona-cli.mjs recover
 
 `export/import`等价于`backup/restore`。备份校验路径、版本、容量与SHA，使用固定previous槽；Windows恢复通过可恢复journal处理两次rename之间中断，不删除未知目录。恢复携带现库较新的明确撤销。它不能清除独立宿主日志或他人另存的副本。形象档案随实例文本保存，作品字节和生成服务凭据在文本库之外；文本备份不包含这些外部文件，作品清单也仅有元数据和SHA，需另存原文件。
 
+任务档案初值为总量1GiB、单任务／单资料64MiB、4096条任务收据，按实例独立保存，可在“任务与资料”的高级设置调整。容量满明确报错，旧资料／防重凭据不自动淘汰。形象作品的80条生成收据上限属于另一媒体模块，任务档案扩容不会改它。UI单次文件下载上限64MiB；status默认返回紧凑任务卡，资料目录和正文按需分页。文件快照归档使用受单资料上限约束的整份文件缓冲，DSH冷查询也可能载入单个子会话日志，不能把分页等同于恒定RAM。明确遗忘清理插件任务正文与派生材料，不删除DSH原始历史。
+
 ## 文档与验证
 
 - [自包含完整方案入口](docs/plan/persona/README.md)与[主实施计划](docs/plan/长期AI人格插件-实施计划.md)
 - [当前管理界面与验收范围](docs/management-ui.md)
 - [QQ、微信聊天渠道与本机声音](docs/channel-integration.md)
 - [形象档案、图片／视频接口与作品容量](docs/media-and-identity.md)
+- [自主委派、任务档案与资料保真](docs/delegation-and-task-archives.md)
 - [DSH Market 收录材料与申请条件](docs/market-submission.md)
 - [十四模块映射](docs/feature-map.md)、[核心接口](docs/runtime-api.md)、[存储接口](docs/repository-api.md)
 - [0.2.0自主整理、容量与唤醒历史](docs/evolution-and-wake-validation.md)
 - [0.1.1真实模型全流程历史](docs/real-model-validation.md)
 
-0.5.0新增陪伴工具隔离、官方扫码连接、实际能力授权与形象创作接口。本地完整回归422/422通过；真实DSH SDK主链85项和最终作用域专项、八页原生设置与真实二维码获取均有分阶段回执，详见[管理说明](docs/management-ui.md#050-实现与验证范围)。未完成的本人扫码收发、真实供应商生成及GUI文件选择器自动化不列为已通过。0.4.1原生界面、0.4.0的336项本地回归／67项渠道专项和更早真实模型记录保留为各自版本的历史证据，不充当0.5.0重新运行结果，也不证明跨月人格质量。
+0.6.0开放persona_task自主委派、独立工作预设、任务过程隔离和自主retain。本版最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](docs/verification/0.6.0-tests.json)、[两阶段原生SDK](docs/verification/0.6.0-sdk-fixture.json)及[静态自主性审查](docs/verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](docs/management-ui.md)单独维护。
+
+0.5.0历史：当时新增陪伴工具隔离、官方扫码连接、实际能力授权与形象创作接口。本地完整回归422/422通过；真实DSH SDK主链85项和最终作用域专项、八页原生设置与真实二维码获取均有分阶段回执，详见[管理说明](docs/management-ui.md#050-实现与验证范围)。未完成的本人扫码收发、真实供应商生成及GUI文件选择器自动化不列为已通过。0.4.1原生界面、0.4.0的336项本地回归／67项渠道专项和更早真实模型记录保留为各自版本的历史证据，不充当0.6.0重新运行结果，也不证明跨月人格质量。
 
 ```powershell
 npm test
 npm run check
 npm run build
 node scripts/check-docs.mjs
+node scripts/dsh-delegation-integration.mjs
 ```
 
-`npm run build`从本地ui源生成随插件交付的客户端，无需新增第三方打包依赖；修改页面后运行。真实集成脚本只使用隔离profile/记忆根，`--real-only`会产生已配置供应商的正常调用费用，不读取或复制密钥。
+`npm run build`从本地ui源生成随插件交付的客户端，无需新增第三方打包依赖；修改页面后运行。
+
+`node scripts/dsh-delegation-integration.mjs`在Windows已安装的真实DSH NEXT中运行独立委派集成测试，自动建立新的隔离home、profile和记忆根，只使用固定响应fixture，不读取生产模型凭据或产生真实LLM调用。默认安装目录为`%LOCALAPPDATA%\Programs\DSH NEXT`，默认证据目录为项目下`work/dsh-delegation-integration`的独立run子目录；home缺省位于该次run内。可选参数如下：
+
+| 环境变量 | 对应参数 | 实际含义 |
+|---|---|---|
+| DSH_TEST_INSTALL | --install PATH | DSH NEXT安装目录，包含DSH NEXT.exe与resources/app.asar |
+| DSH_TEST_HOME | --home NEW_PATH | 必须尚不存在的新隔离目录；已有目录拒绝复用，每次显式指定时使用新路径 |
+| DSH_TEST_ARTIFACTS | --artifacts PATH | 验收产物根，脚本在其中新建独立run目录 |
+
+home和证据目录必须位于生产DSH home之外；Windows／DSH缺失明确返回unsupported、退出码2，不冒称通过。`--prepare-only`只准备隔离profile，不能当作完成验收；`--help`显示当前参数。此委派脚本始终为fixture-only，不接受`--real-only`。较早的`scripts/dsh-integration.mjs --real-only`属于另一条真实模型测试入口，会产生所配置供应商的正常调用费用。
 
 ## 适配其他宿主
 

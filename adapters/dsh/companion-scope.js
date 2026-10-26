@@ -38,7 +38,7 @@ function releaseLease(lease, claim) {
  * The SDK can select a preset after agent/created. Its registry emits
  * agent-preset/selected(sessionId, presetId) after rebinding the Agent scope.
  */
-export function mountCompanionScope(ctx, manager, { presetId = 'persona-memory' } = {}) {
+export function mountCompanionScope(ctx, manager, { presetId = 'persona-memory', isWorkerSession = () => false } = {}) {
   const owned = new Map(), pending = new Set(); let closed = false;
   const service = name => { try { return ctx.get?.(name) ?? ctx[name]; } catch { return undefined; } };
   const actualPreset = (agent, announced) => service('agentPresets')?.composedPreset?.(agent.ctx) ?? announced ?? agent.session?.header?.agentPreset;
@@ -58,7 +58,7 @@ export function mountCompanionScope(ctx, manager, { presetId = 'persona-memory' 
     return item.disposal;
   }
   function activate(agent) {
-    if (closed) return;
+    if (closed || isWorkerSession(agent.id)) return;
     const previous = owned.get(agent.id);
     if (previous?.agent === agent && !previous.disposed) return previous.task;
     if (typeof agent.ctx?.tools?.restrict !== 'function') throw Object.assign(new Error('宿主无法建立陪伴工具作用域'), { code: 'PERSONA_SCOPE_UNAVAILABLE' });
@@ -75,8 +75,29 @@ export function mountCompanionScope(ctx, manager, { presetId = 'persona-memory' 
     });
     return item.task;
   }
+  // DSH collects tool providers before this waterfall. Its returned assembly
+  // is authoritative, so refresh the prepared scope after awaiting attachment.
+  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+    const agent = context?.agent;
+    if (!agent || closed || isWorkerSession(agent.id) || actualPreset(agent) !== presetId) return next();
+    await activate(agent);
+    let value = await next();
+    const coordinator = currentCoordinator(manager);
+    if (coordinator?.preparePersonaAssembly) value = await coordinator.preparePersonaAssembly(agent, value);
+    const tools = agent.ctx?.tools ?? service('tools');
+    const fresh = typeof tools?.wireSchemas === 'function' ? tools.wireSchemas(context.scope ?? agent.ctx).schemas : tools?.schemas?.(agent);
+    return Array.isArray(fresh) ? { ...value, tools: fresh.map(tool => ({ ...tool, parameters: structuredClone(tool.parameters) })) } : value;
+  });
+  // Selecting a preset and following up can precede its selected notification.
+  // This listener belongs to the preset scope itself, so its first step waits.
+  ctx.on('agent/pre-step', async (payload, next) => {
+    const agent = payload?.agent;
+    if (agent && !closed && !isWorkerSession(agent.id) && actualPreset(agent) === presetId) await activate(agent);
+    return next();
+  });
   ctx.on('agent/created', ({ agent }) => {
     // Creation is scoped to the preset. The live registry also rejects stale callbacks.
+    if (isWorkerSession(agent.id)) return;
     const preset = actualPreset(agent);
     if (preset !== undefined && preset !== presetId) return;
     return activate(agent);
@@ -84,12 +105,12 @@ export function mountCompanionScope(ctx, manager, { presetId = 'persona-memory' 
   ctx.on('agent-preset/selected', (sessionId, announced) => {
     if (closed) return;
     const agent = service('agents')?.get?.(sessionId), previous = owned.get(sessionId);
-    if (!agent) return previous ? dispose(previous) : undefined;
+    if (!agent || isWorkerSession(agent.id)) return previous ? dispose(previous) : undefined;
     if (actualPreset(agent, announced) !== presetId) return previous ? dispose(previous) : undefined;
     return activate(agent);
   }, { global: true });
   // A restored Agent can have joined the revision before this plugin mounted.
-  for (const agent of service('agents')?.list?.() ?? []) if (actualPreset(agent) === presetId) activate(agent);
+  for (const agent of service('agents')?.list?.() ?? []) if (!isWorkerSession(agent.id) && actualPreset(agent) === presetId) activate(agent);
   ctx.effect(() => async () => {
     closed = true;
     await Promise.allSettled([...owned.values()].map(dispose));

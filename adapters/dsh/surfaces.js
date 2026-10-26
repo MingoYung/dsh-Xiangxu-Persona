@@ -35,6 +35,18 @@ export function createPersonaSurfaces({ management, channels, connections, permi
         if (!['inspect', 'configure', 'list', 'reset'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown permission action');
         return permissions[method](args);
       }
+      if (action.startsWith('tasks.')) {
+        const c = await getCoordinator(args.instanceId);
+        if (!c) fail('INSTANCE_UNLOADED', '先加载人格实例再查看独立任务');
+        await c.ready;
+        if (c.initializationError) throw c.initializationError;
+        if (c.taskInitializationError || !c.tasks) fail('TASK_UNAVAILABLE', '独立任务服务暂不可用');
+        const method = action.slice(6);
+        if (!['inspect', 'list', 'get', 'read', 'readChunk', 'configureLimits', 'collect', 'cancel', 'archiveFile'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown task management action');
+        const input = { ...args }; for (const key of ['instanceId', 'actor', 'sourceRefs', 'sourceRecordIds', 'parentSessionId']) delete input[key];
+        if (method === 'inspect') return { ...await c.tasks.inspect(), host: c.taskHost?.capabilities?.() ?? { available: false } };
+        return c.tasks[method](input);
+      }
       if (action.startsWith('media.')) {
         const c = await getCoordinator(args.instanceId);
         if (!c) fail('INSTANCE_UNLOADED', '先加载人格实例再使用形象与创作');

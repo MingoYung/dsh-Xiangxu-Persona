@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "xiangxu-delegation-autonomy-audit/1",
+  "pluginVersion": "0.6.0",
+  "createdAt": "2026-10-26T04:57:53.585Z",
+  "status": "static-source-review-passed",
+  "scope": "Independent static review of the DSH task-delegation consumers, memory provenance, native worker boundary, owner surfaces, and UI. This file is not a full test-suite, SDK-run, GUI, real-model, or real-account attestation.",
+  "baselineCommit": "b3724c5951d8c676f6856bb2eb832b140412dec1",
+  "sourceDigests": {
+    "adapters/dsh/index.js": "bec3e2327ad54acb6bb651d65d7caa54d73cf2fb947fe92a6635c4eb562f71fb",
+    "adapters/dsh/surfaces.js": "58d67ab99eb13612a89a96bd96f9a81c85f07ccd42c6b68ec12859a16030171e",
+    "adapters/dsh/companion-scope.js": "79a6e218191cbdae3595ebe12d0336ee6630de5c1a21456e25c1fc55a0515934",
+    "adapters/dsh/normalize.js": "63aed9bf21de42da306a3535870e77ccc73fb6069322cb6e7f64091545a60492",
+    "adapters/dsh/tool-schema.js": "ef650c3bcda8b0d184aa3e9f87348ba792fbd64ec13c92921e524925d7c91018",
+    "adapters/dsh/delegation/isolation.js": "5038c4d1c61d8b5b39e4525b6199aad27c34005c95d5ba4165062ff78a6a1562",
+    "adapters/dsh/delegation/native.js": "74127d4d8a71940aec56323a91383ad97118a6c6103dc4a508e11f1a9d163665",
+    "adapters/dsh/delegation/worker.js": "ce46a2a9ba9e4736b6973db8f0d98beb8db4e855f2a8d010c891349c78aa8785",
+    "adapters/dsh/delegation/archive.js": "353ea8ada6fce877f42f52a4b9b3e3ba1932f69c318dff3130f963f0c227071e",
+    "adapters/dsh/delegation/service.js": "61dc2e57c42f8ccde0108656411d3570827123c34e07d3c69017e3da210197d9",
+    "ui/app.js": "633dd25df533a86b278ced4059a4e48b86797cc375b4b19d2f332da4d73cb2e3",
+    "ui/index.html": "ade36b0d4f32b6fad1ab2b101d0ca54e71b3aaf8bab6dbc475450ea7d77cc4b5",
+    "scripts/build-ui.mjs": "7ec4a665bdfcb83d78acae50ad031cbbcb9f45fbcd744b790eee3c6f923f7113",
+    "cordis.patch.yml": "1993456329bc4ac46973168ff77c8f358ab89e4abd567bb8924cf7c5e16bfd2d"
+  },
+  "portableCore": {
+    "files": 9,
+    "unchanged": true,
+    "digests": [
+      {
+        "path": "core/capacity.js",
+        "sha256": "c81bdd17395c713e387dfb4faf66e878a6e295f587bfb541eb3a70c0f9812f53"
+      },
+      {
+        "path": "core/index.js",
+        "sha256": "97b0d2d9d5899aecd477a14083758360e61d87b9433fdefee444bdd368d2b35e"
+      },
+      {
+        "path": "core/maintenance.js",
+        "sha256": "2e2b10b584da003d27c75301618872d7f7eb55fd59d6d834740bc8f6921f45a8"
+      },
+      {
+        "path": "core/prompts.js",
+        "sha256": "f8a97624b43bd4c1328912c823d64fa6b20e2a7c4fd24ceebf1c7dc1ade06261"
+      },
+      {
+        "path": "core/repository.js",
+        "sha256": "f78502adfd496d0b81bdddf50751f92a3dc6e65115c22c7c1715622f4ccad9a8"
+      },
+      {
+        "path": "core/runtime.js",
+        "sha256": "4a78711cc23bece04b67659a7061e3b1d60b1683a50b0c14fe82fa5ea5d95c99"
+      },
+      {
+        "path": "core/schema.js",
+        "sha256": "e435ed57428738a844730b173cd32d39bc3d34783a4e9a3939c753374ae28302"
+      },
+      {
+        "path": "core/source-dependencies.js",
+        "sha256": "77025fd09a6cc62fba3b9ea96922a96fd9b941e272811287289bf759fcb2ca41"
+      },
+      {
+        "path": "core/store.js",
+        "sha256": "473cd33c6b6b0bc28308e3da995b6436b3325d79bb2f00e76f35aa6073b0d290"
+      }
+    ]
+  },
+  "unchangedContracts": {
+    "existingControlGuidanceExceptNewTaskInterfaceFactLine": true,
+    "originalSevenToolParameters": true
+  },
+  "findings": {
+    "trustedWorkerIdentity": "Host task registration determines worker role; model-supplied kind, actor, task identity, or user envelope does not establish a human dialogue source.",
+    "workerIsolation": "Trusted worker sessions are excluded from persona attachment, intake, replay, and trace ingestion. They use an explicit independent worker preset.",
+    "taskProcessIsolation": "The same trusted task-tool projection applies to live, replay, and cold trace reads. Task calls and results retain safe navigation metadata without automatically importing full task process text into personality review.",
+    "retainedMaterial": "The personality can select real bounded archive material for the existing autonomous review process. It is recorded as agent material with actual archive origin and dependencies, without directly writing a personality decision.",
+    "originalDialogue": "Ordinary parent reasoning, visible assistant replies, and real human dialogue keep their original meaning and provenance.",
+    "revocation": "Explicit source revocation invalidates dependent task archives and in-flight task result caches; unavailable or revoked material is not silently recreated from old results.",
+    "firstStep": "The first provider assembly awaits actual preset attachment, contributes each persona section once, and refreshes actual wire schemas. The pre-step consumer restores the actual host turn and real admitted-message dependencies before task calls.",
+    "resourcePresentation": "Task-card summary previews, default status cards, pagination, and byte or character limits bound presentation and storage. Complete available documents remain separately archived; these limits do not decide what the personality must value or remember.",
+    "autonomy": "This change adds task interfaces and technical isolation. The reviewed code adds no task-topic whitelist, mandatory delegation, memory-value threshold, required growth, forced sleep, or prescribed decision frequency.",
+    "hostPermissions": "The worker inherits the existing DSH permission policy. An already full-access process does not become a new operating-system sandbox."
+  },
+  "pending": [],
+  "notes": [
+    {
+      "code": "UI_DOWNLOAD_CAP",
+      "detail": "Parent GUI download remains bounded to 64MiB per file; archive capacity can be configured above this, so docs must distinguish them."
+    },
+    {
+      "code": "OS_POLICY_BOUNDARY",
+      "detail": "Worker inherits DSH permissions; code/shell in an already full-access policy is not a new OS sandbox."
+    }
+  ]
+}

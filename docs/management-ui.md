@@ -1,6 +1,6 @@
 # 相续人格原生管理界面与验收
 
-版本0.5.0，产品dsh-Xiangxu-Persona，包名dsh-xiangxu-persona。DSH设置入口名“相续人格”，对话预设展示名也为“相续人格”；内部presetId persona-memory及数据schema persona-memory/3保持兼容。本文说明当前实现和可复核边界，最终验收回执单独维护。
+版本0.6.0，产品dsh-Xiangxu-Persona，包名dsh-xiangxu-persona。DSH设置入口名“相续人格”，对话预设展示名也为“相续人格”；内部presetId persona-memory及数据schema persona-memory/3保持兼容。本文说明当前实现和可复核边界，最终验收回执单独维护。
 
 ## 原生入口与加载
 
@@ -8,7 +8,7 @@ Git安装见[README](../README.md)。正常重载DSH后打开设置中的“相�
 
 管理入口与对话预设分别存在。设置页可在实例未加载时显示真实停用状态并加载所选实例，不会为了浏览自动创建未知人物或新模型轮次。启动以保存的实例选择及技术配置为准；明确加载可能恢复此前所选定时/控制工作，这不等于只读浏览自动触发整理。
 
-## 八页功能与真实状态
+## 九页功能与真实状态
 
 | 页面 | 已实现入口 | 状态口径 |
 |---|---|---|
@@ -17,9 +17,10 @@ Git安装见[README](../README.md)。正常重载DSH后打开设置中的“相�
 | 记忆与关系 | 人物、global、unknown与全部范围；类型/线索检索，来源、原件详情、明确遗忘与单原件重归属 | personId是关系分区；role/speakerId保真实人/AI，未知不强挂 |
 | 进化与变更 | job/run、暂停/未读进度、候选/validatedPatch、有限人格历史前后对比与回滚、管理操作收据 | queued/prepared/paused/failed/committed/unknown分别报告；候选不是已提交 |
 | 设置与加载 | 技术存储/条目/输入输出/工作区预算、整理模式、实例登记/加载/停用/切换 | 设置说明两模式；没有“人格必须成长频率”或印象资格设置 |
-| 维护与诊断 | validate/backup/restore/recover、usage/snapshot/outbox/errors/gaps | 只呈现仍保留的诊断；缺失usage为未知；维护结果与加载状态同时展示 |
 | 聊天渠道与语音 | QQ／微信扫码、私群范围、连接状态、实际能力和授权、高级OneBot、本机音色与试听 | 二维码来自真实平台；本人确认后再选范围并启用；能力不支持与未许可分别显示 |
 | 形象与创作 | 形象描述／主参考／版本与用户锁定，图片／视频服务配置、连接测试、作品与任务、下载和清单 | 服务默认关闭；不拿连通检查冒充作品生成，不拿生成成功冒充发给对方 |
+| 任务与资料 | 独立任务列表、执行／归档状态、完整资料按页预览／下载、取消和高级容量设置 | 浏览不派发；任务完成、资料收齐、列表末页与原文末尾分别显示，封存原件可独立回查 |
+| 维护与诊断 | validate/backup/restore/recover、usage/snapshot/outbox/errors/gaps | 只呈现仍保留的诊断；缺失usage为未知；维护结果与加载状态同时展示 |
 
 记忆、进化等原有管理数据的明细默认16000个Unicode字符、列表最多100条，响应最多128KiB。通用owner管理载体仍限制单请求64KiB、单响应2MiB；形象参考采用独立分块动作，不抬高通用帽。短声音试听走独立有界动作：原始WAV最多512KiB，Base64编码后仍受外层管理载体2MiB硬帽约束；音频不进入模型上下文。nextCursor仅继续读取同一结果；选择或底层数据变了则游标失效重新查。记忆目录本身受实例容量约束；浏览不是每轮给模型灌全库。UI不把search的1000结果上限当作完整目录浏览。
 
@@ -47,19 +48,42 @@ Git安装见[README](../README.md)。正常重载DSH后打开设置中的“相�
 
 ## 代码与接口
 
-- ui/index.html、ui/app.js、ui/style.css：八页交互；scripts/build-ui.mjs生成ui/client.js并随Git包交付。
+- ui/index.html、ui/app.js、ui/style.css：九页交互；scripts/build-ui.mjs生成ui/client.js并随Git包交付。
 - adapters/dsh/ui-host.js：原生Connection管理路由persona-memory.manage。
 - adapters/dsh/management.js：有界查询、明确控制、配置白名单与异步收据。
 - adapters/dsh/instances.js：实例登记、单写者加载/停用、切换与维护协调。
 - adapters/dsh/channels/、connections/：官方扫码与接收循环、高级OneBot、原生通道和实际平台回执。
 - adapters/dsh/permissions.js：按实际实例、平台和账号保存用户授权；companion-scope.js建立陪伴工具范围。
 - adapters/dsh/media/、owner-assets.js：形象、生成作业、外部作品与有界owner资产传输。
-- adapters/dsh/voice.js与surfaces.js：声音偏好和owner动作白名单；人格工具共七个。
+- adapters/dsh/voice.js与surfaces.js：声音偏好和owner动作白名单；人格工具共八个，新增persona_task自主委派入口。
+- adapters/dsh/delegation/：原生独立工作预设、任务档案、来源隔离、资料分页和自主retain；任务完成不会强制唤醒人格。
 - core/：持续人格、存储、读取、撤销及运行，不导入DSH/UI。
 
 完整行为与字段见[自包含方案](plan/persona/README.md)、[唯一字段契约](plan/persona/persona-schema.md)、[存储接口](repository-api.md)和[运行接口](runtime-api.md)。原14份reports方案保持同步，docs/plan镜像按仓库位置重写相对链接，独立clone不要求作者本机C盘目录存在。
 
+## 0.6.0 自主委派与验证范围
+
+本版新增“任务与资料”页，当前共九页。相续人格主预设在普通DSH、IM、主动与唤醒中提供八工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task。是否派发、派什么任务、给哪些背景、读取哪些结果以及记住什么，继续由人格自主决定；原有注意、回应、睡眠与成长契约不变。
+
+persona_task通过真实原生spawn／caller创建新上下文，显式使用xiangxu-task-worker工作预设。工作预设不自动挂共享人格写入工具，详细过程与报告留在独立任务档案。宿主把AI委派prompt封装为kind:user的原件仍被如实保存，但可信worker身份会在实时、回放与冷读取入口隔离；它不会据此成为真人原话。主会话任务调用和结果只自动留下任务ID、动作、状态与读取范围等导航，不将prompt、工具日志或报告正文灌入日常人格整理。
+
+read供本次理解按需读取；retain是人格明确选择真实归档片段供既有自主整理，不直接改共同人格，不要求任何模块增加或变化。源角色、归档SHA、选段范围及父原件依赖会保留，明确遗忘后不能经旧任务编号、冷回查或重启复活。它仍可以自主记住合作经历、用户偏好或研究结论。完整字段、保存范围与容量见[自主委派与任务档案](delegation-and-task-archives.md)。
+
+“任务与资料”默认只浏览已有任务，不提供一键create按钮。owner动作tasks.inspect/list/get/read/readChunk/configureLimits/collect/cancel/archiveFile使用当前实例；资料目录每页最多20项，正文每页最多8000个Unicode字符，界面默认4000。原文件下载每块最多32768原始字节，经父桥长度／顺序／SHA核验后交付，界面单文件上限64MiB。取消只停止所属任务的后续执行并保留现有资料，已发生的工作目录修改不会自动回滚。
+
+默认任务档案为4096条任务收据、1GiB总量、单任务与单资料各64MiB；用户可在高级项调整资源预算，单资料≤单任务≤总量且不能降到已保留用量以下。满容量保留旧原件和防重收据，明确报告尚未采集尾部；扩容后可继续收集。pending资料先持久登记再写分块，半成品不能作为完整原件读取。已完整封存的终态档案继续独立可读，原宿主session后来不可用不会把已保留原件标成不完整。文本库备份不包含外置.tasks目录，需正常停用写者后另行备份。
+
+本轮最终本地完整回归 **495/495通过**。实际安装版DSH的确定性fixture专项 **35/35通过**，覆盖主会话八工具、真实新建worker、AI委派指令不进入人类C1、完整报告／过程归档、Unicode分页、原生文件产物快照及文件改动后的旧字节、按需回收与自主retain、明确遗忘和停用／重载。仓库可复用入口 `node scripts/dsh-delegation-integration.mjs` 另一次 **35/35通过**；这两次分别保留实际源码与执行证据，不把相同检查累计成新的功能数量。该脚本只用隔离profile和固定模型响应，真实语言模型调用数为0，也未执行真实QQ／微信收件或付费媒体生成。详见[0.6.0完整回归](verification/0.6.0-tests.json)与[0.6.0原生SDK回执](verification/0.6.0-sdk-fixture.json)。
+
+真实DSH独立profile已打开九页，任务页使用人工合成的验收任务样本：8份资料显示已完整归档，31000字符报告实际从0→4000翻至4000→8000，替换显示当前页并保留“尚未到原文末尾”的提示；没有冒称已经读完全文。中文报告.md的59字节与empty.txt的0字节原件均经实际浏览器下载并核对SHA一致。任务容量4096→4097保存回读后恢复4096，未改值保存没有重复确认；没有console警告／错误，也没有提交模型prompt、登录真实账号或付费生成。卸载实例后仅结束自行启动的GUI宿主，退出码1如实保留，core、media-assets、tasks三类写锁及该宿主进程均为0，未强制重启正式DSH。详见[0.6.0原生GUI回执](verification/0.6.0-native-ui.json)。
+
+![0.6.0任务与资料页；人工隔离验收样本](images/0.6.0-task-overview.png)
+
+![0.6.0报告分页；只显示当前片段](images/0.6.0-task-page.png)
+
 ## 0.5.0 实现与验证范围
+
+> 本节保留0.5.0当时的八页／七工具与禁派发实现及证据。当前0.6.0通过persona_task自主派发，并配有独立工作预设与任务资料隔离；以下旧规则与数字不充当本版当前行为或新源重测结果。
 
 本版保留宿主样式与单外层滚动，新增第八页“形象与创作”。渠道主入口为真实QQBot／微信iLink扫码；已扫码、待本人确认、验证码、已授权、已取消、过期和失败分开显示。授权后还要选择驱动支持的范围并明确启用，取消或断开不会被标成已连接。官方QQ是Bot，微信iLink当前只支持私聊；账号实际资质和发送结果仍以平台回执为准。高级OneBot不需要扫码向导代填未知参数。
 
@@ -67,7 +91,7 @@ Git安装见[README](../README.md)。正常重载DSH后打开设置中的“相�
 
 形象页提供档案描述、主参考上传／版本／预览和锁定；锁定后人格工具不能改形象描述和主参考，用户仍可在设置页修改。图片与视频服务分开开关、默认关闭；API密钥只写不回显。生成先返回任务号，只查询同一任务；未知结果不自动重复付费。作品按需预览、单独下载；完整SHA校验由宿主父桥执行，iframe仍只allow-scripts。详细容量、来源撤销及外部作品备份见[形象与创作](media-and-identity.md)。
 
-普通DSH、IM、主动与唤醒的相续人格预设统一只注册memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform，不向人格暴露子agent派发或其它继承工具。其它DSH预设不受影响，插件内部接收／恢复通道仍使用必要的原生API。此范围是用户选择的产品工具权限，不新增人格关注、回应、主动、睡眠或成长条件。
+0.5.0当时普通DSH、IM、主动与唤醒的相续人格预设统一只注册memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform，不向人格暴露子agent派发或其它继承工具。其它DSH预设不受影响，插件内部接收／恢复通道仍使用必要的原生API。此范围是用户选择的产品工具权限，不新增人格关注、回应、主动、睡眠或成长条件。
 
 最终完整本地回归 **422/422通过**，0失败、0取消、0跳过，运行源码前后SHA一致。实际DSH SDK主链85项与最终预设作用域补验分别保留源码指纹；测试使用隔离profile、固定fixture模型和localhost协议服务，真实验证owner管理路由、非owner拒绝、七工具范围、停用／重载、语音WAV、参考图编辑单次提交、图片实际HTTP发送回执、同callId不重发与撤销许可。快速离开／重选、跨预设代际清理另有最终专项证据，不用旧source的85项冒充新source全部重跑。详见[完整回归](verification/0.5.0-tests.json)、[原生SDK分阶段回执](verification/0.5.0-sdk-fixture.json)与[独立自主契约审查](verification/0.5.0-autonomy-audit.json)。
 
@@ -113,7 +137,7 @@ SDK正常shutdown退出后曾留下已退出PID的语音lease元数据；另行�
 
 全部隔离SDK/GUI载体已停止，复查进程与写锁均为0；正式DSH没有被强制重启。
 
-以下是0.4.0历史截图，不能当作0.5.0当前界面；它们来自隔离DSH真实原生设置，未配置状态没有用演示连接冒充真实平台登录。
+以下是0.4.0历史截图，不能当作0.6.0当前界面；它们来自隔离DSH真实原生设置，未配置状态没有用演示连接冒充真实平台登录。
 
 ![0.4.0原生设置深色总览](images/0.4.0-overview-dark.png)
 

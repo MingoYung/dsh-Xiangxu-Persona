@@ -1,6 +1,6 @@
 # DSH 扩展点与 P0 接入验证
 
-当前实现（0.5.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生八页设置沿用DSH宿主样式，保留主动联系／现在叫醒的日常说明，新增官方QQBot／微信iLink扫码、实际能力许可、形象档案与可选图片／视频接口；高级OneBot保留。陪伴预设在普通DSH／IM／主动／唤醒中仅提供七个人格工具，不继承子agent派发；其它预设与内部原生接收通道不变。平台未实现的动态、通话或群能力不冒称可用，服务默认关闭、本人扫码和真实供应商输出仍需实际环境验证。当前入口与证据见[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)；研究和旧版本结果保留历史含义。
+当前实现（0.6.0）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
 修订日期：2026-10-26。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
 
@@ -99,7 +99,7 @@ ctx.tools.register(defineTool({
 }))
 ```
 
-exec 中能取得哪些 session/request/channel 信息要实测。当前插件注册七个工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform，完整参数以 persona-schema 为准。缺省目标由真实宿主上下文补齐，显式目标可指已知他人；scope 是用途而非管理员 ACL。删除/更正需要目标可解析，歧义不能扩大为批量操作。
+exec 中能取得哪些 session/request/channel 信息要实测。当前插件注册八个工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task，完整参数以 persona-schema 为准。缺省目标由真实宿主上下文补齐，显式目标可指已知他人；scope 是用途而非管理员 ACL。删除/更正需要目标可解析，歧义不能扩大为批量操作。
 
 前轮 dsh-tools 记录到 guard、tools/pre-execute、tools/execute、tools/post-execute、tools/result；`_plugins/dsh-dispatch-concurrency-gate/index.js:178` 有 guard 用例。工具结果可附来源与可用性信息；这些宿主拦截能力不构成给人格加发送次数、印象门槛、承诺 SLA 或边界硬拦截的理由。
 
@@ -172,8 +172,29 @@ P0 完成并不意味着整个人格效果已验收，只意味着实现路径�
 
 ## 0.5.0 陪伴工具、扫码、权限与形象适配
 
+> 本节保留0.5.0历史工具边界。当前八工具与自主派发按本文件0.6.0节执行；扫码、媒体与权限的未变契约仍适用。
+
 DSH设置沿用宿主颜色、字体和透明背景；第七页“聊天渠道与语音”新增官方QQBot／微信iLink真实扫码，授权后按驱动实际支持的私群范围明确启用，高级OneBot保留。QQ连接Bot，不自动接管桌面个人QQ；微信官方只支持私聊，朋友圈和实时通话未实现。平台、账号、房间、真实发言者、原话和时间继续分别保存，外部ID不自动成为personId。能力表区分支持、用户许可、当前可用，未支持项目不能新授权。
 
 陪伴预设在普通DSH／IM／主动／唤醒中清空继承工具范围，只提供memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。不向人格暴露子agent派发、Harness、编码或文件工具；其它预设不变，内部接收与恢复通道仍可使用原生API。该工具边界不改认人、注意、回复、主动、睡眠和run／defer的自主机制。
 
 第八页“形象与创作”提供形象描述、主参考版本与用户锁定，图片／视频分开配置且默认关闭。图片使用明确Images JSON／multipart或ComfyUI，视频需要实际工作流；生成／查询／平台发送分别记录真实状态，unknown不自动付费重放。作品字节与服务凭据在文本库之外，文本备份及元数据清单不等于完整作品备份。字段权威为persona-schema第14、15节；操作与当前证据见[渠道接入](../../channel-integration.md)、[形象创作](../../media-and-identity.md)及[管理说明](../../management-ui.md)。
+
+
+## 0.6.0 自主委派与任务资料隔离
+
+主人格可自主选择经persona_task委派工程、研究或其它需要的任务，不设必须派发的题型、固定次数或记忆门槛。当前八工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task；原始全局派发／Harness／编码工具仍不直接加入主预设，独立工作预设使用宿主已有工作能力和用户权限。
+
+任务新建独立上下文并显式选择xiangxu-task-worker，可信宿主登记taskId、真实子会话、父会话和AI委派来源后才启动。宿主初始封套即使为source.kind:user，也不会作为真人C1或共享人格H1接收。主会话的任务工具调用及结果仅把安全导航元数据投影进H1；实时、回放和trace回读采用同一投影，不能把指针重新展开成工程原文。普通主人格回复、思考、其它工具和真实用户原话保留原意义。
+
+完整委派prompt、宿主实际可取得的会话事件、工具结果与最终报告保存在独立.tasks档案；显式archive_file将所选工作区产物复制成带SHA的快照，不等于自动备份整个工程目录。默认总容量1GiB、单任务与单资料64MiB、任务收据4096条；owner可在“任务与资料”页高级设置调整资源上限。容量满保留旧资料／幂等凭据并明确报错，未归档尾部标capture.complete:false；删除／关闭任务不假称已经保存全部原件。
+
+父会话通过status/read查询实际状态及按需读取；status默认只返回紧凑任务卡，显式documentOffset／documentLimit才附带资料目录页。retain选择真实资料的有界片段送入既有自主整理，不直接写人格、不要求任何模块变化。资料保留真实AI／工具／网页来源与原件定位，完整性、SHA与分页状态分别报告。明确遗忘通过源依赖撤销相关任务档案，旧原始宿主日志或外部副本不被冒称已删除；unknown任务不因重载自动重新执行。
+
+完整动作、存储范围、权限与验收口径见[自主委派与任务档案](../../delegation-and-task-archives.md)。工作预设的能力限制继承DSH用户权限；full-access模式下没有额外OS沙箱。普通对话是否关注、回复、主动、睡眠以及是否整理的原有契约未变。
+
+### 0.6.0 自动化验证与资源边界
+
+本版最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](../../verification/0.6.0-tests.json)、[两阶段原生SDK](../../verification/0.6.0-sdk-fixture.json)及[静态自主性审查](../../verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](../../management-ui.md)单独维护。
+
+status默认只返回紧凑任务卡和至多120字的导航摘要，不自动展开完整资料目录；明确传documentOffset／documentLimit可分页取目录，正文按documentId和Unicode offset／maxChars读取，返回nextOffset，下页传offset=nextOffset；通用工具cursor只续同一次有界响应，list.pageCursor只续任务列表。UI单次文件下载上限64MiB，不随档案扩容自动提高。archive_file虽按64KiB读取源文件，归档时仍组合受单资料容量限制的整份文件缓冲，内存随该文件大小增长；DSH冷查询也可能内部载入目标子会话日志，不能将逐页采集宣称为宿主恒定RAM。明确遗忘清理插件任务正文并保留永久撤销凭据，清理失败如实报告；它不会删除DSH原始会话历史或用户另存的工程副本。

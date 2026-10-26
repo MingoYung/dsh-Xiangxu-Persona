@@ -183,3 +183,30 @@ test('resetting an old saved account permission is explicit and carries only tha
   await ui.button(panel, '恢复该账号默认权限').emit('click');
   const reset = ui.calls.find(call => call.action === 'permissions.reset'); assert.ok(reset); assert.equal(reset.args.id, 'qq'); assert.equal(reset.args.accountId, 'old-bot'); assert.equal(Object.hasOwn(reset.args, 'memoryRoot'), false);
 });
+
+const taskFixtureId = 'task-' + 'a'.repeat(32), taskFixtureDoc = 'doc-' + 'b'.repeat(32), taskFixtureSha = 'c'.repeat(64);
+const taskUiLimits = { maxTasks: 4096, maxArchiveBytes: 1073741824, maxTaskBytes: 67108864, maxDocumentBytes: 67108864 };
+const taskUiView = { limits: taskUiLimits, usage: { tasks: 1, bytes: 800 }, host: { available: true } };
+test('task page only reads metadata and leaves delegation and memory selection to the personality', async () => {
+  const ui = await frontend({ 'tasks.inspect': () => taskUiView, 'tasks.list': () => ({ items: [], nextCursor: null }) });
+  const page = await ui.evaluate("state.page='tasks';tasksPage()");
+  assert(ui.walk(page).some(node => node.textContent.includes('浏览此页不会创建任务')));
+  assert.equal(ui.calls.filter(call => ['tasks.create', 'tasks.material', 'tasks.configureLimits', 'tasks.cancel'].includes(call.action)).length, 0);
+  await ui.button(page, '保存任务容量').emit('click'); assert.equal(ui.calls.filter(call => call.action === 'tasks.configureLimits').length, 0);
+});
+test('task documents use the actual next Unicode offset and replace previews rather than pretending the first page is complete', async () => {
+  const ui = await frontend({ 'tasks.inspect': () => taskUiView, 'tasks.list': () => ({ items: [{ taskId: taskFixtureId, title: '隔离任务', status: 'completed', documentCount: 1, capture: { complete: true } }], nextCursor: null }),
+    'tasks.get': () => ({ taskId: taskFixtureId, status: 'completed', documentCount: 1, capture: { complete: true }, documents: [{ documentId: taskFixtureDoc, name: 'report.txt', encoding: 'utf8', sha256: taskFixtureSha, bytes: 8 }], nextDocumentOffset: null }),
+    'tasks.read': args => ({ taskId: taskFixtureId, documentId: taskFixtureDoc, encoding: 'utf8', text: args.offset === 0 ? '第一页😀' : '第二页乙', offset: args.offset, nextOffset: args.offset === 0 ? 4 : 8, totalChars: 8, complete: args.offset !== 0, sha256: taskFixtureSha }) });
+  const page = await ui.evaluate("state.page='tasks';tasksPage()"); await ui.button(page, '查看任务与资料').emit('click');
+  await ui.button(ui.ids.get('detail-content'), '按页查看').emit('click'); assert(ui.ids.get('detail-content').textContent.includes('第一页😀'));
+  await ui.button(ui.ids.get('detail-footer'), '下一页').emit('click'); assert(ui.ids.get('detail-content').textContent.includes('第二页乙')); assert(!ui.ids.get('detail-content').textContent.includes('第一页😀'));
+  const read = ui.calls.filter(call => call.action === 'tasks.read'); assert.equal(read[1].args.offset, 4); assert.equal(read[1].args.expectedSha256, taskFixtureSha);
+});
+test('a delayed task document cannot render into another selected personality instance', async () => {
+  let release, announce; const waiting = new Promise(resolve => { announce = resolve; });
+  const ui = await frontend({ 'tasks.inspect': () => taskUiView, 'tasks.list': () => ({ items: [{ taskId: taskFixtureId, title: '任务', status: 'completed' }], nextCursor: null }), 'tasks.get': () => ({ taskId: taskFixtureId, status: 'completed', capture: { complete: true }, documents: [{ documentId: taskFixtureDoc, name: 'report.txt', sha256: taskFixtureSha }] }), 'tasks.read': () => { announce(); return new Promise(resolve => { release = resolve; }); } });
+  const page = await ui.evaluate("state.page='tasks';tasksPage()"); await ui.button(page, '查看任务与资料').emit('click'); const pending = ui.button(ui.ids.get('detail-content'), '按页查看').emit('click'); await waiting;
+  ui.evaluate("state.instanceId='different-instance'"); release({ encoding: 'utf8', text: 'OLD_PRIVATE_TASK_BODY', offset: 0, nextOffset: 21, totalChars: 21, complete: true, sha256: taskFixtureSha }); await pending;
+  assert(!ui.ids.get('detail-content').textContent.includes('OLD_PRIVATE_TASK_BODY'));
+});

@@ -46,3 +46,14 @@
           - name: 'dsh-xiangxu-persona'
             config:
               role: agent
+
+    - id: preset-xiangxu-task-worker
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: xiangxu-task-worker
+        name: 相续任务执行者
+        description: 独立工程与研究任务；过程归档，结果由相续按需读取
+        plugins:
+          - name: 'dsh-xiangxu-persona'
+            config:
+              role: worker

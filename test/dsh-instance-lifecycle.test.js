@@ -32,7 +32,7 @@ test('actual coordinator mount/unload/reload releases all scoped tools and liste
     createCoordinator: options => createDshCoordinator(ctx, options), onLoaded: coordinator => coordinator.attachAgent(agent) });
   await manager.ready;
   t.after(async () => { await manager.close(); await fs.rm(base, { recursive: true, force: true }); });
-  const initialCount = surface.handlerCount(); assert.ok(initialCount > 0); assert.equal(surface.tools.size, 7);
+  const initialCount = surface.handlerCount(); assert.ok(initialCount > 0); assert.equal(surface.tools.size, 8);
   for (let cycle = 0; cycle < 3; cycle++) {
     const assemble = [...surface.handlers.get('system-prompt/assemble')][0], oldTool = surface.tools.get('memory_search');
     const value = await assemble({}, { agent }, async () => ({ sections: [] }));
@@ -41,7 +41,7 @@ test('actual coordinator mount/unload/reload releases all scoped tools and liste
     await manager.unload(); assert.equal(surface.tools.size, 0); assert.equal(surface.handlerCount(), 0);
     const unloaded = await oldTool.execute({ query: '不会执行' }, { agent }); assert.equal(unloaded.code, 'INSTANCE_UNLOADED');
     const stale = await assemble({}, { agent }, async () => ({ sections: [] })); assert.equal(stale.sections.length, 0);
-    await manager.load(); assert.equal(surface.tools.size, 7); assert.equal(surface.handlerCount(), initialCount);
+    await manager.load(); assert.equal(surface.tools.size, 8); assert.equal(surface.handlerCount(), initialCount);
   }
 });
 

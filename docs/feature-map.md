@@ -1,6 +1,6 @@
 # 十四模块实现映射
 
-本表说明代码落点；0.5.0当前实现及0.4.1／0.4.0历史测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
+本表说明代码落点；0.6.0当前实现及0.4.1／0.4.0历史测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |
 |---|---|---|
@@ -41,9 +41,11 @@
 
 voice.js保存有界技术偏好，persona_voice由人格按需选择实际音色；channels/windows-speech.js/.ps1把已安装Windows声音生成实际WAV，渠道音频另取平台ack。语速是近似SAPI音级，pitch:false；voice-only缺能力明确失败，both可保留真实文字ack并标语音不可用。没有性格标签硬映射、每轮选声或新的成长阈值。
 
-0.4.0当时为五工具，接入需要用户已有兼容桥；该节记录历史实现。0.5.0当前工具、扫码与授权见下节；微信官方普通群聊能力仍未实现。接口、容量及已验证边界见[聊天渠道接入](channel-integration.md)与[管理说明](management-ui.md)。个人网页与Telegram仅预留，实验mobile源码不挂载、不进入发布主入口。
+0.4.0当时为五工具，接入需要用户已有兼容桥；该节记录历史实现。0.5.0当时的工具、扫码与授权见下节，0.6.0当前委派见最后一节；微信官方普通群聊能力仍未实现。接口、容量及已验证边界见[聊天渠道接入](channel-integration.md)与[管理说明](management-ui.md)。个人网页与Telegram仅预留，实验mobile源码不挂载、不进入发布主入口。
 
 ## 0.5.0 陪伴范围、官方连接、权限与形象创作
+
+> 本节是0.5.0历史实现，当时七工具并禁止人格派发；当前0.6.0使用八工具与独立任务预设。
 
 | 扩展 | 实现与消费点 | 验证含义 |
 |---|---|---|
@@ -53,4 +55,21 @@ voice.js保存有界技术偏好，persona_voice由人格按需选择实际音�
 | 形象档案与生成 | media/service.js、providers.js、io.js，persona_media；形象页与owner-actions | 描述／主参考／版本／锁定，图片和视频分开开关，真实任务与结果资产 |
 | 有界外部资产 | owner-assets.js与父桥分块上传／下载、媒体manifest、永久撤销同步 | 不把二进制塞进每轮上下文；完整SHA，文本备份／元数据清单不冒充作品字节备份 |
 
-当前七工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。新增工具不要求人格一定使用能力或固定频率更新形象，不改认人、注意、主动、睡眠与整理必要性的判断。平台媒体发送与生成分别取得回执。完整操作、容量和当前／历史证据见[渠道接入](channel-integration.md)、[形象与创作](media-and-identity.md)及[管理说明](management-ui.md#050-实现与验证范围)。
+0.5.0当时七工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform。新增工具不要求人格一定使用能力或固定频率更新形象，不改认人、注意、主动、睡眠与整理必要性的判断。平台媒体发送与生成分别取得回执。完整操作、容量和当前／历史证据见[渠道接入](channel-integration.md)、[形象与创作](media-and-identity.md)及[管理说明](management-ui.md#050-实现与验证范围)。
+
+
+## 0.6.0 自主委派、独立工作预设与任务资料
+
+| 模块 | 实现与消费点 | 验证含义 |
+|---|---|---|
+| 受控自主派发 | index.js／tool-schema.js的persona_task；delegation/native.js显式原生spawn/caller与xiangxu-task-worker | 新上下文、真实父子归属、实际任务身份，是否派发由人格选择 |
+| 工作能力范围 | delegation/worker.js与cordis.patch.yml | worker不挂共享人格工具、不直接向父发送整段过程；DSH已有权限继续适用，不冒称额外OS沙箱 |
+| 完整独立资料 | delegation/archive.js／service.js | prompt、实际session events、报告、明确文件快照，分块SHA／Unicode分页／完整性与有界容量 |
+| 人格记忆隔离 | delegation/isolation.js、normalize.js与index.js实时／回放／readTrace | kind:user委派不进入人类C1，parent任务控制仅导航metadata，retained实际片段可供原有自主整理 |
+| 生命周期与界面 | “任务与资料”页、surfaces tasks.*、instance单写者与forget hooks | 不因只读浏览启动模型，prepared／unknown不自动重派，取消与来源撤销按实际回执报告 |
+
+当前八工具为memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task。任务是否值得记、对人格和关系有何影响由人格自主理解；分流只保证实际来源、归档、权限和处理预算。当前证据与操作见[自主委派与任务档案](delegation-and-task-archives.md)和[管理说明](management-ui.md)。0.5.0的422／85＋22及更早结果保留各自范围，不充当0.6.0新源实测。
+
+本版最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](verification/0.6.0-tests.json)、[两阶段原生SDK](verification/0.6.0-sdk-fixture.json)及[静态自主性审查](verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](management-ui.md)单独维护。
+
+status默认只返回紧凑任务卡和至多120字的导航摘要，不自动展开完整资料目录；明确传documentOffset／documentLimit可分页取目录，正文按documentId和Unicode offset／maxChars读取，返回nextOffset，下页传offset=nextOffset；通用工具cursor只续同一次有界响应，list.pageCursor只续任务列表。UI单次文件下载上限64MiB，不随档案扩容自动提高。archive_file虽按64KiB读取源文件，归档时仍组合受单资料容量限制的整份文件缓冲，内存随该文件大小增长；DSH冷查询也可能内部载入目标子会话日志，不能将逐页采集宣称为宿主恒定RAM。明确遗忘清理插件任务正文并保留永久撤销凭据，清理失败如实报告；它不会删除DSH原始会话历史或用户另存的工程副本。

@@ -133,7 +133,7 @@ test('actual coordinator concurrent detach calls dispose once and a new attach w
   const first = f.coordinator.detachAgent(f.agent.id, f.agent), second = f.coordinator.detachAgent(f.agent.id, f.agent); let attached = false;
   const next = f.coordinator.attachAgent(f.agent).then(value => { attached = true; return value; });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(attached, false); assert.equal(old.disposed, true); assert.equal(f.releases, 1);
-  release(); const [, , state] = await Promise.all([first, second, next]); assert.notEqual(state, old); assert.equal(state.disposed, false); assert.equal(f.tools.size, 7); assert.equal(f.registrations, 14);
+  release(); const [, , state] = await Promise.all([first, second, next]); assert.notEqual(state, old); assert.equal(state.disposed, false); assert.equal(f.tools.size, 8); assert.equal(f.registrations, 16);
   assert.deepEqual(await f.coordinator.repository.getPending(), pendingBefore);
   await f.coordinator.close(); assert.equal(f.tools.size, 0); assert.equal(f.handlers.size, 0); assert.equal(f.coordinator.runtime._timer, null); assert.equal(f.releases, 2);
 });
@@ -156,7 +156,7 @@ test('a second actual coordinator attach waits for complete initialization inste
   const first = f.coordinator.attachAgent(f.agent); await checkpoint; let secondCompleted = false;
   const second = f.coordinator.attachAgent(f.agent).then(value => { secondCompleted = true; return value; });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(secondCompleted, false); assert.equal(f.tools.size, 0);
-  release(); const [initial, concurrent] = await Promise.all([first, second]); assert.equal(concurrent, initial); assert.equal(concurrent.disposed, false); assert.equal(f.tools.size, 7); assert.equal(f.registrations, 7);
+  release(); const [initial, concurrent] = await Promise.all([first, second]); assert.equal(concurrent, initial); assert.equal(concurrent.disposed, false); assert.equal(f.tools.size, 8); assert.equal(f.registrations, 8);
   assert.equal((await f.coordinator.repository.getPending()).length, 0); await f.coordinator.close(); assert.equal(f.tools.size, 0); assert.equal(f.coordinator.runtime._timer, null);
 });
 
@@ -168,5 +168,37 @@ test('a replacement actual Agent waits for old initialization and disposal befor
   const second = f.coordinator.attachAgent(replacement).then(value => { replaced = true; return value; });
   await new Promise(resolve => setImmediate(resolve)); assert.equal(replaced, false); assert.equal(f.tools.size, 0);
   release(); const [initial, concurrent] = await Promise.all([first, second]); assert.notEqual(concurrent, initial); assert.equal(initial.disposed, true); assert.equal(concurrent.agent, replacement); assert.equal(concurrent.disposed, false);
-  assert.equal(f.tools.size, 7); assert.equal(f.registrations, 14); assert.equal(f.releases, 1); assert.equal((await f.coordinator.repository.getPending()).length, 0); await f.coordinator.close(); assert.equal(f.tools.size, 0);
+  assert.equal(f.tools.size, 8); assert.equal(f.registrations, 16); assert.equal(f.releases, 1); assert.equal((await f.coordinator.repository.getPending()).length, 0); await f.coordinator.close(); assert.equal(f.tools.size, 0);
+});
+
+test('the preset first step waits for attachment even before the selected notification is delivered', async () => {
+  let release; const waiting = new Promise(resolve => { release = resolve; });
+  const f = fixture({ loaded: true, preset: 'coding', attach: () => waiting });
+  f.selections.set(f.primary.ctx, 'persona-memory'); // The SDK bound its composition; notification has not run.
+  let entered = false; const step = f.handlers.get('agent/pre-step').handler({ agent: f.primary }, () => { entered = true; return 'entered'; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(entered, false); assert.deepEqual(f.visible(), []);
+  release(); assert.equal(await step, 'entered'); assert.deepEqual(f.visible(), ['persona_decide']); await f.cleanup[0]();
+});
+
+test('preset first-step recovery cannot mount a trusted task worker into personality memory', async () => {
+  const handlers = new Map(), cleanup = []; let attached = false, masked = false, continued = false;
+  const ctx = { get: name => name === 'agentPresets' ? { composedPreset: () => 'persona-memory' } : undefined, on: (name, handler) => handlers.set(name, handler), effect: fn => cleanup.push(fn()) };
+  mountCompanionScope(ctx, { attachAgent: async () => { attached = true; } }, { isWorkerSession: id => id === 'owned-worker' });
+  const agent = { id: 'owned-worker', ctx: { tools: { restrict: () => { masked = true; } } } };
+  await handlers.get('agent/pre-step')({ agent }, () => { continued = true; });
+  assert.equal(attached, false); assert.equal(masked, false); assert.equal(continued, true); await cleanup[0]();
+});
+
+test('first prompt assembly waits for full attachment and refreshes the authoritative wire schemas without changing the host presentation mode', async () => {
+  const handlers = new Map(), cleanup = [], parameters = { type: 'object', properties: { action: { type: 'string' } } }; let released, attached = false, mode = 'native', decorated = 0;
+  const gate = new Promise(resolve => { released = resolve; }), scope = {}, agent = { id: 'first-prompt', session: { id: 'first-prompt', header: { agentPreset: 'persona-memory' } }, ctx: { on: () => () => {}, tools: { restrict: () => () => {}, wireSchemas: actualScope => { assert.equal(actualScope, scope); return { schemas: attached ? [{ name: mode === 'native' ? 'persona_task' : 'run_code', parameters }] : [] }; } } } };
+  const coordinator = { preparePersonaAssembly: async (_agent, value) => { decorated++; return { ...value, sections: [...value.sections, { name: 'persona-memory:protocol', text: 'protocol' }, { name: 'persona-memory:live', text: 'live' }] }; }, detachAgent: async () => {} };
+  const manager = { getCoordinator: () => coordinator, attachAgent: async () => { await gate; attached = true; } };
+  const ctx = { get: name => name === 'agentPresets' ? { composedPreset: () => 'persona-memory' } : undefined, on: (name, handler) => handlers.set(name, handler), effect: fn => cleanup.push(fn()) };
+  mountCompanionScope(ctx, manager);
+  let finished = false; const assembling = handlers.get('system-prompt/assemble')({ sections: [], tools: [] }, { agent, scope }, async () => ({ sections: [], tools: [] })).then(value => { finished = true; return value; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(finished, false); released(); const first = await assembling;
+  assert.equal(first.tools[0].name, 'persona_task'); assert.equal(decorated, 1); first.tools[0].parameters.properties.action.type = 'number'; assert.equal(parameters.properties.action.type, 'string');
+  mode = 'ptc'; const ptc = await handlers.get('system-prompt/assemble')({ sections: [], tools: [] }, { agent, scope }, async () => ({ sections: [], tools: [] })); assert.equal(ptc.tools[0].name, 'run_code');
+  await cleanup[0]();
 });
