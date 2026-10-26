@@ -1,6 +1,8 @@
 # 相续人格原生管理界面与验收
 
-版本0.8.0，产品dsh-Xiangxu-Persona，包名dsh-xiangxu-persona。DSH设置入口名“相续人格”，对话预设展示名也为“相续人格”；内部presetId persona-memory及数据schema persona-memory/3保持兼容。本文说明当前实现和可复核边界，最终验收回执单独维护。
+0.8.1补丁增强透明主题下的操作提示：主导航和内容分类的选中项有常驻下划线，功能入口有“打开 →”轮廓标记，状态单独显示；悬停与键盘焦点可见。颜色继续取自DSH主题，0.8系列操作流程及后台契约不变。 透明主题使用受控样本验证，非本版新增真实账号或宿主测试；见[0.8.1回执](verification/0.8.1-affordance.json)。
+
+版本0.8.1，产品dsh-Xiangxu-Persona，包名dsh-xiangxu-persona。DSH设置入口名“相续人格”，对话预设展示名也为“相续人格”；内部presetId persona-memory及数据schema persona-memory/3保持兼容。本文说明当前实现和可复核边界，最终验收回执单独维护。
 
 ## 原生入口与加载
 

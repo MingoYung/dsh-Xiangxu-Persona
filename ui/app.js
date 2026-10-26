@@ -59,7 +59,7 @@ function disclosure(attrs = {}, ...children) {
 function destination(title, description, action, status = '') {
   const node = button('', action, 'destination', { class: 'destination', 'aria-label': title }); node.append(
     element('span', { class: 'destination-copy' }, element('span', { class: 'destination-title' }, title), element('span', { class: 'destination-description' }, description)),
-    element('span', { class: 'destination-action' }, status || '打开')); return node;
+    element('span', { class: 'destination-end' }, status ? element('span', { class: 'destination-status' }, status) : null, element('span', { class: 'destination-action', 'aria-hidden': true }, '打开 →'))); return node;
 }
 function destinations(...items) { return element('div', { class: 'destination-list' }, ...items); }
 function sectionTabs(items) { return element('nav', { class: 'module-tabs', 'aria-label': '当前页面内容' }, items.map(([view, label]) => button(label, () => openSection(view, false), 'module-tab', { class: 'module-tab' + ((state.view ?? '') === view ? ' active' : ''), 'aria-current': (state.view ?? '') === view ? 'page' : 'false' }))); }
