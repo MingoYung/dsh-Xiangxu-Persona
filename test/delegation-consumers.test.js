@@ -105,3 +105,30 @@ test('the real first pre-step recovers its claimed turn so subsequent delegated 
   const status = await f.tools.get('persona_task').execute({ action: 'status', taskId: output.taskId }, { agent: f.agent, callId: 'status-only' });
   assert.equal(status.documents, undefined); assert.equal(status.taskId, output.taskId);
 });
+
+test('forgetting a deep memory of retained task material blocks archive rereads while natural source eviction does not', async t => {
+  const f = await fixture(t), doc = f.task.documents.find(d => d.kind === 'final_report');
+  const retained = await f.tools.get('persona_task').execute({ action: 'retain', taskId: f.task.taskId, documentId: doc.documentId, offset: 7, maxChars: 27 }, { agent: f.agent, callId: 'retain-for-deep-revocation' });
+  assert.equal(retained.capturedForReview, true);
+  const run = await f.c.repository.prepareConsolidation({ maxInputChars: 16000 });
+  const hot = run.input.hot.find(record => record.sourceKind === 'persona-task:retained'); assert(hot);
+  await f.c.repository.applyConsolidation(run, [{ documentKey: 'global:deep', expectedVersion: run.inputVersions['global:deep'], recordId: 'task-experience', operation: 'upsert', value: {
+    title: '独立研究的经历', reference: '我保留的任务经历', experience: '选中的研究片段', feltThen: '有兴趣', meaningNow: '我现在的理解', cues: [], aboutPersonIds: [], relatedMemoryIds: [], supersedesIds: [], srcRefs: [hot.sourceRef],
+  } }]);
+  const original = (await f.c.repository.readSources({ sourceRefs: [{ sourceSessionId: f.session.id, sourceEventId: 'real-human-source' }] }))[0]; assert(original);
+  await f.c.repository.clearPending([original.eventId]);
+  assert.equal((await f.c.repository.evictSources([original.id])).removed.length, 1);
+  assert.equal((await f.c.repository.readSources({ eventIds: [original.eventId] })).length, 0);
+  assert.equal((await f.c.tasks.read({ taskId: f.task.taskId, documentId: doc.documentId, offset: 7, maxChars: 27 })).text, Array.from(f.report).slice(7, 34).join(''));
+  assert.equal((await f.c.repository.getMemoryRecord('task-experience')).srcRefs[0].sourceEventId, hot.sourceRef.sourceEventId);
+  const forgotten = await f.c.executeCommand('forget', { scope: 'global', ids: ['task-experience'], reason: 'explicit selected task experience forgetting' });
+  assert(forgotten.taskCleanup.revokedTaskIds.includes(f.task.taskId));
+  assert.equal(await f.c.repository.getMemoryRecord('task-experience'), null);
+  await assert.rejects(f.c.tasks.read({ taskId: f.task.taskId, documentId: doc.documentId }), { code: 'TASK_SOURCE_REVOKED' });
+  await assert.rejects(f.c.tasks.retain({ taskId: f.task.taskId, documentId: doc.documentId, offset: 0, maxChars: 100 }), { code: 'TASK_SOURCE_REVOKED' });
+  const archiveRoot = f.c.tasks.archiveRoot; await f.c.tasks.close();
+  f.c.tasks = createDelegationService({ archiveRoot, host: { start: async () => { throw Error('must not restart work'); }, inspect: async () => ({ exists: false }), readEvents: async () => ({ events: [], complete: true }), registerTask: value => f.c.taskHost.registerTask(value) },
+    getRevocations: async () => { const meta = await f.c.repository.store.readJson('meta/state.json'); return { sourceKeys: meta.revokedSources, recordIds: meta.revokedIds }; } });
+  await f.c.tasks.ready;
+  await assert.rejects(f.c.tasks.material({ taskId: f.task.taskId, documentId: doc.documentId, offset: 2, maxChars: 20 }), { code: 'TASK_SOURCE_REVOKED' });
+});

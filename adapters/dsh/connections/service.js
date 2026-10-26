@@ -1,3 +1,4 @@
+import { QQ_DELIVERY_POLICY } from './qq.js';
 import { randomUUID } from 'node:crypto';
 import { createChannelRegistryStorage } from '../channels/service.js';
 import { CONNECTION_LIMITS, capabilities, digest, fail, identifier, object, safeError } from './common.js';
@@ -25,7 +26,7 @@ export function createConnectionService({ registryPath, storage, fetchImpl = fet
   async function save(next) { validate(next); await persistence.write(next); registry = next; }
   function publicStatus(id) {
     const account = registry.accounts[id], flow = flows.get(id), adapter = clients.get(id)?.adapter;
-    return { id, mode: 'official', phase: flow?.phase ?? (account ? 'authorized' : 'idle'), ...(flow ? { flowId: flow.id, expiresAt: flow.expiresAt, ...(flow.qrContent && ['waiting', 'scanned', 'verify'].includes(flow.phase) ? { qrContent: flow.qrContent } : {}) } : {}), accountId: account?.accountId ?? null, pairedUserId: account?.pairedUserId ?? null, connected: adapter?.listening === true, hasCredentials: Boolean(account), chatTypes: id === 'qq' ? ['private', 'group'] : ['private'], supportedCapabilities: id === 'qq' ? QQ_CAPABILITIES : capabilities(['chat.text', 'chat.image', 'chat.video', 'chat.file']), platformPermissions: '可用范围仍取决于平台账号实际权限及API回执', error: errors.get(id) ?? null, qrScanByUserRequired: true, desktopPersonalAccountTakenOver: false, livePlatformVerified: false };
+    return { id, mode: 'official', ...(id === 'qq' ? { deliveryPolicy: QQ_DELIVERY_POLICY } : {}), phase: flow?.phase ?? (account ? 'authorized' : 'idle'), ...(flow ? { flowId: flow.id, expiresAt: flow.expiresAt, ...(flow.qrContent && ['waiting', 'scanned', 'verify'].includes(flow.phase) ? { qrContent: flow.qrContent } : {}) } : {}), accountId: account?.accountId ?? null, pairedUserId: account?.pairedUserId ?? null, connected: adapter?.listening === true, hasCredentials: Boolean(account), chatTypes: id === 'qq' ? ['private', 'group'] : ['private'], supportedCapabilities: id === 'qq' ? QQ_CAPABILITIES : capabilities(['chat.text', 'chat.image', 'chat.video', 'chat.file']), platformPermissions: '可用范围仍取决于平台账号实际权限及API回执', error: errors.get(id) ?? null, qrScanByUserRequired: true, desktopPersonalAccountTakenOver: false, livePlatformVerified: false };
   }
   async function status() { await ready; return { connections: IDS.map(publicStatus), limits: { flowMs: CONNECTION_LIMITS.flowMs, mediaBytes: CONNECTION_LIMITS.mediaBytes } }; }
   async function start({ id } = {}) { return queue(async () => {

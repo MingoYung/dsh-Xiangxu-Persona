@@ -1,6 +1,6 @@
 # 自主委派、任务档案与资料回查
 
-版本0.6.0，产品dsh-Xiangxu-Persona。主人格可以通过persona_task自主委派任务；独立工作预设处理任务过程，完整资料在当前人格实例的任务档案中保留，主会话按需读取，并自主选择哪些材料供记忆整理。是否派发、任务题型、是否记住及怎样理解经历，继续由人格决定。
+版本0.7.0，产品dsh-Xiangxu-Persona。主人格可以通过persona_task自主委派任务；独立工作预设处理任务过程，完整资料在当前人格实例的任务档案中保留，主会话按需读取，并自主选择哪些材料供记忆整理。是否派发、任务题型、是否记住及怎样理解经历，继续由人格决定。
 
 ## 主会话、工作预设与资料边界
 
@@ -89,6 +89,12 @@ create先保存prepared收据与稳定子会话ID，再执行原生调用；同�
 
 owner动作固定为tasks.inspect/list/get/read/readChunk/configureLimits/collect/cancel/archiveFile。owner可查询当前实例的任务，不靠前端传入任意档案路径；archiveFile仍根据该任务的实际工作目录读取。
 
-本版最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](verification/0.6.0-tests.json)、[两阶段原生SDK](verification/0.6.0-sdk-fixture.json)及[静态自主性审查](verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](management-ui.md)单独维护。
+0.6.0历史最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](verification/0.6.0-tests.json)、[两阶段原生SDK](verification/0.6.0-sdk-fixture.json)及[静态自主性审查](verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](management-ui.md)单独维护。
 
 可复用命令为`node scripts/dsh-delegation-integration.mjs`；安装目录、新隔离home和证据路径的可选参数见[README](../README.md#文档与验证)。0.5.0的422项回归与85＋22项SDK结果是当时版本的证据，不代表本版委派已经以真实模型跑过。真实DSH加确定性fixture用于证明宿主工具、资料与生命周期链路，不证明长期人格效果或真实研究质量。
+
+## 0.7.0保留片段的明确撤销
+
+retain产生的task-material:<documentId>:<sha256>:<from>:<to>是有实际任务会话的AI资料来源，不能当真人新发言。人格可自主将其记成普通或深刻记忆。明确忘记该来源或其已保留记忆时，插件核对真实task.sessionId、归档文档ID/SHA和合法Unicode范围，再沿现有任务级撤销清理正文；旧原件、换页read/retain、trace与重启不能恢复这份任务材料。错误会话、错误SHA、越界范围不会撤销其它活动任务；新任务不会仅因同样文字被禁止。自然淘汰原对话仍保留完整独立任务档案。
+
+此缺口新增三项回归修前均复现失败；修后五份委派相关测试70/70通过，使用隔离宿主端口且无真实模型调用。修复由源码审查者自己实现，另经root和社交后端执行者独立静态复核；不冒充独立重跑70项。证据范围见[本版源码自主性审查](verification/0.7.0-autonomy-audit.json)。0.7.0[完整本地回归](verification/0.7.0-tests.json)583/583通过，失败／取消／跳过均为0；[真实DSH SDK](verification/0.7.0-sdk-fixture.json)分别完成新链58/58与委派链35/35，两套有重叠、分别列示，使用固定fixture且真实LLM／平台调用均为0。[原生九页GUI](verification/0.7.0-native-ui.json)使用合成数据、0模型调用；[自主性源码审查](verification/0.7.0-autonomy-audit.json)分列源码链、定向回归与交叉复核。远程CI结果不由本地回执推断；0.6.0数字保留历史含义。

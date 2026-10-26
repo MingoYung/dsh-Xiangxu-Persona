@@ -1,0 +1,91 @@
+{
+  "version": "0.7.0",
+  "status": "passed",
+  "checkedAt": "2026-10-26T09:41:04.869Z",
+  "hostVersion": "0.2.1-rc.2",
+  "actualNativeSettings": true,
+  "isolatedWebProfile": true,
+  "syntheticData": true,
+  "sourceDigests": {
+    "package.json": "585c2dd328c4d48fcb013ff7cb56895e4983971a23935899a1085d765178b017",
+    "scripts/build-ui.mjs": "7ec4a665bdfcb83d78acae50ad031cbbcb9f45fbcd744b790eee3c6f923f7113",
+    "ui/index.html": "ade36b0d4f32b6fad1ab2b101d0ca54e71b3aaf8bab6dbc475450ea7d77cc4b5",
+    "ui/style.css": "444aa28020fa397dbb474ab9af712aca0fcf30f853db6a5b6629a2cb1e1411e5",
+    "ui/app.js": "6cf87f5c97ab6581159632e9c0a567c73e184675eaa896a310fc17492440f329",
+    "ui/client.js": "c7d90156d7adbbb90b8199171f3de37c2fed2c014f98e82407ee997964d635f6"
+  },
+  "scope": "Actual native settings UI in isolated web profile; UI app/client hot-reloaded once for a null child rendering fix and final build helper/deep/social observations repeated. Runtime semantics are verified by separate SDK/test receipts.",
+  "observed": {
+    "checkedAt": "2026-10-26T09:23:01.206Z",
+    "syntheticData": true,
+    "deepFilter": true,
+    "deepStructuredDetail": true,
+    "deepModuleReferenceOnly": true,
+    "helperDefaultDisabled": true,
+    "helperEnabledSaved": true,
+    "helperDisabledSaved": true,
+    "socialRegistrationConfirmed": true,
+    "socialUnverifiedAndZeroCapabilities": true,
+    "qqPolicyVisible": true,
+    "wechatNoNullText": true,
+    "pages": [
+      "运行总览",
+      "共同人格",
+      "记忆与关系",
+      "进化与变更",
+      "设置与加载",
+      "聊天渠道与语音",
+      "形象与创作",
+      "任务与资料",
+      "维护与诊断"
+    ],
+    "finalBuildHelperRoundTrip": true
+  },
+  "ownerReadback": {
+    "helperEnabled": false,
+    "referenceOnly": true,
+    "automaticRecall": false,
+    "socialUnverified": true,
+    "socialCapabilitiesAvailable": 0,
+    "modelCalls": 0,
+    "usagePath": "global/usage.jsonl",
+    "modelUsageRows": 0
+  },
+  "cleanup": {
+    "stoppedAt": "2026-10-26T09:28:26.764Z",
+    "instanceUnloadedBeforeStop": true,
+    "actualHostPluginDisabled": true,
+    "writerLocksRemaining": 0,
+    "mediaWriterLocksRemaining": 0,
+    "taskWriterLocksRemaining": 0,
+    "socialWriterLocksRemaining": 0,
+    "dedicatedHostRemaining": false,
+    "manualLockDeletion": false,
+    "productionForceRestarted": false,
+    "dedicatedHostTermination": "SIGTERM after actual instance unload and plugin disposal",
+    "dedicatedHostExit": {
+      "code": 1,
+      "signal": null
+    }
+  },
+  "images": {
+    "docs/images/0.7.0-deep-memory.png": {
+      "bytes": 56404,
+      "sha256": "289d4a5cb583a778f4f1e4ac92ce7ae5a8932cad8bc455638d2115e4dbe93773"
+    },
+    "docs/images/0.7.0-review-assistant.png": {
+      "bytes": 51331,
+      "sha256": "af0a6c8004f97fa46ea70a15a4c78f488f202a81f0a702fb3ec2c2eb9ac3347f"
+    },
+    "docs/images/0.7.0-social-identities.png": {
+      "bytes": 55727,
+      "sha256": "54f3dbf0e8d3e9cc1877e1738ab8dd2d8145254985614bf860c822547adba760"
+    }
+  },
+  "limitations": [
+    "No real provider or social account was used.",
+    "The account sample proves registration and honest unavailable capabilities, not platform login or publishing.",
+    "The helper screenshots demonstrate configuration, not longitudinal personality quality.",
+    "Native runtime integration is covered separately by the SDK receipt."
+  ]
+}

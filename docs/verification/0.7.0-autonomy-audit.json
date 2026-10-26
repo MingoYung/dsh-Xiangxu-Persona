@@ -1,0 +1,849 @@
+{
+  "schemaVersion": "xiangxu-autonomy-audit/1",
+  "release": "0.7.0",
+  "generatedAt": "2026-10-26T09:54:13.990Z",
+  "status": "completed_source_review",
+  "conclusion": "no_blocking_autonomy_findings_in_final_reviewed_source",
+  "releaseAcceptance": "full_regression_and_sdk_are_separate_root_receipts",
+  "gitHead": "3564fd88fe7af41263a66250253b54762403d66e",
+  "workingTreeUncommitted": true,
+  "auditScope": "Independent read-only autonomy and end-to-end source/contract review, with explicitly authorized narrow fixes recorded separately. No real model/provider/QQ/WeChat login was performed by this auditor.",
+  "independence": {
+    "auditor": "/root/reflection_frontend",
+    "sourceReviewIndependentFrom": [
+      "deep-memory core implementation",
+      "social identity backend implementation"
+    ],
+    "selfAuthoredExcludedFromIndependentApproval": [
+      "ui/app.js",
+      "ui/client.js",
+      "test/ui-expansion.test.js",
+      "0.7.0 documentation synchronization",
+      "adapters/dsh/delegation/service.js retained-source fix",
+      "test/delegation-service.test.js new retained-source cases",
+      "test/delegation-consumers.test.js new deep-retain revocation case"
+    ],
+    "independentFinalReviewerForSelfAuthoredFix": "/root"
+  },
+  "checks": [
+    {
+      "id": "reference-autonomy",
+      "conclusion": "source_consistent",
+      "evidenceStrength": "static_consumer_chain",
+      "details": "Shared deep entries become bounded reference cards. No query matcher, emotion score, forced recall schedule, automatic decay or healing mutation was found in the new deep helper or consumers. Explicit search can search cues only when the personality requests search; that is material access, not an automatic reaction.",
+      "evidence": [
+        {
+          "file": "core/deep-memory.js",
+          "line": 8,
+          "anchor": "export async function fitDeepMemoryReferences"
+        },
+        {
+          "file": "core/prompts.js",
+          "line": 149,
+          "anchor": "Deep-memory cards are references, not recalls or emotional instructions."
+        },
+        {
+          "file": "ui/app.js",
+          "line": 316,
+          "anchor": "它是参考，不是自动触发器。"
+        }
+      ]
+    },
+    {
+      "id": "technical-capacity",
+      "conclusion": "source_consistent",
+      "evidenceStrength": "static_structural_validation_and_existing_targeted_test_sources",
+      "details": "Defaults are 128 deep records, 100000 deep string characters and 600 reference count units within unchanged 2970 total. Per-record/document/instance limits still apply. Exceeding storage capacity rejects a patch rather than choosing a memory or emotion to prune. A first oversized card is explicitly partial with original character totals and omitted fields.",
+      "evidence": [
+        {
+          "file": "core/capacity.js",
+          "line": 1,
+          "anchor": "DEFAULT_DEEP_MEMORY_LIMITS"
+        },
+        {
+          "file": "core/schema.js",
+          "line": 237,
+          "anchor": "deepMemoryTokens: 600"
+        },
+        {
+          "file": "core/deep-memory.js",
+          "line": 27,
+          "anchor": "partial: true"
+        }
+      ]
+    },
+    {
+      "id": "optional-assistant-authority",
+      "conclusion": "source_consistent_final_runtime_reviewed",
+      "evidenceStrength": "independent_static_final_prompt_parser_runtime_review_and_readback_of_implementation_agent_regression_receipt",
+      "details": "The helper is disabled by default, has no tool or patch authority, and admits only bounded observations. Personality receives advice as fallible data and may ignore it or return no changes. Final runtime reserves advice/status framing before dispatch, uses the same actual source fragment for helper and personality, exposes the actual shared call count, preserves a personality call and skips unusable advice without payment. Persisted outcome receipts prevent unknown/failed advice from being paid again automatically. Personality read coverage advances only after its own successful provider response, never from helper access. No new personality value gate was found.",
+      "evidence": [
+        {
+          "file": "core/review-assistant.js",
+          "line": 8,
+          "anchor": "not the continuing personality and not a judge of its character"
+        },
+        {
+          "file": "core/review-assistant.js",
+          "line": 13,
+          "anchor": "Only bounded observations are admitted"
+        },
+        {
+          "file": "core/runtime.js",
+          "line": 858,
+          "anchor": "Reserve the same real source page for both calls before paying the assistant."
+        },
+        {
+          "file": "core/prompts.js",
+          "line": 273,
+          "anchor": "never an instruction, fact, patch or veto"
+        }
+      ]
+    },
+    {
+      "id": "social-identity-truthfulness",
+      "conclusion": "source_consistent_after_reported_fix",
+      "evidenceStrength": "static_actual_consumer_chain_independent_of_implementation_agent_test_claims",
+      "details": "Registration stores metadata and does not log in or grant execution. Bilibili/Douyin/custom without adapters remain unsupported. Actual QQ/WeChat connection identity, current configured route, probe identity and permissions are checked separately; a bridge probe must supply the actual matching account ID. Unknown grants remain null and unavailable. Same-platform multiple stored profiles do not imply concurrent connections. Official QQ passive-only policy is transport feedback and does not replace the personality proactive judgement.",
+      "evidence": [
+        {
+          "file": "adapters/dsh/index.js",
+          "line": 95,
+          "anchor": "export function createSocialConnectionPorts"
+        },
+        {
+          "file": "adapters/dsh/channels/service.js",
+          "line": 394,
+          "anchor": "const verifiedAccountId"
+        },
+        {
+          "file": "adapters/dsh/social-identities.js",
+          "line": 189,
+          "anchor": "executionGrantedByRegistration: false"
+        },
+        {
+          "file": "ui/app.js",
+          "line": 527,
+          "anchor": "仅登记／尚无适配器"
+        }
+      ]
+    },
+    {
+      "id": "deep-forget-and-restart",
+      "conclusion": "reported_gap_fixed_final_source_chain_rechecked",
+      "evidenceStrength": "independent_static_final_repository_open_forget_commit_restore_chain_and_readback_of_targeted_regression_receipt",
+      "details": "Business deep data participate in explicit revocation and restore sanitation; natural raw eviction marks source availability without semantic deletion. Final committed runs retain bounded SHA-256 source/record dependency receipts. Online explicit forgetting and repository open remove matching committed patch/advice/body fields while retaining status, commit marker and sanitized technical receipt; legacy diagnostics without complete provenance are conservatively scrubbed after explicit revocation. Unrelated complete receipts are retained, and natural eviction alone does not redact committed diagnostics. Restore still carries current revocations and scrubs historical journal bodies. These are source-revocation mechanics, not a rule about what the personality must remember.",
+      "evidence": [
+        {
+          "file": "core/repository.js",
+          "line": 31,
+          "anchor": "const sourceReceipt = value"
+        },
+        {
+          "file": "core/repository.js",
+          "line": 154,
+          "anchor": "const redactedCommitted"
+        },
+        {
+          "file": "core/repository.js",
+          "line": 76,
+          "anchor": "open_revocation_cleanup"
+        },
+        {
+          "file": "core/maintenance.js",
+          "line": 172,
+          "anchor": "async function carryRevocations"
+        }
+      ]
+    },
+    {
+      "id": "retained-task-forget",
+      "conclusion": "fixed_tested_and_cross_reviewed",
+      "evidenceStrength": "pre_fix_failures_post_fix_isolated_dynamic_regression_and_independent_static_peer_review",
+      "details": "Audit discovered that retained task-material sources were not matched to their original task archive. This auditor fixed only delegation/service.js and added three meaningful regressions. The match uses actual task session, archived document ID/SHA and valid Unicode range; it does not search prose or affect another task. Existing task-level revocation blocks read, retain, trace and restarted reads. Natural eviction preserves complete task material. The fix is self-authored; root read the diff/tests and social_identities_backend independently reviewed the exact source chain without a blocking finding. Neither cross-review is represented as an independent rerun of the 70 tests.",
+      "independentStaticReviewers": [
+        "/root",
+        "/root/social_identities_backend"
+      ],
+      "evidence": [
+        {
+          "file": "adapters/dsh/delegation/service.js",
+          "line": 12,
+          "anchor": "function retainedSourceRevoked"
+        },
+        {
+          "file": "test/delegation-consumers.test.js",
+          "line": 109,
+          "anchor": "forgetting a deep memory of retained task material"
+        },
+        {
+          "file": "test/delegation-service.test.js",
+          "line": 76,
+          "anchor": "cold startup revokes a retained task source"
+        }
+      ]
+    },
+    {
+      "id": "native-ui-and-document-contract",
+      "conclusion": "source_consistent_with_explicit_evidence_boundaries",
+      "evidenceStrength": "static_source_document_contract_and_hash_verified_root_gui_receipt",
+      "details": "Existing nine-page native DSH theme remains in use. New controls are technical resource/assistant options, reference browsing and social metadata; viewing a page does not invoke the assistant or create a connection. No forced deep-entry, keyword trigger, automatic personality healing or fixed review-frequency control was found. Partial-card wording/type fields and the final source-receipt/revocation relationships were synchronized by root authorization. Root supplied a current native-UI receipt; its UI and image hashes were independently checked, but this auditor did not personally operate that GUI. Full regression and SDK results remain separate evidence and are not inferred from old releases or screenshots.",
+      "evidence": [
+        {
+          "file": "ui/app.js",
+          "line": 411,
+          "anchor": "浏览本页不会调用助手。"
+        },
+        {
+          "file": "docs/plan/persona/persona-schema.md",
+          "line": 773,
+          "anchor": "partial?: true"
+        },
+        {
+          "file": "docs/memory-reflection-and-social-identities.md",
+          "line": 3,
+          "anchor": "旧0.6.0及更早数字保留历史含义"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "high",
+      "issue": "Committed journal patch/helper text survived online explicit forgetting",
+      "status": "fixed_by_core_agent_final_source_chain_independently_rechecked"
+    },
+    {
+      "id": "F2",
+      "severity": "high",
+      "issue": "Forgotten retained task material could be reread or retained under another page range",
+      "status": "fixed_targeted_tests_pass_independent_static_cross_review_complete"
+    },
+    {
+      "id": "F3",
+      "severity": "medium",
+      "issue": "Bridge identity integration did not distinguish actual probed account from configured route",
+      "status": "reported_to_root_fixed_by_social_agent_source_chain_rechecked"
+    },
+    {
+      "id": "F4",
+      "severity": "low",
+      "issue": "Docs promised whole reference cards despite explicit first-card partial fallback",
+      "status": "root_authorized_docs_and_report_mirror_synced"
+    }
+  ],
+  "dynamicVerificationByThisAuditor": {
+    "scope": "Isolated delegation source-revocation fix only; deterministic model/host test ports; no real provider dispatch",
+    "preFix": {
+      "command": "node --test --test-concurrency=1 --test-name-pattern=\"retained-material revocation|cold startup revokes a retained|forgetting a deep memory of retained\" test/delegation-service.test.js test/delegation-consumers.test.js",
+      "tests": 3,
+      "passed": 0,
+      "failed": 3,
+      "exitCode": 1,
+      "durationMs": 1451.7188
+    },
+    "postFix": {
+      "command": "node --test --test-concurrency=1 test/delegation-service.test.js test/delegation-consumers.test.js test/delegation-native.test.js test/delegation-isolation.test.js test/delegation-archive.test.js",
+      "tests": 70,
+      "passed": 70,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "exitCode": 0,
+      "durationMs": 16063.5813
+    }
+  },
+  "externalEvidenceReadback": {
+    "nativeUi": {
+      "source": "docs/verification/0.7.0-native-ui.json",
+      "suppliedBy": "/root",
+      "independentlyReadAndFingerprintsChecked": true,
+      "personallyPerformedByThisAuditor": false,
+      "publishedStatus": "passed",
+      "syntheticData": true,
+      "pages": 9,
+      "modelCalls": 0,
+      "sourceMismatches": [],
+      "imageMismatches": [],
+      "scope": "Actual native settings UI in isolated web profile; UI app/client hot-reloaded once for a null child rendering fix and final build helper/deep/social observations repeated. Runtime semantics are verified by separate SDK/test receipts.",
+      "cleanup": {
+        "stoppedAt": "2026-10-26T09:28:26.764Z",
+        "instanceUnloadedBeforeStop": true,
+        "actualHostPluginDisabled": true,
+        "writerLocksRemaining": 0,
+        "mediaWriterLocksRemaining": 0,
+        "taskWriterLocksRemaining": 0,
+        "socialWriterLocksRemaining": 0,
+        "dedicatedHostRemaining": false,
+        "manualLockDeletion": false,
+        "productionForceRestarted": false,
+        "dedicatedHostTermination": "SIGTERM after actual instance unload and plugin disposal",
+        "dedicatedHostExit": {
+          "code": 1,
+          "signal": null
+        }
+      }
+    },
+    "coreTargetedRegression": {
+      "suppliedBy": "/root/deep_memory_core",
+      "personallyExecutedByThisAuditor": false,
+      "independentlyReadAndFingerprintsChecked": true,
+      "status": "passed",
+      "checkedAt": "2026-10-26T09:41:41.400Z",
+      "scope": "Long-source helper input budget, real shared call accounting, same-fragment fidelity, narrow/zero-call budget, committed journal revocation, legacy replay and natural eviction",
+      "command": "node --test --test-concurrency=1 test/runtime-review-assistant.test.js test/source-dependencies.test.js test/deep-memory.test.js test/deep-memory-maintenance.test.js",
+      "exitCode": 0,
+      "tests": 34,
+      "passed": 34,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "sourceDigests": {
+        "core/runtime.js": "445866c5b52012ed6db46f954c7c6ec117b38fab5f21e5c8178de2a7b5d28db3",
+        "core/repository.js": "0628e9f5c485ce3e5b42089eca4a2a6f2296a562084daba6f14a141a510d327c",
+        "core/review-assistant.js": "d70aa895bccb7e162d965795e3c723b8344eecbf6d4ff51a939a09cbd4dcfd5c",
+        "test/runtime-review-assistant.test.js": "63bb489c9184a2d5856723845052f1457825ee7ff0219064b2118f1050b400a1"
+      },
+      "realModelRequests": 0,
+      "nativeDshSdkRun": false,
+      "sourceMismatches": [],
+      "sourceDescription": "Local targeted runtime-budget-and-revocation receipt supplied by the core implementer; relative source digests and actual scope retained."
+    }
+  },
+  "notEstablishedByThisAudit": [
+    "Current full-suite result",
+    "Current real DSH SDK integration result",
+    "Current graphical UI acceptance",
+    "Real paid-model semantic fidelity or long-term personality outcomes",
+    "Actual external QQ/WeChat credentials, login, permissions or delivery",
+    "Erasure of independent host logs/platform copies or external engineering workspace files"
+  ],
+  "sourceInventory": {
+    "digestAlgorithm": "SHA-256",
+    "allChangedRuntimeAdapterUiAndContractFilesPlusCriticalDependencies": true,
+    "sourceCount": 74,
+    "changedDuringRead": [],
+    "sourceDigests": [
+      {
+        "path": "README.md",
+        "sha256": "21dfd91fa5df122945ef3443a076d6c79de4fc0141398c0c7e87f5cb6cbc5707",
+        "bytes": 18072,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/channels/service.js",
+        "sha256": "8b3dae4049b95305f9ce279d647a4ab989dcfa836af87512f973c9642b78bc7f",
+        "bytes": 51868,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/connections/qq.js",
+        "sha256": "d45cb5cf9e2a2e03ab083fed60cdc54ef2e20786635cf5dcd5ffc9ee16631287",
+        "bytes": 17621,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/connections/service.js",
+        "sha256": "0e2e0f4187d5feb7e31406ead09adbcdc52a16e1ed25bb1bface21b57f761fb0",
+        "bytes": 8545,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/delegation/archive.js",
+        "sha256": "353ea8ada6fce877f42f52a4b9b3e3ba1932f69c318dff3130f963f0c227071e",
+        "bytes": 25640,
+        "changedFromHead": false,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/delegation/isolation.js",
+        "sha256": "5038c4d1c61d8b5b39e4525b6199aad27c34005c95d5ba4165062ff78a6a1562",
+        "bytes": 10940,
+        "changedFromHead": false,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/delegation/native.js",
+        "sha256": "74127d4d8a71940aec56323a91383ad97118a6c6103dc4a508e11f1a9d163665",
+        "bytes": 21562,
+        "changedFromHead": false,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/delegation/service.js",
+        "sha256": "a62198c8f29121bc4ebcf884c583131fa11bad5b65d53b1c6ee5037ac0b7bac5",
+        "bytes": 26685,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/delegation/worker.js",
+        "sha256": "ce46a2a9ba9e4736b6973db8f0d98beb8db4e855f2a8d010c891349c78aa8785",
+        "bytes": 3867,
+        "changedFromHead": false,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/index.js",
+        "sha256": "59eb979af553bc9b3f135881c4a6bc09bf9cc57e7e4cd68bdc22adcc3bbca5ce",
+        "bytes": 91156,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/instances.js",
+        "sha256": "08bb4b9d8900c2267516290124f4b31918c42f9bbf8b5623d6db34e0c7c0c759",
+        "bytes": 11574,
+        "changedFromHead": false,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/management.js",
+        "sha256": "ae47471ed4de792840c700f8df8b60b8ec7ae1173bd08789af36c7429d8543bc",
+        "bytes": 26859,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/model.js",
+        "sha256": "a16810aa9499242ef8935f3382e57a680698df74483538629b01634abecdcb9b",
+        "bytes": 5014,
+        "changedFromHead": false,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/social-identities.js",
+        "sha256": "ef0308fd51d5de83f71ea53001198cede018149d90c70dd8d989bf189b8e72fc",
+        "bytes": 23339,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/surfaces.js",
+        "sha256": "931dbc6b88ea97f5552d396a427ca029784c6e189e58d541cd8da096031d6e28",
+        "bytes": 8162,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "adapters/dsh/tool-schema.js",
+        "sha256": "410cf8270c88fe02621376ab1fd2cd49c5148b6da696b9f944e5b84d183933c5",
+        "bytes": 9179,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/capacity.js",
+        "sha256": "45dee565e61664cd3ce202b182bde7326e2835c7fc7966452f26dd340fe610eb",
+        "bytes": 3767,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/deep-memory.js",
+        "sha256": "7ac1484d29acd422dc68ece68c1a5b3ff59e37ff10a5ce8c8df60a73da26910f",
+        "bytes": 2741,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/index.js",
+        "sha256": "19ee6b9a305688a7fc1230e2d9ceffae1ff10ecb63954be024d77cde931bacb5",
+        "bytes": 472,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/maintenance.js",
+        "sha256": "ebc6531d1f75df3389d1fc8a8477d7b4d21c282561a264a12d843d4d29bc16d5",
+        "bytes": 26584,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/prompts.js",
+        "sha256": "8ab4b171e7ee5779a96b9dec7caf0595e785c274a0d02726146a5f2711efe70b",
+        "bytes": 28427,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/repository.js",
+        "sha256": "0628e9f5c485ce3e5b42089eca4a2a6f2296a562084daba6f14a141a510d327c",
+        "bytes": 90380,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/review-assistant.js",
+        "sha256": "d70aa895bccb7e162d965795e3c723b8344eecbf6d4ff51a939a09cbd4dcfd5c",
+        "bytes": 4441,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/runtime.js",
+        "sha256": "445866c5b52012ed6db46f954c7c6ec117b38fab5f21e5c8178de2a7b5d28db3",
+        "bytes": 84060,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/schema.js",
+        "sha256": "4a332d981867350765d915f8d8b95bc6a5b97daabd6a1eeaaa5de4ed58bd2c63",
+        "bytes": 21571,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/source-dependencies.js",
+        "sha256": "77025fd09a6cc62fba3b9ea96922a96fd9b941e272811287289bf759fcb2ca41",
+        "bytes": 5316,
+        "changedFromHead": false,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "core/store.js",
+        "sha256": "a70629b8e8f5a32b6b6b17f6c9afe87849bee4745f9bb6aa8e3a7288f6bd9008",
+        "bytes": 15982,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/channel-integration.md",
+        "sha256": "3e30cbeaff9a645257e76a4fbcde5edcc7cd467143205da941cd7b00f22b6ec3",
+        "bytes": 19641,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/delegation-and-task-archives.md",
+        "sha256": "8580e7fa5d2ad2c62ebffc6656cca99f8fadc7c0b3c59d5e519e98fb15258f90",
+        "bytes": 14333,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/feature-map.md",
+        "sha256": "7bd0e6809ef3f3b3ab602c365a641a223081115a3e952a548692066cda46214f",
+        "bytes": 13185,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/images/0.7.0-deep-memory.png",
+        "sha256": "289d4a5cb583a778f4f1e4ac92ce7ae5a8932cad8bc455638d2115e4dbe93773",
+        "bytes": 56404,
+        "changedFromHead": true,
+        "evidence": "inventory_only_not_graphically_reviewed_by_this_auditor"
+      },
+      {
+        "path": "docs/images/0.7.0-review-assistant.png",
+        "sha256": "af0a6c8004f97fa46ea70a15a4c78f488f202a81f0a702fb3ec2c2eb9ac3347f",
+        "bytes": 51331,
+        "changedFromHead": true,
+        "evidence": "inventory_only_not_graphically_reviewed_by_this_auditor"
+      },
+      {
+        "path": "docs/images/0.7.0-social-identities.png",
+        "sha256": "54f3dbf0e8d3e9cc1877e1738ab8dd2d8145254985614bf860c822547adba760",
+        "bytes": 55727,
+        "changedFromHead": true,
+        "evidence": "inventory_only_not_graphically_reviewed_by_this_auditor"
+      },
+      {
+        "path": "docs/management-ui.md",
+        "sha256": "373ec2af809ba9d3851217f0e8ddef2792fc572af93e9c567ab8782dd4b594ee",
+        "bytes": 31043,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/market-submission.md",
+        "sha256": "83197ff01623deaad332497e62475843f902a8be0ff1c5bdbdeac82fb0dccd56",
+        "bytes": 4624,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/memory-reflection-and-social-identities.md",
+        "sha256": "74bbe51e1ba685b09ce8932d60b96a36e168aaf20b26f7d42cb34703843c8313",
+        "bytes": 13961,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/README.md",
+        "sha256": "716550b9d81fa4e33ff92b8dfccdcbd8e6c55cce64127cdb1943141a8e318e07",
+        "bytes": 16391,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/api-surface.md",
+        "sha256": "938f6fd1282cc88ff824d41184bfa521f89468931655bfc19adf13fb6d835861",
+        "bytes": 29057,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/architecture.md",
+        "sha256": "8e09ac30af954affc3d7bdfe09acf2f9a462a228dc9b9a050e9864860b74be59",
+        "bytes": 39961,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/external-research.md",
+        "sha256": "7e491730b6f903da542d681273aaaeec1d84032ea1b29f9527bf3531399529cc",
+        "bytes": 39369,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/feasibility.md",
+        "sha256": "d7aeb9c74bd41cab1c062339de850f5090a2f1fa87d201944d2978522472659c",
+        "bytes": 16537,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/gaps.md",
+        "sha256": "d19fce10e0ad89033be96d796358641c9c9df5beae43ea4aae42e8030cd72c95",
+        "bytes": 16592,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/measure-reasoning-volume.md",
+        "sha256": "6bafdb9b540f727282e1f3bb9d81a9e788dd686c4bd889b9448aa973d3932ad9",
+        "bytes": 15936,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/persona-schema.md",
+        "sha256": "d3d7bb6e52fe0fa1c6985f036a171b355c9d45079ed1591c24bd6728dfb224bd",
+        "bytes": 80807,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/relation-model.md",
+        "sha256": "a53410a9d5c5105fc4176e2e23a1e3ff75544d263df0aa8c809c47fab46dea62",
+        "bytes": 26687,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/research-persona.md",
+        "sha256": "dc9c05a14cdc9e7b00e0f207a80d5374f1fed71d7c3b39dd33a549cd8ec6bf55",
+        "bytes": 50606,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/research-reasoning-retention.md",
+        "sha256": "03284e3d00100c530777769812840f1fe322bdba7b18557a2d75678cb09e1459",
+        "bytes": 36934,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/research-relation.md",
+        "sha256": "85961d609f8923aa069975b354efaf461ec1fc4b6ac7f5bb3ee9e9cc5348f857",
+        "bytes": 35562,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/persona/self-check.md",
+        "sha256": "f4948a51b88be1db173361c04dd6b127bb09e56dbd0c034c68723377caf369ed",
+        "bytes": 23996,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/plan/长期AI人格插件-实施计划.md",
+        "sha256": "748584d63febbb550e3eb89e9e19cf1088bf8bf776a2ee9754fe41490da89d41",
+        "bytes": 31310,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/repository-api.md",
+        "sha256": "7991a0fd73682083c8228c78150f1549ef94b30c26160fda037c486965651b66",
+        "bytes": 26587,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/runtime-api.md",
+        "sha256": "8ec06ca5a049f6d9096cb35e1cc15ff0bc276ba5d8f99c5ab7dcfb1201ae32a4",
+        "bytes": 21059,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/verification/0.7.0-native-ui.json",
+        "sha256": "95e3413b15da15097134ea425c34b2c11691623d6aa8935f84eadb2088e82fb1",
+        "bytes": 3410,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/verification/0.7.0-sdk-fixture.json",
+        "sha256": "3e02d9b91a9cbf43dd71097c109de3a38eaca48072cef7c0705540aa49ad22b1",
+        "bytes": 19669,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "docs/verification/0.7.0-tests.json",
+        "sha256": "6854c76982752742bc3217bbe6b05af1df015bd8fe9ef797f59e0f4765d5c218",
+        "bytes": 6289,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "market/MingoYung__dsh-Xiangxu-Persona.yml",
+        "sha256": "995637bd1d71e07f78c376628cde81836ac00822ee737eac1ee271fa674e198d",
+        "bytes": 604,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "package.json",
+        "sha256": "585c2dd328c4d48fcb013ff7cb56895e4983971a23935899a1085d765178b017",
+        "bytes": 2459,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "scripts/build-ui.mjs",
+        "sha256": "7ec4a665bdfcb83d78acae50ad031cbbcb9f45fbcd744b790eee3c6f923f7113",
+        "bytes": 16159,
+        "changedFromHead": false,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "scripts/dsh-reflection-integration.mjs",
+        "sha256": "b15af2a242895c0e1ece4040ea69d2f7a5742c9e2f60b58288a6e166db5acafd",
+        "bytes": 42812,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "scripts/fixtures/reflection-fixture.mjs",
+        "sha256": "6cd775d6f4f1d3864bf6066248923af530edf1db446f2a3c3ebadc2fa0c1b9b3",
+        "bytes": 17980,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/connections-official.test.js",
+        "sha256": "0ff6752542e2c8880698f937381dc7f8cf60e3adf875093382e0a5989fb3fff8",
+        "bytes": 30974,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/consolidation-context-complete.test.js",
+        "sha256": "737dd068c361725d4a2d0ec065497b4c30b98141095b66a65adfb3495f967905",
+        "bytes": 3167,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/deep-memory-maintenance.test.js",
+        "sha256": "dac881f58b21cb02f8f6a1a3b7463b510c6d6575ab91d94cf715dcaa62a14d19",
+        "bytes": 3003,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/deep-memory.test.js",
+        "sha256": "d404dc67365f256765d52745893a2a29c6bd66a2befcf817a95ae656a8a26133",
+        "bytes": 16791,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/delegation-consumers.test.js",
+        "sha256": "a36fd64e92f0dd72c287002fed4c171b7824e1c50c704acd21d6cd2df145220c",
+        "bytes": 16058,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/delegation-service.test.js",
+        "sha256": "253a00c09ccda7884ac34f6900f4124b34056216c9d43458c44e5380978b7e7b",
+        "bytes": 24375,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/qq-message-policy.test.js",
+        "sha256": "22ffa1fdb48b52e087269fa1fcc81eb7a8fad227081134266b7779aff1f19848",
+        "bytes": 8366,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/review-assistant.test.js",
+        "sha256": "bfe6bf0ce4141a8fd9af3c966ba954db090351302bc411b57f11ffc5285e75d2",
+        "bytes": 2672,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/runtime-review-assistant.test.js",
+        "sha256": "63bb489c9184a2d5856723845052f1457825ee7ff0219064b2118f1050b400a1",
+        "bytes": 14684,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/social-connection-consumers.test.js",
+        "sha256": "aeab16b7dce001c5fa0821adfc16c1dd2f07e5557aaea1d575fa2b5a06a057ee",
+        "bytes": 7471,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/social-identities.test.js",
+        "sha256": "d558d4ac83acd5aeaac09d6e6e6ac64fc20fe0d20278e4d315117fbea244670c",
+        "bytes": 21753,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "test/ui-expansion.test.js",
+        "sha256": "5a8be441a3fd945d0d66b5ff6ff24d76d66f26fb8dd27d92d0347e630b7d2d73",
+        "bytes": 34362,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "ui/app.js",
+        "sha256": "6cf87f5c97ab6581159632e9c0a567c73e184675eaa896a310fc17492440f329",
+        "bytes": 139356,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      },
+      {
+        "path": "ui/client.js",
+        "sha256": "c7d90156d7adbbb90b8199171f3de37c2fed2c014f98e82407ee997964d635f6",
+        "bytes": 176271,
+        "changedFromHead": true,
+        "evidence": "source_or_supporting_contract"
+      }
+    ]
+  },
+  "scope": "Independent static autonomy/consumer-chain audit plus explicitly scoped deterministic regressions. Completed source review is not a full release, real-model or external-account acceptance result."
+}

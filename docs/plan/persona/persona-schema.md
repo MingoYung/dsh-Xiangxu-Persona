@@ -1,6 +1,8 @@
 # 人格与记忆字段契约：persona-memory/3
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.6.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+当前0.7.0新增可演化的深刻记忆参考、相关旧记忆可读的整理上下文、默认关闭的整理资料助手和账号与社交身份层。是否触发回忆、怎样反应、重释淡化及修剪替换仍由人格自己决定；助手不取得人格写入或价值否决权。八工具、九页与persona-memory/3继续兼容，B站／抖音等先支持身份登记和适配接口，不冒称全部平台能力已接通。详情见[深刻记忆与社交身份](../../memory-reflection-and-social-identities.md)。0.7.0[完整本地回归](../../verification/0.7.0-tests.json)583/583通过，失败／取消／跳过均为0；[真实DSH SDK](../../verification/0.7.0-sdk-fixture.json)分别完成新链58/58与委派链35/35，两套有重叠、分别列示，使用固定fixture且真实LLM／平台调用均为0。[原生九页GUI](../../verification/0.7.0-native-ui.json)使用合成数据、0模型调用；[自主性源码审查](../../verification/0.7.0-autonomy-audit.json)分列源码链、定向回归与交叉复核。远程CI结果不由本地回执推断；0.6.0的495/35及当时九页GUI、0.5.0和更早结果保留历史含义。0.7.0已修改核心，不能沿用0.6.0核心九文件未变的结论。
+
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.7.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -453,6 +455,7 @@ interface ConsolidationRun {
   inputEndEventId: EventId;
   inputVersions: Record<string, number>;
   validatedPatch: ValidatedPatchEntry[];
+  sourceDependencies?: CommittedSourceDependencyReceipt; // 0.7.0已提交源依赖摘要，见第18节
   commitMarker: { committedAt: EpochMs; manifestHash: string } | null;
   status: "prepared" | "validated" | "committed" | "failed";
   consumedHotRefs: Array<{ hotRecordId: string; eventId: EventId }>;
@@ -514,6 +517,7 @@ interface PersonaConfig {
     maxQueuedConsolidations: number;
     maxTargetsPerJob: number;
   };
+  reviewAssistant?: ReviewAssistantConfig; // 缺省关闭，契约见第18节
   contextBudget: {
     totalTokens: number;
     environmentTokens: number;
@@ -522,6 +526,7 @@ interface PersonaConfig {
     habitTokens: number;
     relationTokens: number;
     retrievalTokens: number;
+    deepMemoryTokens?: number; // 0.7.0兼容扩展，缺省600，仍受totalTokens约束
   };
   artifactLimits: {
     axes: number;
@@ -534,6 +539,8 @@ interface PersonaConfig {
     codesPerScope: number;
     interpretationsPerPerson: number;
     relationEventsPerPerson: number;
+    deepMemories?: number;    // 0.7.0缺省128
+    deepMemoryChars?: number; // 0.7.0缺省100000
   };
   retention: {
     snapshotMaxRequests: number;
@@ -553,8 +560,8 @@ interface PersonaConfig {
 | `recentPreferredDays` | 3 | 近期优先，不保证3天内任何量都100%保留 |
 | `tempTargetChars` | 200,000 | 整个实例热区缓存候选总量；原件可用引用与分页读取 |
 | `diskReserveBytes` | 部署填写非负字节数并检查可用空间 | 物理资源保护，不能留一个假装普适的默认值 |
-| `contextBudget` | 总2,970；分段120/200/700/150/300/1,500 | 顺序对应环境、锚、人格、习惯、关系、检索；不要求填满 |
-| `artifactLimits` | 5/12/20/24/8/8/80/12/30/80 | 按类型限制存储量；全部可调整，没有必须达到的最小条数 |
+| `contextBudget` | 总2,970；既有分段120/200/700/150/300/1,500，深刻参考600 | 参考段是额外分段帽，不增加总预算；合计仍受2,970最终约束，不要求填满 |
+| `artifactLimits` | 原类型5/12/20/24/8/8/80/12/30/80；深刻记忆128条／100000字符 | 按类型限制存储量；与单条、文档、实例帽同时成立，无必须达到的最小条数 |
 | `retention` | 快照50次、人格历史5版；journal/backup字节上限部署填写 | 有界恢复与诊断，不永久保存所有材料 |
 
 `sleep` 是默认的睡眠整理使用方式；人格仍需选择本次整理工作。`on_write` 合并呈现写入后的整理机会，复用正常对话让人格判断是否必要，不再每写一条自动发起付费整理。`consolidationPlan.run` 是一次性所选增量，`defer` 暂缓；清醒时也可整理。两模式沿用来源和提交游标，不重放旧经历。
@@ -639,7 +646,7 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 ### 14.1 平台配置、环境与owner管理
 
-owner管理action为channels.status/configure/start/stop/probe/rotateIngress/capabilities、connections.status/start/poll/cancel/disconnect、permissions.inspect/configure/list/reset，以及voice.inspect/registerCatalog/configure/preview。主界面第七页为“聊天渠道与语音”，官方QQBot／微信iLink扫码为主入口，已有兼容桥参数默认折叠为高级配置；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
+owner管理action为channels.status/configure/start/stop/probe/rotateIngress/capabilities、connections.status/start/poll/cancel/disconnect、permissions.inspect/configure/list/reset，以及voice.inspect/registerCatalog/configure/preview。管理页“聊天渠道与语音”，官方QQBot／微信iLink扫码为主入口，已有兼容桥参数默认折叠为高级配置；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
 
 ChannelProfile固定两项：{id/platform:'qq',protocol:'onebot11'}和{id/platform:'wechat',protocol:'onebot12'}。config={mode:'official'|'bridge',apiUrl:string,accountId:string,accessToken:string,allowedPrivateIds:string[],allowedGroupIds:string[],voiceMode:'text'|'both'|'voice',allowRemote:boolean}。初值disabled，接入列表空、voiceMode:text、allowRemote:false。空API令牌配置保留旧值；clearAccessToken:true明确清除，不能同时提交新值。status只返回hasAccessToken/hasIngressToken，不回显令牌。
 
@@ -683,7 +690,7 @@ xiangxu-connections/1最多两个平台档案、1MiB；传输上限来自CONNECT
 
 能力ID固定为chat.text、chat.image、chat.video、chat.file、chat.voice、chat.sticker、message.reply、message.retract、contacts.read、groups.read、friend.manage、group.manage、profile.update、feed.read、feed.publish、feed.react、call.voice、call.video。它们是能力目录，当前feed.*与call.*未实现；系统表情与自定义表情包、视频文件与实时视频通话分别核实，不能凭勾选宣布支持。
 
-persona_platform action=inspect|execute，可选capability、真实target、assetId、text、messageId、stickerId与结果cursor。inspect读取当前目标支持／许可／可用；execute校验实际原生binding、当前实例／账号、接入范围、driver、用户授权与真实资产，再调用有限平台动作，不读取任意路径或泛化客户端控制。外发prepared／unknown不自动重放；微信ret=0但无远程messageId时以client_id标注API接受回执种类，不虚构平台消息ID或用户已读。具体实现事实见[渠道接入](../../channel-integration.md)。
+persona_platform action=inspect|execute|accounts，可选capability、真实target、assetId、text、messageId、stickerId与结果cursor。inspect读取当前目标支持／许可／可用；execute校验实际原生binding、当前实例／账号、接入范围、driver、用户授权与真实资产，再调用有限平台动作，不读取任意路径或泛化客户端控制。外发prepared／unknown不自动重放；微信ret=0但无远程messageId时以client_id标注API接受回执种类，不虚构平台消息ID或用户已读。具体实现事实见[渠道接入](../../channel-integration.md)。
 
 ## 15. 形象、媒体服务与资产技术契约（0.5.0）
 
@@ -731,6 +738,114 @@ owner动作tasks.inspect/list/get/read/readChunk/configureLimits/collect/cancel/
 
 ### 0.6.0 自动化验证与资源边界
 
-本版最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](../../verification/0.6.0-tests.json)、[两阶段原生SDK](../../verification/0.6.0-sdk-fixture.json)及[静态自主性审查](../../verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](../../management-ui.md)单独维护。
+> 本节保留0.6.0当时源码的实测结果，不能当作0.7.0新核心已经重测。
+
+0.6.0当时最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](../../verification/0.6.0-tests.json)、[两阶段原生SDK](../../verification/0.6.0-sdk-fixture.json)及[静态自主性审查](../../verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](../../management-ui.md)单独维护。
 
 status默认只返回紧凑任务卡和至多120字的导航摘要，不自动展开完整资料目录；明确传documentOffset／documentLimit可分页取目录，正文按documentId和Unicode offset／maxChars读取，返回nextOffset，下页传offset=nextOffset；通用工具cursor只续同一次有界响应，list.pageCursor只续任务列表。UI单次文件下载上限64MiB，不随档案扩容自动提高。archive_file虽按64KiB读取源文件，归档时仍组合受单资料容量限制的整份文件缓冲，内存随该文件大小增长；DSH冷查询也可能内部载入目标子会话日志，不能将逐页采集宣称为宿主恒定RAM。明确遗忘清理插件任务正文并保留永久撤销凭据，清理失败如实报告；它不会删除DSH原始会话历史或用户另存的工程副本。
+
+
+## 17. 深刻记忆参考与自主演化（0.7.0）
+
+深刻记忆统一保存各种情绪的经历，逻辑文档键global:deep映射global/deep.json。它属于同一人格的共同记忆，不按情绪或关系另起多个人格；scope固定global、personId固定null，aboutPersonIds描述涉及的人物。记忆是否触发、触发情境、反应以及重释、淡化、合并、替换、修剪均由人格判断。
+
+~~~ts
+interface DeepMemoryItem extends MemoryMeta {
+  scope: "global";
+  personId: null;
+  title: string;             // 最多256个Unicode字符，可以为空
+  reference: string;         // 最多512字符；人格留下的参考，不是触发器
+  experience: string;        // 记得的经历，不伪造原件或实际角色
+  feltThen: string;          // 当时感受
+  meaningNow: string;        // 当前理解，可继续改变
+  cues: string[];            // 联想描述，最多32项、每项256字符，不做程序匹配
+  aboutPersonIds: PersonId[];// 最多128项
+  relatedMemoryIds: string[];// 最多128项，条目联系不是新来源根
+  supersedesIds: string[];   // 最多128项，表达自主替代关系
+}
+interface DeepMemoryReferenceCard {
+  id: string;
+  title: string;
+  reference: string;
+  cues: string[];
+  aboutPersonIds: PersonId[];
+  updatedAt: EpochMs;
+  partial?: true;            // 仅首张超限卡的显式缩略
+  titleTotalChars?: number;
+  referenceTotalChars?: number;
+  omittedFields?: ("cues" | "aboutPersonIds")[];
+}
+~~~
+
+写入使用现有ValidatedPatchEntry，documentKey为global:deep、recordId为稳定条目ID，upsert/remove均由人格所选整理提出。空模块和空patch有效，没有必须形成或治愈的条目。修改沿用版本、冻结run与有限journal；不保证每次历史变化永久保留。srcRefs追同一原件，feltThen和meaningNow分开表达，并不强制人格原谅、遗忘或采取固定情绪反应。
+
+artifactLimits.deepMemories默认128、deepMemoryChars默认100000；全部字符串值计入文本量，单条16,000字符／65,536序列化字节、业务JSON1MiB和实例物理64MiB等帽继续同时成立。深刻记忆纳入原长期文本目标，不能通过另增文件绕过容量。满容量时明确拒绝超限变更并保留旧内容，不按情绪、重要度分数或时间自动裁剪。
+
+普通snapshot可含deep_memory_reference参考段。contextBudget.deepMemoryTokens默认600，总预算仍为2970；空模块不添加该段，非空时在实际剩余预算内优先保留完整参考卡；首张完整卡超限时可显式缩略为partial:true，附titleTotalChars、referenceTotalChars与omittedFields，不冒称全文。参考段给出referenceOnly:true、automaticRecall:false、total、shown、truncated、nextOffset和实际items。nextOffset只标记参考目录尚未显示的位置，不是人格回忆条件或通用工具cursor。snapshot.deepMemoryReference另保留实际显示ID与完整性元数据；参考进入本轮不代表已触发回忆。没有关键词命中、强制重播、固定频率、情绪比例或自动衰减。
+
+persona_introspect section新增deep，返回模块schemaVersion/version/items及referenceOnly、automaticRecall。管理memory.list recordType新增deep，detail保留experience/feltThen/meaningNow与实际来源；列表／详情阅读走原有有界游标。memory_search可提供相关深刻条目，但检索不替人格决定联想和反应。
+
+## 18. 整理资料供给、来源与可选助手（0.7.0）
+
+~~~ts
+interface CommittedSourceDependencyReceipt {
+  format: "sha256-identities/1";
+  sourceHashes: string[];     // 最多8192个SHA-256来源身份摘要
+  recordHashes: string[];     // 最多16384个SHA-256记录身份摘要
+  complete: boolean;         // 完整性事实，不是人格记忆资格
+}
+interface ReviewAssistantConfig {
+  enabled: boolean;          // 默认false
+  maxOutputTokens: number;   // 默认1024，1..8192
+  maxReportChars: number;    // 默认4000，1..16000 Unicode字符
+}
+interface ReviewAssistantObservation {
+  category: string;
+  detail: string;
+  recordIds: string[];
+}
+~~~
+
+PersonaConfig新增reviewAssistant及第17节的深刻容量／参考预算。旧persona-memory/3库缺少新增字段时由默认配置合并；不重写原件、不要求格式迁移到另一个schema。辅助配置是技术资源和工具选择，不是人格成立资格或成长频率。
+
+prepareConsolidation／refreshConsolidationContext的冻结context新增memoryIndexes:{global,person}、deepMemories与deepMemoryVersion；普通索引携带其真实文档版本。context页可展示persona、identity、impression、interpretations、codes、memoryIndexes和deepMemories，继续采用实际Unicode游标。未读尾部不视为空，人格只需读其选择需要的材料，不要求每轮全库加载。助手读取不推进人格contextReadRanges或源消费游标。
+
+applyConsolidation中的srcRefs须指向已接收的真实源根，存在的角色、sourceKind和origin与实际记录核对，撤销不能复活；来源字段不能把AI材料变成人类发言。同一根来源的多次检索、摘要、转存不增加独立事件。空srcRefs仍可表达未引用来源的主观解释，不设支持数量或客观印象审批。
+
+可选model.complete purpose为memory_assistant，使用当前DSH模型路由，只接收本次有界input、traceMaterial和memoryContext；输出observations数组。接纳报告仅包含有界观察，最多16条，category最多80字符，detail先受16000字符帽，实际总量再按maxReportChars和进度记录容量缩小；recordIds只保留实际提供的记录ID，未知引用标unverifiedReferences。模型返回的patch、工具动作或权威声明不获得写入权。报告附advisoryOnly、scope、complete及实际展示量，可能错误且人格可以不采纳。
+
+reviewState.assistantReceipt用材料指纹key登记in_flight、completed、unknown或unavailable等实际结果，并可在运行回执中查看。助手与人格共用consolidationCallsPerSegment；只有至少剩两次调用机会才尝试助手，保留人格最后一次机会。材料相同的已得报告复用，未知不自动付费重放；失败降低可选建议的可用性，不形成价值否决，不把建议写成validatedPatch。即使启用助手，最终记什么、怎样理解和是否改变仍由人格决定。
+
+提交后保留的sourceDependencies采用sha256-identities/1来源／记录摘要收据，追踪实际读入材料而不另存原话。明确遗忘会清除受影响已提交journal的patch、助手报告与可回读诊断正文，保留提交标记、调用数等技术回执；旧档缺完整依赖时在撤销后保守去诊断正文，不删除无关人格记录。自然原件淘汰保留人格解释和仍受容量约束的诊断。人格所选retain片段本身也是来源；明确遗忘命中task-material时按真实任务会话、文档ID、SHA与Unicode范围撤销该任务资料，不能换页重新保留；自然淘汰和无关新任务不受影响。
+
+显式遗忘去正文后的journal只承诺提交／状态／调用等最小技术回执，不将已移除的正文视图字段冒充完整ConsolidationRun。助手调度前为建议或明确遗漏状态及真实共享调用数预留完整请求空间；主整理与助手使用同一实际源片段。空间不足时跳过未付费助手并说明原因，不通过丢源正文或隐去调用事实腾位置。
+
+## 19. 社交身份目录与实际平台能力（0.7.0）
+
+~~~ts
+interface SocialIdentityProfile {
+  identityId: string;        // social-<32hex>，由实际人格目录／平台／账号计算
+  platform: string;          // 小写安全平台标识，最多48字符
+  accountId: string;         // 稳定账号标识，最多256字符，不是密码
+  displayName: string;       // 最多120字符
+  accountType: string;       // 最多48字符；界面提供bot/personal/creator/other
+  profileUrl: string | null;
+  avatarUrl: string | null;
+  notes: string;             // 最多1000字符
+  bindingSource: "manual" | "current_connection";
+  createdAt: EpochMs;
+  updatedAt: EpochMs;
+}
+~~~
+
+账号档案使用xiangxu-social-identities/1，默认每实例32条、全登记256条、256KiB；能力目录最多64项，列表页默认最多32条。它与人格文本schema分离，仅保存身份元数据，不新增Token、AppSecret或Cookie副本。注册／认证在平台完成；手工登记不产生登录态，不新增平台权限。URL只允许无凭据、query或fragment的HTTP(S)地址；昵称和备注可清空，URL空值归为null，省略字段保留已有值。
+
+owner白名单为social.inspect/list/upsert/remove/linkCurrent/refresh，均以实际当前人格实例定位。upsert只接受profile输入字段；不接受自报verified、capabilities、memoryRoot或密钥。linkCurrent仅QQ／微信，要求真实连接和渠道账号ID一致且在线后登记；兼容桥也按真实账号核对。remove只解除身份登记，不退出平台、不改许可、不删记忆。list返回items、total、offset、limit、nextOffset、complete、limits和platforms；inspect可按identityId读取单item。
+
+每项connection分别报告adapterAvailable、currentAccount、connected、status、verification和credentialReference；只有实际连接、账号相符才为verified。capabilities逐项报告supported、allowed、available、status和reason；allowed:null表示授权未核实，不能冒充许可。status可能是unsupported、unavailable、unverified、needs_grant或available。人工修改档案不覆盖真实能力。当前同平台只一个活动连接；B站／抖音等无适配器时仅登记，注入socialAdapters的只读能力接口不等于已经实现该平台动作执行器。
+
+persona_platform新增action:accounts读取当前人格身份目录；其余inspect／execute与实际target、授权和回执链继续沿原契约。工具总数仍为八个，不因登记账号获得任意客户端控制权。
+
+QQ官方driver报告proactive:false、passiveReplyRequired:true及私聊60分钟／群聊5分钟被动回复窗口。自2025-04-21官方主动推送取消，缺有效被动上下文返回QQ_PUSH_UNAVAILABLE，不伪造发送或重放未知结果。此策略是平台执行条件，不能反向改写人格“是否想主动联系”的选择；OneBot桥按实际驱动能力处理，不套官方推送策略。平台身份和能力授权分开，不能从扫码登录推导全部朋友圈、投稿或通话权限。
+
+新增完整消费者、参考机制、容量、平台依据与验证口径见[深刻记忆、整理资料助手与社交身份](../../memory-reflection-and-social-identities.md)。

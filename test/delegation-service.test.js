@@ -45,3 +45,40 @@ test('close preempts an in-flight start instead of waiting forever for its ackno
 test('close before a queued create reaches its native start preserves a cancelled intent and dispatches nothing', async t => { const f = await setup(t), creation = f.service.create(args), closing = f.service.close(); const task = await creation; await closing; assert.equal(f.fixture.starts, 0); assert.equal(task.status, 'cancelled'); assert.equal(task.errorCode, 'TASK_CANCELLED_BEFORE_START'); const reopened = f.open(); await reopened.ready; const again = await reopened.get({ taskId: task.taskId }); assert.equal(again.status, 'cancelled'); assert.equal(again.errorCode, 'TASK_CANCELLED_BEFORE_START'); assert.equal(again.capture.complete, true); });
 test('sealed task archives remain complete and readable after the original host session disappears', async t => { const f = await setup(t), task = await f.service.create(args), report = '独立档案保留😀\n'.repeat(100); f.fixture.complete(task.sessionId, report); const before = await until(async () => { const value = await f.service.get({ taskId: task.taskId, refresh: false }); return value.resultDocumentId && value.capture.complete ? value : null; }); await f.service.close(); f.fixture.sessions.delete(task.sessionId); const service = f.open(); await service.ready; let inspections = 0; const inspect = f.fixture.host.inspect; f.fixture.host.inspect = async options => { inspections++; return inspect(options); }; const after = await service.get({ taskId: task.taskId }); assert.equal(inspections, 0); assert.equal(after.status, 'completed'); assert.equal(after.capture.complete, true); assert.equal(after.errorCode, null); assert.equal(await allText(service, task.taskId, after.resultDocumentId), report); const bytes = await service.readChunk({ taskId: task.taskId, documentId: after.resultDocumentId }); assert.equal(bytes.sha256, taskHash(Buffer.from(report))); assert.equal(f.fixture.starts, 1); const checked = await service.collect({ taskId: task.taskId }); assert.equal(checked.sourceAvailable, false); assert.equal(checked.sourceReadErrorCode, 'TASK_SESSION_UNAVAILABLE'); assert.equal(checked.capture.complete, true); assert.equal((await service.get({ taskId: task.taskId, refresh: false })).capture.complete, true); });
 test('a sealed archive does not become incomplete when an explicit host recheck throws', async t => { const f = await setup(t), task = await f.service.create(args); f.fixture.complete(task.sessionId, 'retained final'); await until(async () => { const value = await f.service.get({ taskId: task.taskId, refresh: false }); return value.resultDocumentId && value.capture.complete; }); f.fixture.host.inspect = async () => { throw Error('host was cleaned'); }; const checked = await f.service.collect({ taskId: task.taskId }); assert.equal(checked.sourceAvailable, false); assert.equal(checked.capture.complete, true); assert.equal(checked.errorCode, null); assert.equal(await allText(f.service, task.taskId, checked.resultDocumentId), 'retained final'); });
+
+test('explicit retained-material revocation matches the real task document and blocks new page ranges across restart', async t => {
+  const f = await setup(t), task = await f.service.create(args), doc = task.documents[0];
+  const material = await f.service.material({ taskId: task.taskId, documentId: doc.documentId, offset: 1, maxChars: 5 });
+  const key = ref => JSON.stringify([ref.sourceSessionId, ref.sourceEventId]);
+  for (const wrong of [
+    { ...material.sourceRef, sourceSessionId: 'unrelated-task-session' },
+    { ...material.sourceRef, sourceEventId: material.sourceRef.sourceEventId.replace(doc.sha256, '0'.repeat(64)) },
+    { ...material.sourceRef, sourceEventId: 'task-material:' + doc.documentId + ':' + doc.sha256 + ':0:' + (doc.chars + 1) },
+  ]) {
+    f.revoked = { sourceKeys: [key(wrong)], recordIds: [] };
+    assert.equal((await f.service.read({ taskId: task.taskId, documentId: doc.documentId })).text, args.prompt);
+  }
+  const other = await f.service.create({ ...args, requestId: 'unrelated-new-task' });
+  f.revoked = { sourceKeys: [key(material.sourceRef)], recordIds: [] };
+  const forgotten = await f.service.forgetSources({ sourceRefs: [material.sourceRef] });
+  assert.deepEqual(forgotten.revokedTaskIds, [task.taskId]);
+  assert.equal(forgotten.hostCopiesDeleted, false);
+  await assert.rejects(f.service.read({ taskId: task.taskId, documentId: doc.documentId }), { code: 'TASK_SOURCE_REVOKED' });
+  await assert.rejects(f.service.retain({ taskId: task.taskId, documentId: doc.documentId, offset: 0, maxChars: 10 }), { code: 'TASK_SOURCE_REVOKED' });
+  await assert.rejects(f.service.readTrace(material.traceLocator), { code: 'TASK_SOURCE_REVOKED' });
+  assert.equal((await f.service.read({ taskId: other.taskId, documentId: other.documents[0].documentId })).text, args.prompt);
+  await f.service.close(); const reopened = f.open(); await reopened.ready;
+  await assert.rejects(reopened.material({ taskId: task.taskId, documentId: doc.documentId, offset: 2, maxChars: 3 }), { code: 'TASK_SOURCE_REVOKED' });
+  const retried = await reopened.create(args); assert.equal(retried.status, 'revoked'); assert.equal(f.fixture.starts, 2);
+  assert.equal((await reopened.forgetSources({ sourceRefs: [material.sourceRef] })).results[0].alreadyRevoked, true);
+});
+
+test('cold startup revokes a retained task source even when the online forget callback was missed', async t => {
+  const f = await setup(t), task = await f.service.create(args), doc = task.documents[0];
+  const material = await f.service.material({ taskId: task.taskId, documentId: doc.documentId, offset: 2, maxChars: 4 });
+  await f.service.close();
+  f.revoked = { sourceKeys: [JSON.stringify([material.sourceRef.sourceSessionId, material.sourceRef.sourceEventId])], recordIds: [] };
+  const reopened = f.open(); await reopened.ready;
+  await assert.rejects(reopened.readChunk({ taskId: task.taskId, documentId: doc.documentId }), { code: 'TASK_SOURCE_REVOKED' });
+  assert.equal((await reopened.list()).items[0].status, 'revoked'); assert.equal(f.fixture.starts, 1);
+});

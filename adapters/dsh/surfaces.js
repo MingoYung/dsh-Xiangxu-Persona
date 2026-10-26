@@ -5,7 +5,7 @@ const fail = (code, message) => { throw Object.assign(new Error(message), { code
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** Owner-only composition behind the existing native DSH management route. */
-export function createPersonaSurfaces({ management, channels, connections, permissions, speech, mobile, getCoordinator }) {
+export function createPersonaSurfaces({ management, channels, connections, permissions, social, speech, mobile, getCoordinator }) {
   if (typeof management?.dispatch !== 'function' || typeof getCoordinator !== 'function') throw new TypeError('Management and current coordinator ports are required');
   return {
     async dispatch(action, args = {}) {
@@ -34,6 +34,12 @@ export function createPersonaSurfaces({ management, channels, connections, permi
         const method = action.slice(12);
         if (!['inspect', 'configure', 'list', 'reset'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown permission action');
         return permissions[method](args);
+      }
+      if (action.startsWith('social.')) {
+        if (!social) fail('SOCIAL_UNAVAILABLE', '社交身份服务尚未就绪');
+        const method = action.slice(7);
+        if (!['inspect', 'list', 'upsert', 'remove', 'linkCurrent', 'refresh'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown social identity action');
+        return social[method](args);
       }
       if (action.startsWith('tasks.')) {
         const c = await getCoordinator(args.instanceId);

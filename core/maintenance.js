@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { JsonStore, atomicReplaceWithRetry } from './store.js';
 import { temporaryCleanupPlan, runReferencesRevocation } from './source-dependencies.js';
 import { SCHEMA_VERSION, validateConfig, validatePersona, validateChat, validateHot,
-  validateMemoryItem, validateCode, validateInterpretation, validateImpression } from './schema.js';
+  validateMemoryItem, validateCode, validateInterpretation, validateImpression, validateDeepMemory } from './schema.js';
 
 const FORMAT = 'persona-memory-backup/1';
 const DEFAULT_MAX = 64 * 1024 * 1024;
@@ -87,6 +87,11 @@ async function validateContent(root, files) {
       else if (/^(people\/[^/]+\/hot|staging\/hot)\.jsonl$/.test(file.path)) validateHot(value);
       else if (/^(people\/[^/]+|global)\/index\.json$/.test(file.path)) { if (!Array.isArray(value.items)) fail('INVALID_MEMORY', 'Index items missing'); value.items.forEach(validateMemoryItem); }
       else if (/^(people\/[^/]+|global)\/codes\.json$/.test(file.path)) { if (!Array.isArray(value.items)) fail('INVALID_MEMORY', 'Code items missing'); value.items.forEach(validateCode); }
+      else if (file.path === 'global/deep.json') {
+        if (value.schemaVersion !== SCHEMA_VERSION || !Array.isArray(value.items) || !Number.isSafeInteger(value.version) || value.version < 0 ||
+          !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0) fail('INVALID_MEMORY', 'Deep memory document is invalid');
+        value.items.forEach(validateDeepMemory);
+      }
       else if (/^people\/[^/]+\/pending\.json$/.test(file.path)) value.items.forEach(validateInterpretation);
       else if (/^people\/[^/]+\/impression\.json$/.test(file.path)) validateImpression(value);
       else if (file.path.startsWith('.wal/')) {

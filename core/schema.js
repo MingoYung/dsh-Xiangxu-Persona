@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_CAPACITY_LIMITS, DEFAULT_PROCESSING_LIMITS } from './capacity.js';
+import { DEFAULT_CAPACITY_LIMITS, DEFAULT_PROCESSING_LIMITS, DEFAULT_DEEP_MEMORY_LIMITS } from './capacity.js';
 
 export const SCHEMA_VERSION = 'persona-memory/3';
 export class SchemaError extends Error {
@@ -80,6 +80,21 @@ export function validateMemoryItem(item) {
   array(item.aboutPersonIds, 'aboutPersonIds'); item.aboutPersonIds.forEach((v) => safeId(v));
   if (item.importance !== null) { num(item.importance, 'importance'); if (item.importance > 1) fail('importance exceeds 1'); }
   nullableTime(item.validFrom, 'validFrom'); nullableTime(item.validTo, 'validTo');
+  return item;
+}
+export function validateDeepMemory(item) {
+  validateMeta(item);
+  if (item.scope !== 'global' || item.personId !== null) fail('deep memory belongs to the shared personality');
+  if (countChars(item.id) > 200) fail('deep memory id exceeds the record reader capacity');
+  for (const field of ['title', 'reference', 'experience', 'feltThen', 'meaningNow']) str(item[field], 'deep.' + field, true);
+  if (countChars(item.title) > 256 || countChars(item.reference) > 512) fail('deep memory reference exceeds technical capacity');
+  for (const field of ['cues', 'aboutPersonIds', 'relatedMemoryIds', 'supersedesIds']) array(item[field], 'deep.' + field);
+  if (item.cues.length > 32 || item.aboutPersonIds.length > 128 || item.relatedMemoryIds.length > 128 || item.supersedesIds.length > 128) fail('deep memory links exceed technical capacity');
+  item.cues.forEach(value => { str(value, 'deep cue', true); if (countChars(value) > 256) fail('deep cue exceeds technical capacity'); });
+  item.aboutPersonIds.forEach(value => safeId(value));
+  for (const field of ['relatedMemoryIds', 'supersedesIds']) item[field].forEach(value => {
+    str(value, 'deep memory link'); if (countChars(value) > 200) fail('deep memory link exceeds the record reader capacity');
+  });
   return item;
 }
 export function validateCode(item) {
@@ -202,7 +217,7 @@ export function validatePatch(patch) {
   for (const entry of entries) {
     object(entry, 'patch entry'); str(entry.documentKey, 'documentKey'); str(entry.recordId, 'recordId');
     if (['__proto__', 'constructor', 'prototype'].includes(entry.recordId)) fail('reserved recordId');
-    if (!/^(persona|global:(index|codes)|person:[A-Za-z0-9_-]+:(index|codes|impression|pending))$/.test(entry.documentKey)) fail('uncontrolled documentKey');
+    if (!/^(persona|global:(index|codes|deep)|person:[A-Za-z0-9_-]+:(index|codes|impression|pending))$/.test(entry.documentKey)) fail('uncontrolled documentKey');
     enumeration(entry.operation, ['upsert', 'remove'], 'operation'); integer(entry.expectedVersion, 'expectedVersion');
     if (entry.operation === 'upsert' && !own(entry, 'value')) fail('upsert requires value');
   }
@@ -211,14 +226,16 @@ export function validatePatch(patch) {
 export function mergeConfig(base, overrides = {}) {
   object(overrides, 'config overrides');
   return { ...base, ...overrides, contextBudget: { ...base.contextBudget, ...overrides.contextBudget }, artifactLimits: { ...base.artifactLimits, ...overrides.artifactLimits }, retention: { ...base.retention, ...overrides.retention },
+    reviewAssistant: { enabled: false, maxOutputTokens: 1024, maxReportChars: 4000, ...base.reviewAssistant, ...overrides.reviewAssistant },
     capacityLimits: { ...DEFAULT_CAPACITY_LIMITS, ...base.capacityLimits, ...overrides.capacityLimits }, processingLimits: { ...DEFAULT_PROCESSING_LIMITS, ...base.processingLimits, ...overrides.processingLimits } };
 }
 export function defaultConfig(overrides = {}) {
   return validateConfig(mergeConfig({
     schemaVersion: SCHEMA_VERSION, consolidationMode: 'sleep', timezone: 'UTC',
+    reviewAssistant: { enabled: false, maxOutputTokens: 1024, maxReportChars: 4000 },
     longTermTargetChars: 1000000, recentTargetChars: 100000, recentPreferredDays: 3, tempTargetChars: 200000, diskReserveBytes: 0,
-    contextBudget: { totalTokens: 2970, environmentTokens: 120, anchorTokens: 200, personaTokens: 700, habitTokens: 150, relationTokens: 300, retrievalTokens: 1500 },
-    artifactLimits: { axes: 5, tendencyFacets: 12, boundaryFacets: 20, signatures: 24, habits: 8, impressionSignaturesPerPerson: 8, indexItemsPerPerson: 80, codesPerScope: 12, interpretationsPerPerson: 30, relationEventsPerPerson: 80 },
+    contextBudget: { totalTokens: 2970, environmentTokens: 120, anchorTokens: 200, personaTokens: 700, habitTokens: 150, relationTokens: 300, retrievalTokens: 1500, deepMemoryTokens: 600 },
+    artifactLimits: { axes: 5, tendencyFacets: 12, boundaryFacets: 20, signatures: 24, habits: 8, impressionSignaturesPerPerson: 8, indexItemsPerPerson: 80, codesPerScope: 12, interpretationsPerPerson: 30, relationEventsPerPerson: 80, ...DEFAULT_DEEP_MEMORY_LIMITS },
     capacityLimits: { ...DEFAULT_CAPACITY_LIMITS }, processingLimits: { ...DEFAULT_PROCESSING_LIMITS },
     retention: { snapshotMaxRequests: 50, personaHistoryMaxVersions: 5, journalMaxBytes: 8388608, backupMaxBytes: 8388608 }
   }, overrides));
@@ -231,6 +248,14 @@ export function validateConfig(config) {
   for (const name of ['contextBudget', 'artifactLimits', 'retention']) { object(config[name], name); for (const [key, v] of Object.entries(config[name])) integer(v, name + '.' + key); }
   for (const name of ['capacityLimits', 'processingLimits']) if (config[name] !== undefined) {
     object(config[name], name); for (const [key, value] of Object.entries(config[name])) { integer(value, name + '.' + key); if (value === 0) fail(name + '.' + key + ' must be positive'); }
+  }
+  if (config.reviewAssistant !== undefined) {
+    object(config.reviewAssistant, 'reviewAssistant');
+    if (typeof config.reviewAssistant.enabled !== 'boolean') fail('reviewAssistant.enabled must be boolean');
+    for (const [key, maximum] of [['maxOutputTokens', 8192], ['maxReportChars', 16000]]) {
+      integer(config.reviewAssistant[key], 'reviewAssistant.' + key);
+      if (config.reviewAssistant[key] < 1 || config.reviewAssistant[key] > maximum) fail('reviewAssistant.' + key + ' exceeds technical capacity');
+    }
   }
   return config;
 }

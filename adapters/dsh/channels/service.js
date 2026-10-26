@@ -5,6 +5,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { atomicReplaceWithRetry } from '../../../core/store.js';
 import { createOneBotClient, decodeOneBotEvent } from './onebot.js';
 import { CAPABILITY_IDS, capabilities as capabilityMap, normalizedEvent } from '../connections/common.js';
+import { QQ_DELIVERY_POLICY } from '../connections/qq.js';
 import { createBridgeClient } from '../connections/bridge.js';
 
 export const CHANNEL_LIMITS = Object.freeze({ registryBytes: 1048576, bindings: 128, receipts: 2048, unresolved: 256, terminalReceipts: 1024, scopeIds: 256, bodyBytes: 65536, queued: 32, excluded: 8 });
@@ -168,7 +169,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     await ready; const root = activeRoot(), speech = await speechCatalog();
     return { connections: registry.profiles.map(selected => {
       const official = selected.config.mode === 'official', last = probes.get(selected.id), connected = Boolean(selected.enabled && !suspended && (official ? clients.get(selected.id)?.value.listening : listener) && last?.connected), capabilities = last?.capabilities ?? {};
-      return { id: selected.id, platform: selected.platform, mode: official ? 'official' : 'bridge', protocol: official ? selected.id === 'qq' ? 'qqbot' : 'ilink' : selected.protocol, configured: Boolean(selected.config.accountId && (official || selected.config.apiUrl)), enabled: selected.enabled, connected,
+      return { id: selected.id, platform: selected.platform, ...(official && selected.id === 'qq' ? { deliveryPolicy: QQ_DELIVERY_POLICY } : {}), mode: official ? 'official' : 'bridge', protocol: official ? selected.id === 'qq' ? 'qqbot' : 'ilink' : selected.protocol, configured: Boolean(selected.config.accountId && (official || selected.config.apiUrl)), enabled: selected.enabled, connected,
         status: suspended && selected.enabled ? 'suspended' : !selected.enabled ? 'disabled' : connected ? 'connected' : last?.status ?? 'disconnected',
         error: last?.code ? { code: last.code, message: '本地桥未确认连接，请检查桥运行状态、账号和鉴权。' } : null,
         capabilities: { private: connected, group: connected && (selected.platform === 'qq' || capabilities.group === true), text: connected && capabilities.text !== false, voice: connected && capabilities.voice === true && speech.supported === true }, chatTypes: official && selected.id === 'wechat' ? ['private'] : ['private', 'group'],
@@ -390,7 +391,9 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     try { const entry = client(selected); supported = await entry.value.inspectCapabilities?.(); supported ??= capabilityMap(['chat.text', ...(entry.value.capabilities?.voice ? ['chat.voice'] : [])]); }
     catch { supported = capabilityMap([]); }
     const live = (await status()).connections.find(value => value.id === selected.id);
-    return { id: selected.id, platform: selected.platform, accountId: selected.config.accountId, mode: selected.config.mode ?? 'bridge', connected: live.connected, voiceMode: selected.config.voiceMode, chatTypes: live.chatTypes, items: CAPABILITY_IDS.map(id => ({ id, supported: supported[id]?.supported === true, available: supported[id]?.supported === true && live.connected, reason: supported[id]?.reason ?? (live.connected ? null : known?.code ?? '连接后才可使用') })) };
+    const verifiedAccountId = known?.connected === true && typeof known.accountId === 'string' && known.accountId ? known.accountId : null;
+    const identityVerified = verifiedAccountId !== null && verifiedAccountId === selected.config.accountId;
+    return { id: selected.id, platform: selected.platform, accountId: selected.config.accountId, verifiedAccountId, identityVerified, ...(selected.config.mode === 'official' && selected.id === 'qq' ? { deliveryPolicy: QQ_DELIVERY_POLICY } : {}), mode: selected.config.mode ?? 'bridge', connected: live.connected, voiceMode: selected.config.voiceMode, chatTypes: live.chatTypes, items: CAPABILITY_IDS.map(id => ({ id, supported: supported[id]?.supported === true, available: supported[id]?.supported === true && live.connected, reason: supported[id]?.reason ?? (live.connected ? null : known?.code ?? '连接后才可使用') })) };
   }
   async function execute({ sessionId, capability, payload = {}, requestId } = {}) { return queue(async () => {
     await ready; bounded(sessionId, '会话'); bounded(requestId, '操作编号', 160);

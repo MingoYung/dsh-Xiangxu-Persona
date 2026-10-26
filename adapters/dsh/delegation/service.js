@@ -7,7 +7,30 @@ const completeArchive = task => terminal(task.status) && task.status !== 'revoke
 const sourceKey = ref => JSON.stringify([ref.sourceSessionId, ref.sourceEventId]);
 const hashedSets = new WeakMap();
 const hashes = values => { if (!hashedSets.has(values)) hashedSets.set(values, new Set([...values].map(value => taskHash(value)))); return hashedSets.get(values); };
-const affected = (task, sources, ids) => task.sourceRefs.some(ref => sources.has(sourceKey(ref))) || task.sourceRecordIds.some(id => ids.has(id)) || (task.revocationSourceHashes ?? []).some(hash => hashes(sources).has(hash)) || (task.revocationRecordHashes ?? []).some(hash => hashes(ids).has(hash));
+// A retained selection is itself a source. Match its real archive identity, never prose.
+const retainedSources = new WeakMap();
+function retainedSourceRevoked(task, sources) {
+  if (!retainedSources.has(sources)) {
+    const sessions = new Map();
+    for (const source of sources) {
+      let pair; try { pair = JSON.parse(source); } catch { continue; }
+      if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string' || typeof pair[1] !== 'string') continue;
+      const match = /^task-material:(doc-[a-f0-9]{32}):([a-f0-9]{64}):(\d+):(\d+)$/.exec(pair[1]);
+      if (!match) continue;
+      const from = Number(match[3]), to = Number(match[4]);
+      if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from) continue;
+      const rows = sessions.get(pair[0]) ?? []; rows.push({ documentId: match[1], sha256: match[2], from, to }); sessions.set(pair[0], rows);
+    }
+    retainedSources.set(sources, sessions);
+  }
+  return (retainedSources.get(sources).get(task.sessionId) ?? []).some(ref => {
+    // Revoked manifests keep their actual session tombstone after text/chunks are removed.
+    if (task.status === 'revoked') return true;
+    const doc = task.documents.find(doc => doc.documentId === ref.documentId && doc.sha256 === ref.sha256);
+    return doc?.encoding === 'utf8' && doc.state !== 'pending' && ref.to <= doc.chars;
+  });
+}
+const affected = (task, sources, ids) => task.sourceRefs.some(ref => sources.has(sourceKey(ref))) || task.sourceRecordIds.some(id => ids.has(id)) || retainedSourceRevoked(task, sources) || (task.revocationSourceHashes ?? []).some(hash => hashes(sources).has(hash)) || (task.revocationRecordHashes ?? []).some(hash => hashes(ids).has(hash));
 const safeCode = error => /^TASK_[A-Z0-9_]+$/.test(error?.code ?? '') ? error.code : 'TASK_OPERATION_FAILED';
 const documentMetadata = doc => { const { chunks, ...result } = doc; return { ...result, complete: doc.state !== 'pending' }; };
 const short = (text, chars = 1000) => { let value = '', count = 0; for (const point of text) { if (count++ >= chars) return { text: value, truncated: true }; value += point; } return { text: value, truncated: false }; };

@@ -6,7 +6,7 @@ import { countStringValues, serializedBytes, assertRecordCapacity, assertDocumen
 import {
   SCHEMA_VERSION, SchemaError, defaultConfig, mergeConfig, emptyPersona, emptyRuntime,
   newId, sourceKey, countChars, safeId, validateChat, validateHot, validateMemoryItem,
-  validatePersona, validateMeta, validateCode, validateSignature, validateFacet, validatePatch,
+  validatePersona, validateMeta, validateDeepMemory, validateCode, validateSignature, validateFacet, validatePatch,
   validateRelationEvent, validateImpression, validateInterpretation, validateConfig, validateRuntime, validateSrcRef
 } from './schema.js';
 
@@ -28,6 +28,20 @@ const correctHotSpeakerPlaceholder = (record) => record.personId != null && reco
   ? { ...record, speakerId: null } : record;
 const initialMeta = () => ({ version: 0, sequence: 0, sources: {}, hotSources: {}, personIds: [], pending: [], assignments: [], revokedIds: [], revokedSources: [], completedRuns: [], lineage: {}, consolidationOffsets: {} });
 const strings = countStringValues;
+const sourceReceipt = value => {
+  const dependencies = extractSourceDependencies(value);
+  return { format: 'sha256-identities/1', sourceHashes: [...new Set(dependencies.refs.slice(0, 8192).map(ref => digest(sourceKey(ref))))],
+    recordHashes: [...new Set(dependencies.recordIds.slice(0, 16384).map(id => digest(id)))],
+    complete: dependencies.complete && dependencies.refs.length <= 8192 && dependencies.recordIds.length <= 16384 };
+};
+const validSourceReceipt = receipt => receipt?.format === 'sha256-identities/1' && typeof receipt.complete === 'boolean' &&
+  Array.isArray(receipt.sourceHashes) && receipt.sourceHashes.length <= 8192 && receipt.sourceHashes.every(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)) &&
+  Array.isArray(receipt.recordHashes) && receipt.recordHashes.length <= 16384 && receipt.recordHashes.every(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value));
+const sourceReceiptRevoked = (receipt, meta, removedHotIds) => {
+  if (!validSourceReceipt(receipt)) return false;
+  const sources = new Set((meta.revokedSources ?? []).map(digest)), ids = new Set([...(meta.revokedIds ?? []), ...removedHotIds].map(digest));
+  return receipt.sourceHashes.some(value => sources.has(value)) || receipt.recordHashes.some(value => ids.has(value));
+};
 function keywords(query) {
   const value = String(query ?? '').toLocaleLowerCase();
   const terms = new Set(value.match(/[\p{L}\p{N}_]+/gu) ?? []);
@@ -118,11 +132,12 @@ export class MemoryRepository {
     return rows.filter((row) => !removed.has(row.id));
   }
   async _cleanDependencyCaches(meta, writes, reason) {
-    const paths = [null, ...meta.personIds].map(hotPath), current = new Map(), runs = [];
+    const paths = [null, ...meta.personIds].map(hotPath), current = new Map(), runs = [], committedRuns = [];
     for (const path of paths) current.set(path, writes.jsonl[path] ?? await this.store.readLines(path));
     for (const file of await this.store.listFiles('journal/runs/')) {
       const run = writes.json[file.path] ?? await this.store.readJson(file.path);
       if (run.status === 'prepared') runs.push({ path: file.path, run });
+      else if (run.status === 'committed') committedRuns.push({ path: file.path, run });
     }
     const records = [...current.values()].flat();
     const plan = temporaryCleanupPlan([...records, ...runs.flatMap(({ run }) => run.input?.hot ?? [])], meta);
@@ -136,12 +151,36 @@ export class MemoryRepository {
       delete run.input; delete run.candidatePatch; delete run.validationError; delete run.attemptRecordedAt; delete run.reviewState; delete run.progressUpdatedAt;
       run.validatedPatch = []; writes.json[path] = run; invalidated.push(run.runId);
     }
+    const redactedCommitted = [], hasRevocations = Boolean(meta.revokedSources?.length || meta.revokedIds?.length);
+    for (const { path, run } of committedRuns) {
+      const related = sourceReceiptRevoked(run.sourceDependencies, meta, plan.removedIds) ||
+        runReferencesRevocation(run, meta, plan.removedIds) || dependenciesRevoked(extractSourceDependencies(run.validatedPatch), meta);
+      const legacyUnknown = hasRevocations && (!validSourceReceipt(run.sourceDependencies) || !run.sourceDependencies.complete);
+      const hasBody = Object.hasOwn(run, 'input') || Object.hasOwn(run, 'candidatePatch') || Object.hasOwn(run, 'validationError') ||
+        Object.hasOwn(run, 'inputSlices') || Object.hasOwn(run, 'consumedHotRefs') || (run.validatedPatch?.length ?? 0) > 0 ||
+        Object.hasOwn(run.reviewState?.assistantReceipt ?? {}, 'report');
+      if ((!related && !legacyUnknown) || !hasBody) continue;
+      const state = run.reviewState, receipt = state?.assistantReceipt;
+      run.inputSliceCount = run.inputSlices?.length ?? run.inputSliceCount ?? 0;
+      run.consumedHotCount = run.consumedHotRefs?.length ?? run.consumedHotCount ?? 0;
+      delete run.input; delete run.inputSlices; delete run.consumedHotRefs; delete run.candidatePatch; delete run.validationError;
+      delete run.attemptRecordedAt; delete run.progressUpdatedAt; delete run.reviewState;
+      run.validatedPatch = [];
+      if (!validSourceReceipt(run.sourceDependencies)) delete run.sourceDependencies;
+      if (state) run.reviewState = { modelCalls: Number.isSafeInteger(state.modelCalls) && state.modelCalls >= 0 ? state.modelCalls : 0,
+        stage: 'committed', contextComplete: state.contextComplete === true,
+        ...(receipt ? { assistantReceipt: { ...(typeof receipt.key === 'string' && /^[a-f0-9]{64}$/.test(receipt.key) ? { key: receipt.key } : {}),
+          status: ['in_flight', 'completed', 'unavailable', 'unknown', 'skipped'].includes(receipt.status) ? receipt.status : 'unknown',
+          ...(typeof receipt.errorCode === 'string' && /^[A-Z0-9_]{1,80}$/.test(receipt.errorCode) ? { errorCode: receipt.errorCode } : {}), reportRemoved: true } } : {}) };
+      run.contentRevocation = { at: this.now(), reason: related ? 'source_revoked' : 'legacy_dependency_unavailable' };
+      writes.json[path] = run; redactedCommitted.push(run.runId);
+    }
     const removedCurrent = records.filter((record) => removed.has(record.id)).map((record) => record.id);
-    if (!removedCurrent.length && !invalidated.length) return false;
+    if (!removedCurrent.length && !invalidated.length && !redactedCommitted.length) return false;
     meta.invalidatedHotContextGroups = last(plan.contextGroups, 256);
     meta.dependencyCleanups = last([...(meta.dependencyCleanups ?? []), { at: this.now(), reason,
       sourceSessionIds: plan.affectedSessions.slice(0, 64), removedHotIds: removedCurrent.slice(0, 128),
-      removedHotCount: removedCurrent.length, invalidatedRunIds: invalidated.slice(0, 128) }], 20);
+      removedHotCount: removedCurrent.length, invalidatedRunIds: invalidated.slice(0, 128), redactedCommittedRunIds: redactedCommitted.slice(0, 128) }], 20);
     if (invalidated.length) {
       const runtime = writes.json['global/state.json'] ?? await this._runtime();
       if (invalidated.includes(runtime.activeRunId)) runtime.activeRunId = null;
@@ -155,7 +194,7 @@ export class MemoryRepository {
     for (const file of files) {
       if (/^(people\/[^/]+\/hot|staging\/hot)\.jsonl$/.test(file.path)) {
         for (const entry of await this.store.readLines(file.path)) if (entry.content?.mode === 'cached') hotChars += countChars(entry.content.text);
-      } else if (/^(self\/(persona|history)\.json|global\/(index|codes)\.json|people\/[^/]+\/(stream\.jsonl|identity\.json|index\.json|codes\.json|impression\.json|pending\.json))$/.test(file.path) || file.path === 'staging/events.jsonl') {
+      } else if (/^(self\/(persona|history)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(stream\.jsonl|identity\.json|index\.json|codes\.json|impression\.json|pending\.json))$/.test(file.path) || file.path === 'staging/events.jsonl') {
         persistentChars += strings(file.path.endsWith('.jsonl') ? await this.store.readLines(file.path) : await this.store.readJson(file.path));
       }
     }
@@ -224,7 +263,8 @@ export class MemoryRepository {
       if (cap.pressure.disk || cap.persistentChars + strings(record) > this.config.longTermTargetChars || Buffer.byteLength(JSON.stringify(meta)) > this.config.retention.journalMaxBytes) return this._gap(meta, input, 'memory_copy_paused_at_capacity');
       if (record.personId && !meta.personIds.includes(record.personId)) throw new SchemaError('Unknown personId; upsertPerson before ingestion');
       record.eventId = this._event(meta);
-      meta.sources[key] = { id: record.id, eventId: record.eventId, lastEventId: record.eventId, personId: record.personId, sourceAt: record.sourceAt };
+      meta.sources[key] = { id: record.id, eventId: record.eventId, lastEventId: record.eventId, personId: record.personId, sourceAt: record.sourceAt,
+        sourceKind: record.sourceKind, sourceRole: record.role, sourceOrigin: record.origin };
       if (record.role === 'user') meta.pending.push(record.eventId);
       const path = streamPath(record.personId); const records = await this.store.readLines(path); records.push(record);
       const json = {};
@@ -347,6 +387,7 @@ export class MemoryRepository {
         for (const item of (await this._document(prefix + '/' + file)).items) rows.push({ ...item, recordType: type });
       }
     }
+    for (const item of (await this._document('global/deep.json')).items) rows.push({ ...item, recordType: 'deep' });
     for (const record of await this._records(meta)) rows.push({ ...record, scope: record.personId ? 'person' : 'staging', epistemic: record.role === 'user' ? 'user_statement' : 'observed',
       srcRefs: [sourceRef(record)], aboutPersonIds: record.personId ? [record.personId] : [], recordType: 'chat' });
     const persona = await this._persona();
@@ -369,7 +410,7 @@ export class MemoryRepository {
     const limit = input.limit ?? 5; if (!Number.isSafeInteger(limit) || limit < 0 || limit > 1000) throw new SchemaError('limit must be integer 0..1000');
     const rows = (await this._allMemory(meta)).filter((item) => scope === 'all' || (scope === 'global' ? item.scope === 'global' : item.personId === target));
     const results = rows.map((item) => {
-      const text = [item.text, item.meaning, item.label, item.desc, item.if, item.then, ...(item.keys ?? []), ...(item.cues ?? [])].filter(Boolean).join(' ').toLocaleLowerCase();
+      const text = [item.text, item.meaning, item.label, item.desc, item.if, item.then, item.title, item.reference, item.experience, item.feltThen, item.meaningNow, ...(item.keys ?? []), ...(item.cues ?? [])].filter(Boolean).join(' ').toLocaleLowerCase();
       const exact = normalizedQuery && text.includes(normalizedQuery) ? 2 : 0;
       const matches = terms.reduce((sum, term) => sum + (text.includes(term) ? 1 : 0), 0);
       const score = exact + (terms.length ? matches / terms.length : 0);
@@ -393,7 +434,7 @@ export class MemoryRepository {
       let rows = (await this._allMemory(meta)).filter(item => scope === 'all' || (scope === 'global' ? item.scope === 'global' : scope === 'unknown' ? item.scope === 'staging' : item.personId === targetPersonId));
       if (recordType) rows = rows.filter(item => item.recordType === recordType);
       if (query) rows = rows.filter(item => {
-        const body = [item.text, item.meaning, item.label, item.desc, item.if, item.then, ...(item.keys ?? []), ...(item.cues ?? [])].filter(Boolean).join(' ').toLocaleLowerCase();
+        const body = [item.text, item.meaning, item.label, item.desc, item.if, item.then, item.title, item.reference, item.experience, item.feltThen, item.meaningNow, ...(item.keys ?? []), ...(item.cues ?? [])].filter(Boolean).join(' ').toLocaleLowerCase();
         return body.includes(normalized) || terms.some(term => body.includes(term));
       });
       rows.sort((a, b) => (b.createdAt ?? b.sourceAt ?? 0) - (a.createdAt ?? a.sourceAt ?? 0) || String(a.id).localeCompare(String(b.id)));
@@ -446,7 +487,7 @@ export class MemoryRepository {
       await this.store.transaction({ runId: newId('personstate'), json: { [personPath(id, 'state.json')]: next }, expectedVersions: { [personPath(id, 'state.json')]: current.version } }); return next;
     });
   }
-  async _context({ personId = null, query } = {}) {
+  async _context({ personId = null, query, includeIndexes = false } = {}) {
     const meta = await this._meta(); const all = await this._records(meta); const records = all.filter((r) => r.personId === personId);
     const recent = []; let chars = 0;
     for (const row of [...records].sort((a, b) => b.sourceAt - a.sourceAt)) {
@@ -455,7 +496,10 @@ export class MemoryRepository {
     }
     recent.reverse();
     const emptyImpression = { schemaVersion: SCHEMA_VERSION, version: 0, personId, summary: '', signatures: [], coordinates: {}, events: [], updatedAt: this.now() };
+    const deep = await this._document('global/deep.json');
     const result = { persona: await this._persona(),
+      deepMemories: deep.items.filter(item => !meta.revokedIds.includes(item.id) && !item.srcRefs?.some(ref => meta.revokedSources.includes(sourceKey(ref)))), deepMemoryVersion: deep.version,
+      ...(includeIndexes ? { memoryIndexes: { global: await this._document('global/index.json'), person: personId ? await this._document(personPath(personId, 'index.json')) : null } } : {}),
       identity: personId ? await this.store.readJson(personPath(personId, 'identity.json')) : null,
       impression: personId ? await this.store.readJson(personPath(personId, 'impression.json'), emptyImpression) : emptyImpression,
       interpretations: personId ? (await this._document(personPath(personId, 'pending.json'))).items : [],
@@ -465,13 +509,13 @@ export class MemoryRepository {
     const eligible = entries => entries.filter(entry => entry.scope !== 'person' || entry.personId === personId);
     const persona = { ...result.persona, facets: eligible(result.persona.facets), signatures: eligible(result.persona.signatures), habits: eligible(result.persona.habits) };
     const lineageRefs = [];
-    const paths = ['self/persona.json', 'global/codes.json', ...(personId ? ['impression', 'pending', 'codes'].map(file => personPath(personId, file + '.json')) : [])];
+    const paths = ['self/persona.json', 'global/codes.json', ...(personId ? ['impression', 'pending', 'codes'].map(file => personPath(personId, file + '.json')) : []), ...(includeIndexes ? ['global/index.json', 'global/deep.json', ...(personId ? [personPath(personId, 'index.json')] : [])] : [])];
     const personaKeys = new Set(['anchor', 'axes', ...['facets', 'signatures', 'habits'].flatMap(field => persona[field].map(entry => field + ':' + entry.id))]);
     for (const path of paths) for (const [field, roots] of Object.entries(meta.lineage?.[path] ?? {})) {
       if (path === 'self/persona.json' && !personaKeys.has(field)) continue;
       for (const root of roots) { try { const [sourceSessionId, sourceEventId] = JSON.parse(root); lineageRefs.push({ sourceSessionId, sourceEventId }); } catch {} }
     }
-    const dependencies = extractSourceDependencies({ persona, impression: result.impression, interpretations: result.interpretations, codes: result.codes, memories: result.memories, lineageRefs });
+    const dependencies = extractSourceDependencies({ persona, impression: result.impression, interpretations: result.interpretations, codes: result.codes, memories: result.memories, ...(includeIndexes ? { memoryIndexes: result.memoryIndexes, deepMemories: result.deepMemories } : {}), lineageRefs });
     result.sourceDependencies = { refs: dependencies.refs, recordIds: dependencies.recordIds };
     return result;
   }
@@ -505,6 +549,7 @@ export class MemoryRepository {
       const data = await this._context({ personId: target });
       if (section === 'all') return data;
       if (section === 'relation') return data.impression;
+      if (section === 'deep') return { schemaVersion: SCHEMA_VERSION, version: data.deepMemoryVersion, items: data.deepMemories, referenceOnly: true, automaticRecall: false };
       if (!['anchor', 'axes', 'facets', 'signatures', 'habits'].includes(section)) throw new SchemaError('Unknown introspection section');
       return data.persona[section];
     });
@@ -527,7 +572,7 @@ export class MemoryRepository {
       if (typeof value.sourceSessionId === 'string' && typeof value.sourceEventId === 'string' && set.has(sourceKey(value)) && Object.hasOwn(value, 'available')) result.available = false;
       return result;
     };
-    for (const file of await this.store.listFiles()) if (/^(self\/persona\.json|global\/(index|codes)\.json|people\/[^/]+\/(index|codes|impression|pending)\.json)$/.test(file.path)) {
+    for (const file of await this.store.listFiles()) if (/^(self\/persona\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(index|codes|impression|pending)\.json)$/.test(file.path)) {
       const before = writes.json[file.path] ?? await this.store.readJson(file.path); const after = mark(before);
       if (JSON.stringify(before) !== JSON.stringify(after)) writes.json[file.path] = this._bump(after);
     }
@@ -557,7 +602,7 @@ export class MemoryRepository {
       const writes = { json: {}, jsonl: {} };
       const dependent = (entry) => affected.has(entry.id) || (entry.srcRefs?.length && entry.srcRefs.some((r) => refKeys.has(sourceKey(r))));
       for (const file of await this.store.listFiles()) {
-        if (/^(self\/persona\.json|global\/(index|codes)\.json|people\/[^/]+\/(index|codes|impression|pending)\.json)$/.test(file.path)) {
+        if (/^(self\/persona\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(index|codes|impression|pending)\.json)$/.test(file.path)) {
           const data = await this.store.readJson(file.path);
           const walk = (value) => {
             if (Array.isArray(value)) return value.filter((v) => { if (v && typeof v === 'object' && dependent(v)) { if (v.id) affected.add(v.id); return false; } return true; }).map(walk);
@@ -596,7 +641,7 @@ export class MemoryRepository {
   }
   _docPath(key) {
     if (key === 'persona') return 'self/persona.json';
-    if (/^global:(index|codes)$/.test(key)) return 'global/' + key.split(':')[1] + '.json';
+    if (/^global:(index|codes|deep)$/.test(key)) return 'global/' + key.split(':')[1] + '.json';
     const parts = key.split(':'); if (parts.length === 3 && parts[0] === 'person' && ['index', 'codes', 'impression', 'pending'].includes(parts[2])) return personPath(parts[1], parts[2] + '.json');
     throw new SchemaError('Uncontrolled documentKey');
   }
@@ -628,11 +673,11 @@ export class MemoryRepository {
         if (complete) inputEndEventId = candidate.eventId;
         else break;
       }
-      const keys = ['persona', 'global:index', 'global:codes', ...(personId ? ['index', 'codes', 'impression', 'pending'].map((type) => 'person:' + personId + ':' + type) : [])];
+      const keys = ['persona', 'global:index', 'global:codes', 'global:deep', ...(personId ? ['index', 'codes', 'impression', 'pending'].map((type) => 'person:' + personId + ':' + type) : [])];
       const inputVersions = {}; for (const key of keys) inputVersions[key] = (await this.store.readJson(this._docPath(key)))?.version ?? 0;
       const runId = newId('run');
-      const context = await this._context({ personId });
-      const consolidationContext = Object.fromEntries(['persona', 'identity', 'impression', 'interpretations', 'codes', 'state', 'sourceDependencies'].map((key) => [key, context[key]]));
+      const context = await this._context({ personId, includeIndexes: true });
+      const consolidationContext = Object.fromEntries(['persona', 'identity', 'impression', 'interpretations', 'codes', 'memoryIndexes', 'deepMemories', 'deepMemoryVersion', 'state', 'sourceDependencies'].map((key) => [key, context[key]]));
       const run = { schemaVersion: SCHEMA_VERSION, runId, personId, inputEndEventId, inputVersions, validatedPatch: [], commitMarker: null, status: 'prepared',
         ...(boundedContext ? { boundedContext: true, reviewState: { contextComplete: false, modelCalls: 0 } } : {}),
         inputSlices,
@@ -652,9 +697,50 @@ export class MemoryRepository {
   _assertNotRevoked(record, meta) {
     if (meta.revokedIds.includes(record.id) || record.srcRefs?.some((ref) => meta.revokedSources.includes(sourceKey(ref)))) throw Object.assign(new Error('Patch references explicitly revoked memory'), { code: 'REVOKED_SOURCE' });
   }
+  async _patchSourceCatalogue(run, meta) {
+    const sources = new Map();
+    for (const [key, receipt] of Object.entries(meta.sources)) {
+      const [sourceSessionId, sourceEventId] = JSON.parse(key);
+      sources.set(key, { sourceSessionId, sourceEventId, available: false,
+        ...Object.fromEntries(['sourceKind', 'sourceRole', 'sourceOrigin'].filter(field => receipt[field] !== undefined).map(field => [field, receipt[field]])) });
+    }
+    const accepted = ref => sources.has(sourceKey(ref)) || Object.keys(meta.hotSources).some(key => key.startsWith(sourceKey(ref) + ':'));
+    const walk = value => {
+      if (!value || typeof value !== 'object') return;
+      if (typeof value.sourceSessionId === 'string' && typeof value.sourceEventId === 'string' && accepted(value)) {
+        const previous = sources.get(sourceKey(value)) ?? { sourceSessionId: value.sourceSessionId, sourceEventId: value.sourceEventId, available: false };
+        sources.set(sourceKey(value), { ...previous, ...Object.fromEntries(['sourceKind', 'sourceRole', 'sourceOrigin'].filter(field => previous[field] === undefined && value[field] !== undefined).map(field => [field, value[field]])) });
+      }
+      Object.values(value).forEach(walk);
+    };
+    walk(run.input);
+    for (const record of await this._hot(meta)) sources.set(sourceKey(record.sourceRef), { ...record.sourceRef, available: record.content?.available !== false });
+    for (const record of await this._records(meta)) sources.set(sourceKey(record), sourceRef(record));
+    return { sources, hotKeys: Object.keys(meta.hotSources) };
+  }
+  _normalizePatchReferences(value, catalogue) {
+    if (Array.isArray(value)) return value.map(item => this._normalizePatchReferences(item, catalogue));
+    if (!value || typeof value !== 'object') return value;
+    const result = Object.create(null);
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== 'srcRefs') { result[key] = this._normalizePatchReferences(child, catalogue); continue; }
+      if (!Array.isArray(child)) throw new SchemaError('srcRefs must be an array');
+      const refs = new Map();
+      for (const ref of child) {
+        validateSrcRef(ref); const source = sourceKey(ref);
+        let actual = catalogue.sources.get(source);
+        if (!actual && catalogue.hotKeys.some(key => key.startsWith(source + ':'))) actual = { sourceSessionId: ref.sourceSessionId, sourceEventId: ref.sourceEventId, available: false };
+        if (!actual) throw new SchemaError('srcRefs must identify an actually accepted source; omit references for an unreferenced interpretation');
+        for (const field of ['sourceRole', 'sourceOrigin', 'sourceKind']) if (ref[field] !== undefined && ref[field] !== actual[field]) throw new SchemaError('Source metadata disagrees with the actual source: ' + field);
+        refs.set(source, { ...ref, ...actual });
+      }
+      result[key] = [...refs.values()];
+    }
+    return result;
+  }
   async applyConsolidation(run, patch) {
     return this._queue(async () => {
-      validatePatch(patch); const entries = Array.isArray(patch) ? patch : patch.entries; const meta = await this._meta();
+      validatePatch(patch); const entries = copy(Array.isArray(patch) ? patch : patch.entries); const meta = await this._meta();
       const savedRun = await this.store.readJson('journal/runs/' + safeId(run.runId, 'runId') + '.json');
       if (!savedRun && meta.completedRuns.includes(run.runId)) return { committed: true, duplicate: true, run: { schemaVersion: SCHEMA_VERSION, runId: run.runId, status: 'committed' } };
       if (!savedRun) throw new SchemaError('Unknown consolidation run');
@@ -662,12 +748,14 @@ export class MemoryRepository {
       if (savedRun.status === 'failed') throw Object.assign(new Error('Consolidation input was invalidated; prepare a new run'), { code: 'RUN_INVALIDATED' });
       run = savedRun; const writes = { json: {}, jsonl: {}, expectedVersions: {} }; const changed = new Map();
       const runtimeBefore = await this._runtime();
+      const sourceCatalogue = await this._patchSourceCatalogue(run, meta);
       for (const key of Object.keys(run.cursorAfter)) if ((runtimeBefore.consolidationCursors?.[key]?.lastCommittedEventId ?? null) !== (run.cursorBefore?.[key]?.lastCommittedEventId ?? null)) throw conflict('Consolidation source cursor advanced; prepare a new run');
       for (const slice of run.inputSlices ?? []) if ((meta.consolidationOffsets?.[slice.key] ?? 0) !== slice.from) throw conflict('Consolidation fragment was already consumed by another run');
       for (const entry of entries) {
         if (!Object.hasOwn(run.inputVersions, entry.documentKey)) throw new SchemaError('Patch targets a document outside this run');
         if (entry.operation === 'upsert') {
           assertFiniteJson(entry.value);
+          entry.value = this._normalizePatchReferences(entry.value, sourceCatalogue);
           if (!((entry.documentKey === 'persona' && entry.recordId === 'axes') || (entry.documentKey.endsWith(':impression') && entry.recordId === 'coordinates'))) {
             assertRecordCapacity(entry.value, this.config.capacityLimits, entry.documentKey + '/' + entry.recordId);
           }
@@ -732,7 +820,8 @@ export class MemoryRepository {
           if (entry.operation === 'upsert') {
             let value = this._normalizeMeta(entry.value, { personId: target, run, id: entry.recordId });
             if (value.personId !== target || value.scope !== (target ? 'person' : 'global')) throw new SchemaError('Patch record subject disagrees with its document');
-            if (field === 'index') value = validateMemoryItem({ kind: 'fact', keys: [], importance: null, aboutPersonIds: target ? [target] : [], validFrom: null, validTo: null, supersedesIds: [], ...value });
+            if (field === 'deep') value = validateDeepMemory({ title: '', reference: '', experience: '', feltThen: '', meaningNow: '', cues: [], aboutPersonIds: [], relatedMemoryIds: [], supersedesIds: [], ...value });
+            else if (field === 'index') value = validateMemoryItem({ kind: 'fact', keys: [], importance: null, aboutPersonIds: target ? [target] : [], validFrom: null, validTo: null, supersedesIds: [], ...value });
             else if (field === 'codes') value = validateCode({ cues: [], expandIds: [], occurrences: 0, lastUsedAt: null, ...value });
             else { value.questions ??= []; validateInterpretation(value); }
             this._assertNotRevoked(value, meta); document.items.push(value);
@@ -763,9 +852,11 @@ export class MemoryRepository {
       runtime.consolidationCursors = { ...runtime.consolidationCursors, ...run.cursorAfter };
       if (runtime.activeRunId === run.runId) runtime.activeRunId = null;
       writes.json['global/state.json'] = this._bump(runtime); writes.expectedVersions['global/state.json'] = runtime.version;
-      const committed = { ...run, validatedPatch: copy(entries), status: 'committed', commitMarker: { committedAt: this.now(), manifestHash: digest(JSON.stringify(entries)) } };
+      const committed = { ...run, sourceDependencies: sourceReceipt({ input: run.input, validatedPatch: entries, reviewState: run.reviewState }),
+        validatedPatch: copy(entries), status: 'committed', commitMarker: { committedAt: this.now(), manifestHash: digest(JSON.stringify(entries)) } };
       delete committed.input; delete committed.candidatePatch; delete committed.validationError; delete committed.attemptRecordedAt; delete committed.reviewState; delete committed.progressUpdatedAt;
-      if (run.reviewState) committed.reviewState = { modelCalls: run.reviewState.modelCalls ?? 0, stage: 'committed', contextComplete: run.reviewState.contextComplete === true };
+      if (run.reviewState) committed.reviewState = { modelCalls: run.reviewState.modelCalls ?? 0, stage: 'committed', contextComplete: run.reviewState.contextComplete === true,
+        ...(run.reviewState.assistantReceipt === undefined ? {} : { assistantReceipt: copy(run.reviewState.assistantReceipt) }) };
       writes.json['journal/runs/' + run.runId + '.json'] = committed;
       meta.completedRuns = [...meta.completedRuns, run.runId].slice(-128);
       await this._enforceLimits(writes);
@@ -835,8 +926,8 @@ export class MemoryRepository {
       if (run.status !== 'prepared') throw Object.assign(new Error('Only prepared work can refresh its unreviewed context'), { code: 'RUN_NOT_PREPARED' });
       if (run.reviewState?.modelCalls !== 0 || Object.hasOwn(run, 'candidatePatch')) throw conflict('Reviewed work or a retained candidate cannot be rebased automatically');
       if (runReferencesRevocation(run, await this._meta())) throw Object.assign(new Error('Consolidation source was revoked'), { code: 'SOURCE_REVOKED' });
-      const context = await this._context({ personId: run.personId });
-      const next = copy(run); next.input.context = Object.fromEntries(['persona', 'identity', 'impression', 'interpretations', 'codes', 'state', 'sourceDependencies'].map(key => [key, context[key]]));
+      const context = await this._context({ personId: run.personId, includeIndexes: true });
+      const next = copy(run); next.input.context = Object.fromEntries(['persona', 'identity', 'impression', 'interpretations', 'codes', 'memoryIndexes', 'deepMemories', 'deepMemoryVersion', 'state', 'sourceDependencies'].map(key => [key, context[key]]));
       for (const key of Object.keys(next.inputVersions)) next.inputVersions[key] = (await this.store.readJson(this._docPath(key)))?.version ?? 0;
       const files = await this.store.listFiles('journal/runs/'), bytes = files.reduce((sum, file) => sum + (file.path === path ? 0 : file.bytes), 0) + serializedBytes(next);
       if (bytes > this.config.retention.journalMaxBytes) throw capacityError('consolidationWorkspaceBytes', bytes, this.config.retention.journalMaxBytes, path);
@@ -892,14 +983,15 @@ export class MemoryRepository {
   async _enforceLimits(writes) {
     for (const [path, document] of Object.entries(writes.json ?? {})) {
       const limits = this.config.artifactLimits;
-      if (/^(self\/(persona|history)\.json|global\/(index|codes)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) assertDocumentCapacity(document, this.config.capacityLimits, path);
+      if (/^(self\/(persona|history)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) assertDocumentCapacity(document, this.config.capacityLimits, path);
       if (path === 'self/persona.json') {
         if (Object.keys(document.axes).length > limits.axes || document.facets.filter((r) => r.kind === 'tendency').length > limits.tendencyFacets || document.facets.filter((r) => r.kind === 'boundary').length > limits.boundaryFacets || document.signatures.length > limits.signatures || document.habits.length > limits.habits) throw Object.assign(new Error('Persona patch exceeds configured storage capacity; choose a smaller patch or adjust resource limits'), { code: 'CAPACITY_EXCEEDED' });
         assertRecordCapacity(document.anchor, this.config.capacityLimits, path + '/anchor');
         for (const [key, axis] of Object.entries(document.axes)) assertRecordCapacity(axis, this.config.capacityLimits, path + '/axes/' + key);
         for (const field of ['facets', 'signatures', 'habits', 'retired']) for (const item of document[field]) assertRecordCapacity(item, this.config.capacityLimits, path + '/' + field);
       } else if (document.items) {
-        const limit = path.endsWith('/index.json') ? limits.indexItemsPerPerson : path.endsWith('/codes.json') ? limits.codesPerScope : limits.interpretationsPerPerson;
+        const limit = path === 'global/deep.json' ? limits.deepMemories : path.endsWith('/index.json') ? limits.indexItemsPerPerson : path.endsWith('/codes.json') ? limits.codesPerScope : limits.interpretationsPerPerson;
+        if (path === 'global/deep.json' && strings(document.items) > limits.deepMemoryChars) throw capacityError('deepMemoryChars', strings(document.items), limits.deepMemoryChars, path);
         if (document.items.length > limit) throw Object.assign(new Error('Patch exceeds configured item capacity'), { code: 'CAPACITY_EXCEEDED' });
         for (const item of document.items) assertRecordCapacity(item, this.config.capacityLimits, path + '/' + item.id);
       } else if (path.endsWith('/impression.json') && (document.signatures.length > limits.impressionSignaturesPerPerson || document.events.length > limits.relationEventsPerPerson)) throw Object.assign(new Error('Impression exceeds configured capacity'), { code: 'CAPACITY_EXCEEDED' });
@@ -910,7 +1002,7 @@ export class MemoryRepository {
       }
     }
     const current = await this._capacity(); let delta = 0;
-    for (const [path, value] of Object.entries(writes.json ?? {})) if (/^(self\/(persona|history)\.json|global\/(index|codes)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) delta += strings(value) - strings(await this.store.readJson(path));
+    for (const [path, value] of Object.entries(writes.json ?? {})) if (/^(self\/(persona|history)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) delta += strings(value) - strings(await this.store.readJson(path));
     for (const [path, value] of Object.entries(writes.jsonl ?? {})) if (/stream\.jsonl$|staging\/events\.jsonl$/.test(path)) delta += strings(value) - strings(await this.store.readLines(path));
     if (current.persistentChars + delta > this.config.longTermTargetChars) throw Object.assign(new Error('Patch exceeds total persistent memory target'), { code: 'CAPACITY_EXCEEDED' });
   }

@@ -18,6 +18,8 @@ import { createPermissionService } from './permissions.js';
 import { createOwnerAssetTransfers } from './owner-assets.js';
 import { createMediaService } from './media/index.js';
 import { createConnectionService } from './connections/service.js';
+import { createSocialIdentityService } from './social-identities.js';
+import { QQ_DELIVERY_POLICY } from './connections/qq.js';
 import { mountCompanionScope } from './companion-scope.js';
 import { createDelegationService } from './delegation/service.js';
 import { createDelegationHost, lookupTaskWorker } from './delegation/native.js';
@@ -87,6 +89,24 @@ function rebuildSourceSlice(record, source) {
   if (![fragment.from, fragment.to, fragment.total].every(Number.isSafeInteger) || fragment.from < 0 || fragment.to < fragment.from ||
     fragment.to > points.length || fragment.total !== points.length) throw Object.assign(new Error('The admitted source page no longer matches its original text'), { code: 'SOURCE_PAGE_INVALID' });
   return { ...record, text: points.slice(fragment.from, fragment.to).join(''), chars: fragment.to - fragment.from, fragment: { ...fragment } };
+}
+
+/** Current connector identity is a probe fact, distinct from the configured route. */
+export function createSocialConnectionPorts({ channels, connections }) {
+  if (typeof channels?.capabilities !== 'function' || typeof connections?.status !== 'function') throw new TypeError('Social identity ports need channel and connection services');
+  const getChannelCapabilities = async platform => {
+    const result = await channels.capabilities({ id: platform });
+    const verifiedBridge = result.mode !== 'bridge' || result.identityVerified === true && result.verifiedAccountId === result.accountId;
+    const facts = { ...result, connected: result.connected === true && verifiedBridge };
+    return platform === 'qq' && result.mode === 'official' ? { ...facts, deliveryPolicy: QQ_DELIVERY_POLICY } : facts;
+  };
+  return { getChannelCapabilities, getConnectionStatus: async platform => {
+    const channel = await getChannelCapabilities(platform);
+    if (channel.mode === 'bridge') return { platform, mode: 'bridge', accountId: channel.identityVerified === true ? channel.verifiedAccountId : null,
+      connected: channel.connected === true, verification: channel.connected === true ? 'verified' : 'unverified' };
+    const result = await connections.status({ id: platform });
+    return result.connections?.find(item => item.id === platform) ?? result;
+  } };
 }
 
 export function createDshCoordinator(ctx, config = {}) {
@@ -945,7 +965,7 @@ export function apply(ctx, config = {}) {
     return;
   }
   if (coordinators.has(root)) throw new Error('A Xiangxu Persona manager already owns this default root');
-  let management, channels, connections, permissions, shuttingDown = false;
+  let management, channels, connections, permissions, social, shuttingDown = false;
   const speech = createWindowsSpeechPort({ cacheRoot: join(dirname(root), basename(root) + '.speech-cache') });
   const reportChannel = error => ctx.logger?.warn?.('[xiangxu-persona] channel: ' + (error?.code ?? 'CHANNEL_UNAVAILABLE'));
   const bindChannels = async coordinator => {
@@ -960,6 +980,7 @@ export function apply(ctx, config = {}) {
     createCoordinator: options => {
       const coordinator = createDshCoordinator(ctx, options);
       coordinator.platformPort = async args => {
+        if (args.action === 'accounts') return social ? social.inspect() : { available: false, code: 'SOCIAL_UNAVAILABLE' };
         if (!channels) return { available: false, code: 'PLATFORM_UNAVAILABLE' };
         if (!channels.handles(args.sessionId)) return { available: false, code: 'PLATFORM_TARGET_REQUIRED', message: '当前会话没有已接入的平台目标；可使用已有的实际平台通道。' };
         if ((args.action ?? 'inspect') === 'inspect') {
@@ -1002,10 +1023,16 @@ export function apply(ctx, config = {}) {
   permissions = createPermissionService({ file: join(dirname(root), basename(root) + '.permissions.json'), getCoordinator: id => manager.getCoordinator(id), getCapabilities: id => channels.capabilities({ id }) });
   channels = createChannelService({ getCoordinator, channelPort, registryPath: join(dirname(root), basename(root) + '.channels.json'), speechPort: speech, connectionPort: connections,
     authorizeAction: args => permissions.authorize(args), onError: reportChannel });
-  manager.channels = channels;
+  social = createSocialIdentityService({ registryPath: join(dirname(root), basename(root) + '.social-identities.json'),
+    getCoordinator: id => manager.getCoordinator(id),
+    ...createSocialConnectionPorts({ channels, connections }),
+    getPermissionStatus: (platform, args) => permissions.inspect({ id: platform, ...args }),
+    adapters: config.socialAdapters,
+  });
+  manager.channels = channels; manager.social = social;
   manager.connections = connections; manager.permissions = permissions;
-  mountPersonaManagement(ctx, createPersonaSurfaces({ management, channels, connections, permissions, speech, getCoordinator: id => manager.getCoordinator(id) }));
-  void manager.ready.then(async () => { await Promise.all([channels.ready, connections.ready, permissions.ready]); if (manager.current) await bindChannels(manager.current); }).catch(reportChannel);
+  mountPersonaManagement(ctx, createPersonaSurfaces({ management, channels, connections, permissions, social, speech, getCoordinator: id => manager.getCoordinator(id) }));
+  void manager.ready.then(async () => { await Promise.all([channels.ready, connections.ready, permissions.ready, social.ready]); if (manager.current) await bindChannels(manager.current); }).catch(reportChannel);
   ctx.on('session/event', (session, event) => { if (manager.agents.has(session.id)) void manager.observeEvent(session, event); }, { global: true });
   ctx.on('agent/created', async ({ agent }) => {
     if (lookupTaskWorker(agent.session.id)) return;
@@ -1015,7 +1042,7 @@ export function apply(ctx, config = {}) {
   manager.ready.catch(error => ctx.logger?.error?.('[xiangxu-persona] initialization failed: ' + (error.code ?? error.message)));
   ctx.effect(() => async () => {
     coordinators.delete(root); shuttingDown = true;
-    for (const stop of [() => channels.close(), () => manager.close(), () => connections.close(), () => permissions.close(), () => speech.close()]) {
+    for (const stop of [() => channels.close(), () => manager.close(), () => connections.close(), () => permissions.close(), () => social.close(), () => speech.close()]) {
       try { await stop(); } catch (error) { reportChannel(error); }
     }
   });

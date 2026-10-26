@@ -1,6 +1,6 @@
 # 相续人格原生管理界面与验收
 
-版本0.6.0，产品dsh-Xiangxu-Persona，包名dsh-xiangxu-persona。DSH设置入口名“相续人格”，对话预设展示名也为“相续人格”；内部presetId persona-memory及数据schema persona-memory/3保持兼容。本文说明当前实现和可复核边界，最终验收回执单独维护。
+版本0.7.0，产品dsh-Xiangxu-Persona，包名dsh-xiangxu-persona。DSH设置入口名“相续人格”，对话预设展示名也为“相续人格”；内部presetId persona-memory及数据schema persona-memory/3保持兼容。本文说明当前实现和可复核边界，最终验收回执单独维护。
 
 ## 原生入口与加载
 
@@ -57,11 +57,26 @@ Git安装见[README](../README.md)。正常重载DSH后打开设置中的“相�
 - adapters/dsh/media/、owner-assets.js：形象、生成作业、外部作品与有界owner资产传输。
 - adapters/dsh/voice.js与surfaces.js：声音偏好和owner动作白名单；人格工具共八个，新增persona_task自主委派入口。
 - adapters/dsh/delegation/：原生独立工作预设、任务档案、来源隔离、资料分页和自主retain；任务完成不会强制唤醒人格。
-- core/：持续人格、存储、读取、撤销及运行，不导入DSH/UI。
+- core/：持续人格、存储、读取、深刻参考、可选资料助手、撤销及运行，不导入DSH/UI。
+- adapters/dsh/social-identities.js：有界账号档案与实际连接／许可核验，不保存新供应商或平台密钥。
 
 完整行为与字段见[自包含方案](plan/persona/README.md)、[唯一字段契约](plan/persona/persona-schema.md)、[存储接口](repository-api.md)和[运行接口](runtime-api.md)。原14份reports方案保持同步，docs/plan镜像按仓库位置重写相对链接，独立clone不要求作者本机C盘目录存在。
 
+## 0.7.0 深刻参考、资料助手与账号身份
+
+九页导航与宿主主题继续沿用，在已有页面中补充功能：“记忆与关系”增加深刻记忆筛选和模块详情，分开展示experience、feltThen、meaningNow；“设置与加载”增加默认关闭的整理资料助手及预算；“聊天渠道与语音”增加账号与社交身份。参考展示不代表人格已回忆，不提供关键词触发、自动治愈或强制添加条目的按钮。
+
+深刻记忆初值128条／100000字符，参考预算600但普通总预算2970不变；单条、文档、实例帽同时生效。用户明确遗忘仍走原有撤销链，源角色和主体不因关联改变；深刻条目显示为人格记忆，不因其引用人类原件就标成用户原话。
+
+整理资料助手沿用当前DSH模型；保存reviewAssistant配置不启动整理，启用后已选整理可能额外调用，受原调用预算和持久收据约束。助手只给可错的保真建议，不取得人格写入或价值否决权；人格可忽略建议并保持不变。运行详情可查看实际assistantReceipt及其完整性，未取得报告不得显示为完成。
+
+账号目录只按当前实例查询；social.inspect/list/upsert/remove/linkCurrent/refresh分别执行有限动作。手工登记不会登录，linkCurrent必须核对真实在线账号；同平台只一个活动连接。未接入的B站、抖音等显示仅登记，supported、allowed和available分开。解除登记不退出平台、不删除聊天记忆、不扩大权限。资料延迟返回或确认期间切换实例后，旧身份不会显示或写入新实例。QQ官方driver的主动推送限制作为平台事实呈现，不改人格主动选择。
+
+完整字段、容量、来源与接口见[新增说明](memory-reflection-and-social-identities.md)。0.7.0[完整本地回归](verification/0.7.0-tests.json)583/583通过，失败／取消／跳过均为0；[真实DSH SDK](verification/0.7.0-sdk-fixture.json)分别完成新链58/58与委派链35/35，两套有重叠、分别列示，使用固定fixture且真实LLM／平台调用均为0。[原生九页GUI](verification/0.7.0-native-ui.json)使用合成数据、0模型调用；[自主性源码审查](verification/0.7.0-autonomy-audit.json)分列源码链、定向回归与交叉复核。远程CI结果不由本地回执推断；0.6.0的495/35及当时九页GUI、0.5.0和更早结果保留历史含义。0.7.0已修改核心，不能沿用0.6.0核心九文件未变的结论。
+
 ## 0.6.0 自主委派与验证范围
+
+> 本节保留0.6.0当时495项回归、35项委派链和九页GUI的实际范围及指纹，不充当0.7.0新核心已经重测。
 
 本版新增“任务与资料”页，当前共九页。相续人格主预设在普通DSH、IM、主动与唤醒中提供八工具：memory_search、memory_forget、persona_introspect、persona_decide、persona_voice、persona_media、persona_platform、persona_task。是否派发、派什么任务、给哪些背景、读取哪些结果以及记住什么，继续由人格自主决定；原有注意、回应、睡眠与成长契约不变。
 
@@ -83,7 +98,7 @@ read供本次理解按需读取；retain是人格明确选择真实归档片段�
 
 ## 0.5.0 实现与验证范围
 
-> 本节保留0.5.0当时的八页／七工具与禁派发实现及证据。当前0.6.0通过persona_task自主派发，并配有独立工作预设与任务资料隔离；以下旧规则与数字不充当本版当前行为或新源重测结果。
+> 本节保留0.5.0当时的八页／七工具与禁派发实现及证据。当前0.7.0通过persona_task自主派发，并配有独立工作预设与任务资料隔离；以下旧规则与数字不充当本版当前行为或新源重测结果。
 
 本版保留宿主样式与单外层滚动，新增第八页“形象与创作”。渠道主入口为真实QQBot／微信iLink扫码；已扫码、待本人确认、验证码、已授权、已取消、过期和失败分开显示。授权后还要选择驱动支持的范围并明确启用，取消或断开不会被标成已连接。官方QQ是Bot，微信iLink当前只支持私聊；账号实际资质和发送结果仍以平台回执为准。高级OneBot不需要扫码向导代填未知参数。
 
@@ -137,7 +152,7 @@ SDK正常shutdown退出后曾留下已退出PID的语音lease元数据；另行�
 
 全部隔离SDK/GUI载体已停止，复查进程与写锁均为0；正式DSH没有被强制重启。
 
-以下是0.4.0历史截图，不能当作0.6.0当前界面；它们来自隔离DSH真实原生设置，未配置状态没有用演示连接冒充真实平台登录。
+以下是0.4.0历史截图，不能当作0.7.0当前界面；它们来自隔离DSH真实原生设置，未配置状态没有用演示连接冒充真实平台登录。
 
 ![0.4.0原生设置深色总览](images/0.4.0-overview-dark.png)
 
@@ -172,3 +187,15 @@ SDK正常shutdown退出后曾留下已退出PID的语音lease元数据；另行�
 安装已通过DSH官方管理器从旧@local/persona-memory迁移到dsh-xiangxu-persona本地link，未强制重启生产DSH。正常重载后使用“设置→相续人格”和可选“相续人格”预设；内部persona-memory身份及v3数据保留兼容。
 
 0.1/0.2真实模型结果保留历史：见[0.2.0补充唤醒与容量](evolution-and-wake-validation.md)、[0.1.1全流程](real-model-validation.md)。旧97/146派发、206回归等数字不提升成本版UI验收；长期数周/月人格质量、所有模型/渠道、外部HTTP账单和全DSH请求精确tokenizer硬帽不由本版图形层证明。
+
+## 0.7.0当前图形验收回执
+
+实际DSH 0.2.1-rc.2隔离web profile从原生设置进入九页，使用明确标注的合成深刻记忆与账号档案。实际检查深刻类型筛选、结构化经历／当时感受／当前理解、referenceOnly/automaticRecall事实、默认关闭助手与开关保存、未核实账号的零可用能力、QQ被动回复限制。浏览和配置操作的模型调用及usage记录均为0。GUI发现微信向导把可选空child渲染成null，已修复并重建app/client，再复核新增页面与开关往返。
+
+已卸载隔离实例并实际停用测试插件；专属CLI随后SIGTERM在Windows返回exit1，与正常SDK退出分开表述；人格、媒体、任务、社交四类writer lock自然释放，没有手工删锁或强制重启生产。完整范围和最终UI/截图SHA见[GUI回执](verification/0.7.0-native-ui.json)，源码审查范围见[自主性回执](verification/0.7.0-autonomy-audit.json)。0.7.0[完整本地回归](verification/0.7.0-tests.json)583/583通过，失败／取消／跳过均为0；[真实DSH SDK](verification/0.7.0-sdk-fixture.json)分别完成新链58/58与委派链35/35，两套有重叠、分别列示，使用固定fixture且真实LLM／平台调用均为0。[原生九页GUI](verification/0.7.0-native-ui.json)使用合成数据、0模型调用；[自主性源码审查](verification/0.7.0-autonomy-audit.json)分列源码链、定向回归与交叉复核。远程CI结果不由本地回执推断；合成样本不证明真实平台登录或长期人格质量。
+
+![深刻记忆参考与结构化内容](images/0.7.0-deep-memory.png)
+
+![默认关闭的整理资料助手](images/0.7.0-review-assistant.png)
+
+![社交身份登记与实际能力](images/0.7.0-social-identities.png)

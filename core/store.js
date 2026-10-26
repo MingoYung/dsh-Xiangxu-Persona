@@ -170,7 +170,7 @@ export class JsonStore {
     let added = 0, delta = 0;
     for (const entry of entries) {
       const bytes = entry.text == null ? 0 : Buffer.byteLength(entry.text);
-      const businessDocument = /^(self\/(persona|history)\.json|global\/(index|codes)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(entry.path);
+      const businessDocument = /^(self\/(persona|history)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(entry.path);
       const documentLimit = businessDocument ? this.capacityLimits.documentBytes : this.journalMaxBytes;
       if (entry.text != null && entry.path.endsWith('.json') && bytes > documentLimit) throw capacityError(businessDocument ? 'documentBytes' : 'workspaceDocumentBytes', bytes, documentLimit, entry.path);
       if (entry.text != null && entry.path.endsWith('.jsonl')) for (const line of entry.text.split('\n')) {
@@ -192,7 +192,7 @@ export class JsonStore {
     return this._queue(async () => {
       this._check();
       const entries = [...Object.entries(json).map(([name, value]) => {
-        assertFiniteJson(value, { allowUndefined: !/^(self\/(persona|history)\.json|global\/(index|codes)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(name) });
+        assertFiniteJson(value, { allowUndefined: !/^(self\/(persona|history)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(name) });
         return { path: name, text: JSON.stringify(value) + '\n' };
       }),
         ...Object.entries(jsonl).map(([name, values]) => {

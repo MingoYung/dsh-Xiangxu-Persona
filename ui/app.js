@@ -20,7 +20,7 @@ const short = (value, max = 230) => { const text = typeof value === 'string' ? v
 const errorText = error => `${error?.code ? error.code + ' · ' : ''}${error?.message ?? String(error)}`;
 const personName = id => id == null ? '未知归属' : state.people.find(p => p.personId === id || p.id === id)?.displayName || id;
 const memoryScopeLabel = record => record.scope === 'global'
-  ? (['facet', 'signature', 'habit'].includes(record.recordType) ? '共同人格' : '共同记忆')
+  ? (record.recordType === 'deep' ? '深刻记忆 · 共同参考' : ['facet', 'signature', 'habit'].includes(record.recordType) ? '共同人格' : '共同记忆')
   : record.personId != null ? '关系：' + personName(record.personId) : '未知归属';
 function element(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -68,8 +68,11 @@ function documentView(value) {
   }
   if (value && typeof value === 'object' && value.recordType) {
     const refs = value.srcRefs ?? (value.sourceEventId ? [{ sourceSessionId: value.sourceSessionId, sourceEventId: value.sourceEventId, sourceRole: value.role }] : []);
-    return element('div', {}, kv({ '类型': value.recordType, '记忆归属': memoryScopeLabel(value), '实际角色': value.role ?? value.sourceRole ?? '提炼/解释', '实际发言者': value.speakerId ?? '未知 / 未提供独立标识', '发生时间': value.sourceAt ? date(value.sourceAt) : '未提供', '条目 ID': element('code', {}, value.id) }),
-      value.text || value.meaning || value.desc ? element('div', { class: 'detail-value' }, element('h3', {}, '已保留内容'), value.text ?? value.meaning ?? value.desc) : null,
+    return element('div', {}, kv({ '类型': value.recordType, '记忆归属': memoryScopeLabel(value), '实际角色': value.recordType === 'deep' ? '人格记忆（非对话原件）' : value.role ?? value.sourceRole ?? '提炼/解释', '实际发言者': value.speakerId ?? '未知 / 未提供独立标识', '发生时间': value.sourceAt ? date(value.sourceAt) : '未提供', '条目 ID': element('code', {}, value.id) }),
+      value.recordType === 'deep' ? element('div', {}, notice('这是人格保留的参考，不表示本轮已经回忆或产生反应。联想、触发情境、重释、淡化与修剪由人格自己决定。'),
+        kv({ '标题': value.title, '人格留下的参考': value.reference, '相关联想描述': (value.cues ?? []).join('、') || '尚未描述' }),
+        ...[['experience', '经历'], ['feltThen', '当时的感受'], ['meaningNow', '现在的理解']].map(([key, title]) => card(title, '', element('p', { class: 'detail-value' }, value[key] || '尚未描述'))))
+        : value.text || value.meaning || value.desc ? element('div', { class: 'detail-value' }, element('h3', {}, '已保留内容'), value.text ?? value.meaning ?? value.desc) : null,
       refs.length ? element('div', {}, element('h3', {}, '实际来源'), element('div', { class: 'record-list' }, refs.map(ref => element('div', { class: 'record' }, kv({ '会话': element('code', {}, ref.sourceSessionId), '来源根': element('code', {}, ref.sourceEventId), '来源角色': ref.sourceRole ?? '未提供', '可用性': ref.available === false ? '原件不可用' : '按实际原件查询' }), button('查询仍可用的原件', () => inspectDocument('sources.read', { sourceRefs: [ref] }, '来源原件', { eyebrow: 'SOURCE / ORIGINAL' }), 'link'))))) : null,
       element('details', {}, element('summary', { class: 'small muted' }, '查看完整字段'), data(value)));
   }
@@ -260,9 +263,9 @@ async function personaPage() {
   await load(section); return element('div', {}, tabs, content);
 }
 function memoryRecord(record, open) {
-  const role = record.role ?? record.sourceRole ?? record.srcRefs?.[0]?.sourceRole;
-  const text = record.text ?? record.textPreview ?? record.summary ?? record.expansion ?? record.meaning ?? record.preview ?? record.anchorPreview ?? record.title ?? '';
-  return element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, record.label ?? record.name ?? ({ chat: '对话原件', memory: '记忆提炼', code: '编码', relation_signature: '关系签名', relation_event: '关系事件', interpretation: '待解释', facet: '人格倾向', signature: '共同签名', habit: '习惯' })[record.recordType] ?? record.recordType ?? '记忆条目'), element('time', { class: 'record-time' }, record.sourceAt || record.createdAt || record.updatedAt ? date(record.sourceAt ?? record.createdAt ?? record.updatedAt) : '时间未提供')),
+  const role = record.recordType === 'deep' ? '人格记忆' : record.role ?? record.sourceRole ?? record.srcRefs?.[0]?.sourceRole;
+  const text = record.recordType === 'deep' ? record.reference ?? record.textPreview ?? record.experience ?? '' : record.text ?? record.textPreview ?? record.summary ?? record.expansion ?? record.meaning ?? record.preview ?? record.anchorPreview ?? record.title ?? '';
+  return element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, record.label ?? record.name ?? (record.recordType === 'deep' ? record.title : null) ?? ({ chat: '对话原件', memory: '记忆提炼', deep: '深刻记忆', code: '编码', relation_signature: '关系签名', relation_event: '关系事件', interpretation: '待解释', facet: '人格倾向', signature: '共同签名', habit: '习惯' })[record.recordType] ?? record.recordType ?? '记忆条目'), element('time', { class: 'record-time' }, record.sourceAt || record.createdAt || record.updatedAt ? date(record.sourceAt ?? record.createdAt ?? record.updatedAt) : '时间未提供')),
     element('p', { class: 'record-text' }, short(text, 360)), element('div', { class: 'record-meta' }, tag(({ assistant: 'AI 助手', user: '用户原话', system: '程序材料' })[role] ?? role ?? '提炼/解释', role === 'assistant' ? 'ai' : role === 'user' ? 'human' : ''), tag(memoryScopeLabel(record)), record.speakerId ? tag('发言者：' + record.speakerId) : null, record.epistemic ? tag(record.epistemic) : null),
     element('div', { class: 'record-footer' }, element('code', { class: 'muted' }, short(record.id ?? record.recordId ?? '', 55)), button('查看详情 →', open, 'link')));
 }
@@ -271,7 +274,7 @@ async function memoryPage() {
   const query = field('memory-query', '搜索线索', '', { placeholder: '原话、记忆或编码中的文字', class: 'search' });
   const scope = field('memory-scope', '查询范围', 'all', { choices: [['all', '全部关系'], ['person', '指定人物'], ['global', '共同记忆'], ['unknown', '未知暂存']] });
   const person = field('memory-person', '关系人物', '', { choices: [['', '请选择人物'], ...state.people.map(item => [item.personId ?? item.id, item.displayName ?? item.personId ?? item.id])] });
-  const type = field('memory-type', '条目类型', '', { choices: [['', '全部类型'], ['chat', '对话原件'], ['memory', '记忆索引'], ['code', '编码'], ['relation_signature', '关系签名'], ['relation_event', '关系事件'], ['interpretation', '待解释'], ['facet', '人格倾向'], ['signature', '共同签名'], ['habit', '习惯']] });
+  const type = field('memory-type', '条目类型', '', { choices: [['', '全部类型'], ['chat', '对话原件'], ['memory', '记忆索引'], ['deep', '深刻记忆（人格参考）'], ['code', '编码'], ['relation_signature', '关系签名'], ['relation_event', '关系事件'], ['interpretation', '待解释'], ['facet', '人格倾向'], ['signature', '共同签名'], ['habit', '习惯']] });
   let args = {}, pageNumber = 1, listGeneration = 0;
   async function openRecord(item) {
     const id = item.id ?? item.recordId;
@@ -309,7 +312,10 @@ async function memoryPage() {
   }
   peopleQuery.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadPeople().catch(showError); } });
   const relations = card('人物与关系', '按真实人物列表分页。查看主观印象、编码与相处状态。', peopleQuery.wrapper, button('搜索人物', () => loadPeople(), 'secondary compact'), peopleResults);
-  await Promise.all([load(), loadPeople()]); container.append(filters, element('div', { class: 'two-pane' }, relations, resultArea)); return container;
+  const deepReference = card('深刻记忆', '重要经历保留在同一个模块中，痛苦、感动、快乐或矛盾都可以由人格自主理解。',
+    element('p', {}, '它是参考，不是自动触发器。是否想起、什么情境会勾起回忆以及怎样反应，由人格自己决定；也可以自主重释、淡化、合并、替换或修剪。'),
+    element('div', { class: 'row-actions' }, button('查看深刻记忆条目', async () => { query.input.value = ''; scope.input.value = 'all'; person.input.disabled = true; type.input.value = 'deep'; await load(); }, 'secondary'), button('查看深刻记忆模块', () => inspectDocument('persona.get', { section: 'deep' }, '深刻记忆 · 人格参考'), 'link')));
+  await Promise.all([load(), loadPeople()]); container.append(deepReference, filters, element('div', { class: 'two-pane' }, relations, resultArea)); return container;
 }
 async function evolutionPage() {
   const content = element('div'), list = element('div'), filter = field('job-status', '作业状态', '', { choices: [['', '全部状态'], ['queued', '待执行'], ['running', '执行中'], ['paused', '已暂停'], ['prepared', '已准备'], ['committed', '已提交'], ['completed', '已完成'], ['failed', '失败'], ['invalidated', '已失效']] });
@@ -348,8 +354,8 @@ const configGroups = [
   ['记录与文件上限', [['capacityLimits.artifactTextChars', '单条进化记录文本', '字符'], ['capacityLimits.artifactRecordBytes', '单条记录序列化', 'bytes'], ['capacityLimits.documentBytes', '业务 JSON 文档', 'bytes'], ['capacityLimits.storeBytes', '实例物理空间', 'bytes；另验事务峰值']]],
   ['整理输入与输出', [['processingLimits.consolidationInputChars', '新批每目标增量', '字符；不重切旧批'], ['processingLimits.consolidationContextChars', '旧记忆每页', '字符'], ['processingLimits.consolidationRequestTokens', '核心完整请求预算', '计数单位；缺 tokenizer 时标估算'], ['processingLimits.consolidationOutputTokens', '整理输出预留', 'tokens'], ['processingLimits.controlOutputTokens', '控制输出预留', 'tokens'], ['processingLimits.replyOutputTokens', '回复输出预留', 'tokens']]],
   ['作业执行容量', [['processingLimits.consolidationCallsPerSegment', '单执行段调用尝试', '跨全部子批共享；不是每日频率'], ['processingLimits.maxQueuedConsolidations', '最大排队作业', '个'], ['processingLimits.maxTargetsPerJob', '每作业最多目标', '个']]],
-  ['普通注入预算', [['contextBudget.totalTokens', '动态人格材料总预算', '计数单位'], ['contextBudget.environmentTokens', '环境', '计数单位'], ['contextBudget.anchorTokens', '身份基调', '计数单位'], ['contextBudget.personaTokens', '人格', '计数单位'], ['contextBudget.habitTokens', '习惯', '计数单位'], ['contextBudget.relationTokens', '关系', '计数单位'], ['contextBudget.retrievalTokens', '检索', '计数单位']]],
-  ['条目容量', [['artifactLimits.axes', '人格坐标', '个'], ['artifactLimits.tendencyFacets', '倾向', '个'], ['artifactLimits.boundaryFacets', '软边界', '个'], ['artifactLimits.signatures', '共同签名', '个'], ['artifactLimits.habits', '习惯', '个'], ['artifactLimits.impressionSignaturesPerPerson', '每人印象签名', '个'], ['artifactLimits.indexItemsPerPerson', '每人索引', '个'], ['artifactLimits.codesPerScope', '每范围编码', '个'], ['artifactLimits.interpretationsPerPerson', '每人待解释', '个'], ['artifactLimits.relationEventsPerPerson', '每人关系事件', '个']]],
+  ['普通注入预算', [['contextBudget.totalTokens', '动态人格材料总预算', '计数单位'], ['contextBudget.environmentTokens', '环境', '计数单位'], ['contextBudget.anchorTokens', '身份基调', '计数单位'], ['contextBudget.personaTokens', '人格', '计数单位'], ['contextBudget.habitTokens', '习惯', '计数单位'], ['contextBudget.relationTokens', '关系', '计数单位'], ['contextBudget.retrievalTokens', '检索', '计数单位'], ['contextBudget.deepMemoryTokens', '深刻记忆参考', '计数单位；仍受总预算约束，不表示已触发回忆']]],
+  ['条目容量', [['artifactLimits.axes', '人格坐标', '个'], ['artifactLimits.tendencyFacets', '倾向', '个'], ['artifactLimits.boundaryFacets', '软边界', '个'], ['artifactLimits.signatures', '共同签名', '个'], ['artifactLimits.habits', '习惯', '个'], ['artifactLimits.impressionSignaturesPerPerson', '每人印象签名', '个'], ['artifactLimits.indexItemsPerPerson', '每人索引', '个'], ['artifactLimits.codesPerScope', '每范围编码', '个'], ['artifactLimits.interpretationsPerPerson', '每人待解释', '个'], ['artifactLimits.relationEventsPerPerson', '每人关系事件', '个'], ['artifactLimits.deepMemories', '深刻记忆条目', '个；满容量不自动替人格选取舍'], ['artifactLimits.deepMemoryChars', '深刻记忆文本总量', '字符；仍受实例容量约束']]],
   ['有限历史与诊断', [['retention.snapshotMaxRequests', '快照保留数量', '条'], ['retention.personaHistoryMaxVersions', '人格历史版本', '个'], ['retention.journalMaxBytes', '运行日志与工作区', 'bytes'], ['retention.backupMaxBytes', '维护备份容量', 'bytes']]],
 ];
 const getPath = (object, path) => path.split('.').reduce((value, key) => value?.[key], object);
@@ -380,7 +386,30 @@ async function settingsPage() {
     await mutate('config.update', { config: partial }, { title: '保存技术设置', description: '仅更新列出的技术配置。容量缩小不会自动裁剪记忆或替人格决定遗忘；超限操作会按实际约束拒绝。', preview: partial, success: '配置已返回实际保存结果。' });
   }
   form.append(element('div', { class: 'form-footer' }, element('p', {}, '设置作用于当前选定实例。请求预算估算不等于供应商精确 token 计费。'), button('保存设置', saveSettings, 'primary', { dataset: { action: 'save-settings' } })));
-  container.append(element('details', { class: 'advanced-section' }, element('summary', {}, '高级：容量与模型预算'), element('div', { class: 'advanced-body' }, card('技术设置', '资源边界有明确上限，改变配置不等于改变人格观点。', form)))); return container;
+  container.append(reviewAssistantSettings(current), element('details', { class: 'advanced-section' }, element('summary', {}, '高级：容量与模型预算'), element('div', { class: 'advanced-body' }, card('技术设置', '资源边界有明确上限，改变配置不等于改变人格观点。', form)))); return container;
+}
+
+function reviewAssistantSettings(config) {
+  const instanceId = state.instanceId, generation = state.generation, current = { enabled: false, maxOutputTokens: 1024, maxReportChars: 4000, ...config.reviewAssistant };
+  const alive = () => state.instanceId === instanceId && state.page === 'settings' && state.generation === generation;
+  const enabled = element('input', { type: 'checkbox', checked: current.enabled === true, role: 'switch', id: 'review-assistant-enabled', 'aria-label': '启用整理资料助手' });
+  const output = field('review-assistant-output', '助手输出上限', current.maxOutputTokens, { type: 'number', min: 1, hint: 'tokens；沿用 DSH 当前模型。' }); output.input.max = 8192;
+  const report = field('review-assistant-report', '单份建议保留上限', current.maxReportChars, { type: 'number', min: 1, hint: 'Unicode 字符；建议不等于人格决定。' }); report.input.max = 16000;
+  const save = button('保存整理助手设置', async () => {
+    if (!alive()) return;
+    const values = { enabled: enabled.checked, maxOutputTokens: Number(output.input.value), maxReportChars: Number(report.input.value) };
+    if (!output.input.value || !Number.isSafeInteger(values.maxOutputTokens) || values.maxOutputTokens < 1 || values.maxOutputTokens > 8192 || !report.input.value || !Number.isSafeInteger(values.maxReportChars) || values.maxReportChars < 1 || values.maxReportChars > 16000) throw new Error('请输入有效的助手输出与建议容量。');
+    const changed = Object.fromEntries(Object.entries(values).filter(([key, value]) => value !== current[key]));
+    if (!Object.keys(changed).length) return toast('整理助手设置没有变化。');
+    const confirmed = await confirmOperation({ title: '保存整理资料助手设置', description: '开启后，已选整理可以沿用 DSH 当前模型进行额外调用，只提供资料保真建议；最终怎样理解和记忆仍由人格决定。保存本身不会启动整理。', preview: changed, accept: '保存设置' });
+    if (!confirmed || !alive()) return;
+    await request('config.update', { instanceId, config: { reviewAssistant: changed } });
+    if (!alive()) return; toast('整理资料助手设置已保存。'); await renderPage();
+  }, 'secondary');
+  return card('整理资料助手', '可选的资料辅助，默认关闭；不会替人格规定应该变成什么样。',
+    element('label', { class: 'field-checkbox' }, enabled, '启用整理资料助手'),
+    element('p', { class: 'small muted' }, '沿用 DSH 当前模型，运行时可能增加模型调用。助手只提示来源、遗漏、重复或摘要失真，建议不直接写成人格变化；是否整理、怎样解释和是否采纳仍由人格决定。浏览本页不会调用助手。'),
+    element('details', { class: 'advanced-section' }, element('summary', {}, '高级：助手处理预算'), element('div', { class: 'advanced-body form-grid' }, output.wrapper, report.wrapper)), save);
 }
 
 const pageCleanups = new Set();
@@ -467,8 +496,73 @@ async function connectionWizard(id, connection, initial, generation) {
     }
     if (authorization.error && phase !== 'failed') flowArea.append(notice(authorization.error.message ?? authorization.error.code ?? '平台返回了连接错误。', 'warning'));
   }
-  area.append(element('p', { class: 'small muted' }, id === 'qq' ? '扫码绑定独立 QQ Bot 身份，后续配置由插件保存。它不会接管桌面已登录的个人 QQ。' : '使用微信官方扫码授权，目前接入私聊；普通群聊、朋友圈和实时通话以实际连接器能力为准。'), flowArea, actions);
+  area.append(element('p', { class: 'small muted' }, id === 'qq' ? '扫码绑定独立 QQ Bot 身份，后续配置由插件保存。它不会接管桌面已登录的个人 QQ。' : '使用微信官方扫码授权，目前接入私聊；普通群聊、朋友圈和实时通话以实际连接器能力为准。'), ...(authorization.deliveryPolicy?.reason ? [notice('QQ 官方接口：' + authorization.deliveryPolicy.reason + '。高级兼容桥按其实际能力执行。')] : []), flowArea, actions);
   await paint(); return area;
+}
+
+async function socialIdentitiesPanel({ generation = state.generation, connections = [] } = {}) {
+  const instanceId = state.instanceId, listing = element('div'), formArea = element('details', { class: 'advanced-section' });
+  const alive = () => state.instanceId === instanceId && state.page === 'chat' && state.generation === generation;
+  const socialRequest = (action, args = {}) => request(action, { ...args, instanceId });
+  const labelsByPlatform = { qq: 'QQ', wechat: '微信', bilibili: 'B站', douyin: '抖音' };
+  let platforms = [], currentOffset = 0, loadGeneration = 0;
+  const platform = field('social-platform', '平台', 'qq', { choices: [['qq', 'QQ'], ['wechat', '微信'], ['bilibili', 'B站'], ['douyin', '抖音'], ['other', '其他平台']] });
+  const custom = field('social-custom-platform', '其他平台标识', '', { placeholder: '例如 telegram；小写字母、数字、下划线或连字符' });
+  const account = field('social-account-id', '平台账号 ID', '', { required: true, hint: '使用平台稳定账号标识，不填写密码、Token 或 Cookie。QQ／微信可优先从当前连接登记。' });
+  const name = field('social-display-name', '显示名称', ''), type = field('social-account-type', '账号类型', 'other', { choices: [['bot', '机器人'], ['personal', '个人账号'], ['creator', '创作者账号'], ['other', '其他']] });
+  const profile = field('social-profile-url', '主页链接（可选）', '', { placeholder: 'https://…；不要包含登录凭据或查询参数' });
+  const avatar = field('social-avatar-url', '头像链接（可选）', ''), notes = field('social-notes', '备注（可选）', '');
+  account.input.maxLength = 256; name.input.maxLength = 120; notes.input.maxLength = 1000;
+  const updatePlatform = () => { custom.wrapper.hidden = platform.input.value !== 'other'; if (platform.input.value === 'qq') type.input.value = 'bot'; else if (platform.input.value === 'wechat') type.input.value = 'personal'; else if (['bilibili', 'douyin'].includes(platform.input.value)) type.input.value = 'creator'; };
+  platform.input.addEventListener('change', updatePlatform); updatePlatform();
+  const edit = item => {
+    platform.input.value = Object.hasOwn(labelsByPlatform, item.platform) ? item.platform : 'other'; custom.input.value = platform.input.value === 'other' ? item.platform : ''; updatePlatform();
+    account.input.value = item.accountId; name.input.value = item.displayName ?? ''; type.input.value = ['bot', 'personal', 'creator', 'other'].includes(item.accountType) ? item.accountType : 'other'; profile.input.value = item.profileUrl ?? ''; avatar.input.value = item.avatarUrl ?? ''; notes.input.value = item.notes ?? ''; formArea.open = true; account.input.focus();
+  };
+  function render(view) {
+    platforms = Array.isArray(view.platforms) ? view.platforms : platforms;
+    const items = getItems(view);
+    const rows = items.map(item => {
+      const connection = item.connection ?? {}, verified = connection.connected === true && connection.currentAccount === true && connection.verification === 'verified';
+      const status = !connection.adapterAvailable ? '仅登记／尚无适配器' : verified ? '当前连接已核验' : connection.status === 'account_changed' ? '登记账号与当前连接不同' : '仅登记／尚未核实连接';
+      const supported = Array.isArray(item.capabilities) ? item.capabilities : [];
+      return element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, item.displayName || item.accountId), tag(status, verified ? '' : 'warning')),
+        kv({ '平台': labelsByPlatform[item.platform] ?? platforms.find(value => value.id === item.platform)?.label ?? item.platform, '账号 ID': item.accountId, '账号类型': ({ bot: '机器人', personal: '个人账号', creator: '创作者账号', other: '其他' })[item.accountType] ?? item.accountType, '登记来源': item.bindingSource === 'current_connection' ? '实际连接核对后登记' : '手动登记', '当前已核实可用能力': supported.filter(value => value.available === true).length + ' 项' }),
+        item.profileUrl ? element('p', { class: 'small muted' }, '主页：' + item.profileUrl) : null, item.notes ? element('p', { class: 'small muted' }, item.notes) : null,
+        connection.deliveryPolicy?.reason ? notice(connection.deliveryPolicy.reason) : null,
+        supported.length ? element('details', { class: 'advanced-section' }, element('summary', {}, '查看此账号的实际能力'), element('div', { class: 'advanced-body' }, supported.map(value => element('div', { class: 'record' }, element('strong', {}, capabilityNames[value.id] ?? value.id), kv({ '适配器支持': value.supported ? '支持' : '未支持', '用户许可': value.allowed === true ? '已许可' : value.allowed === false ? '未许可' : '尚未核实', '当前可用': value.available === true ? '可用' : '不可用' }), value.reason ? element('p', { class: 'small muted' }, value.reason) : null)))) : element('p', { class: 'small muted' }, '当前没有已核实的执行能力。登记本身不会授予能力。'),
+        element('div', { class: 'row-actions' }, button('修改账号档案', () => { if (alive()) edit(item); }, 'secondary compact'), button('解除这条身份登记', async () => {
+          if (!alive()) return; const confirmed = await confirmOperation({ title: '解除社交身份登记', description: '只移除当前人格中的这条账号档案；不会退出平台账号、修改平台权限或删除聊天记忆。', preview: { platform: item.platform, accountId: item.accountId }, accept: '解除登记' });
+          if (!confirmed || !alive()) return; await socialRequest('social.remove', { identityId: item.identityId }); if (!alive()) return; toast('身份登记已解除。'); await load();
+        }, 'secondary compact')));
+    });
+    replace(listing, kv({ '当前人格的身份档案': number(view.total ?? items.length) + ' / ' + number(view.limits?.perInstance), '账号档案总容量': view.limits?.registryBytes != null ? number(view.limits.registryBytes) + ' bytes' : '由服务返回' }),
+      rows.length ? element('div', { class: 'record-list' }, rows) : empty('尚未登记独立社交身份', '可从当前已连接的 QQ／微信登记，或先保存其他平台账号档案；未接入适配器时只表示登记。'),
+      element('div', { class: 'row-actions' }, currentOffset > 0 ? button('回到账号首页', () => load(), 'secondary compact') : null, view.nextOffset != null ? button('下一页账号', () => load('social.list', view.nextOffset), 'secondary compact') : null));
+  }
+  async function load(action = 'social.inspect', offset = 0) {
+    const ticket = ++loadGeneration, view = await socialRequest(action, offset ? { offset } : {}); if (!alive() || ticket !== loadGeneration) return; currentOffset = offset; render(view);
+  }
+  const register = button('保存账号档案', async () => {
+    if (!alive()) return;
+    const input = { platform: platform.input.value === 'other' ? custom.input.value.trim() : platform.input.value, accountId: account.input.value.trim(), displayName: name.input.value.trim(), accountType: type.input.value, profileUrl: profile.input.value.trim() || null, avatarUrl: avatar.input.value.trim() || null, notes: notes.input.value.trim() };
+    if (!input.accountId) throw new Error('请填写平台账号 ID。'); if (!/^[a-z][a-z0-9_-]{0,47}$/.test(input.platform)) throw new Error('请填写有效的平台标识。');
+    const confirmed = await confirmOperation({ title: '保存独立社交账号档案', description: '只登记账号与当前人格的关联；不会自动登录、创建平台账号或获得发布、私信和通话权限。实际连接与能力将另行核实。', preview: input, accept: '保存档案' });
+    if (!confirmed || !alive()) return; await socialRequest('social.upsert', input); if (!alive()) return; formArea.open = false; toast('账号档案已保存，实际能力以连接核实为准。'); await load();
+  }, 'secondary', { disabled: !state.status?.available });
+  formArea.append(element('summary', {}, '登记或修改独立账号'), element('div', { class: 'advanced-body' }, element('div', { class: 'form-grid' }, platform.wrapper, custom.wrapper, account.wrapper, name.wrapper),
+    element('p', { class: 'small muted' }, '账号由你在相应平台注册并完成所需认证。B站、抖音或其他平台没有适配器时，只保存身份参考，不会显示为已连接。'),
+    element('details', { class: 'advanced-section' }, element('summary', {}, '可选账号资料'), element('div', { class: 'advanced-body form-grid' }, type.wrapper, profile.wrapper, avatar.wrapper, notes.wrapper)), register));
+  const link = platform => button('从当前' + labelsByPlatform[platform] + '连接登记', async () => {
+    if (!alive()) return; const confirmed = await confirmOperation({ title: '登记当前' + labelsByPlatform[platform] + '身份', description: '从当前实际连接核对账号 ID 后，登记到当前人格。账号权限沿用现有授权，不因此扩大。', preview: { platform }, accept: '核对并登记' });
+    if (!confirmed || !alive()) return; await socialRequest('social.linkCurrent', { platform }); if (!alive()) return; toast('已取得实际账号登记结果。'); await load();
+  }, 'secondary', { disabled: !state.status?.available || !connections.some(item => item.id === platform && item.connected) });
+  const content = card('账号与社交身份', '让同一个人格关联自己的平台账号；身份登记、连接和能力分别显示。',
+    element('p', {}, 'QQ／微信连接使用上方现有扫码或兼容桥。多个档案不代表同一平台能同时连接多个账号；目前每个平台只有一个活动连接。'),
+    element('div', { class: 'row-actions' }, link('qq'), link('wechat'), button('刷新账号实际状态', () => load('social.refresh', currentOffset), 'secondary', { disabled: !state.status?.available })), listing, formArea);
+  if (!state.status?.available) { listing.append(notice('先加载人格实例，再查看或登记其社交身份。')); return content; }
+  try { await load(); } catch (error) { if (alive()) listing.append(notice(errorText(error), 'warning')); }
+  return content;
 }
 
 async function chatPage() {
@@ -540,6 +634,7 @@ async function chatPage() {
       element('p', { class: 'subtle-note' }, '这些列表只确定哪些对象和群接入人格；接入之后，是否回应、关注谁和怎样相处仍由人格自己判断。'),
       element('div', { class: 'channel-details' }, voiceMode.wrapper), controls, element('hr', { class: 'divider' }), bridgeDetails, excludedInfo))));
   }
+  container.append(await socialIdentitiesPanel({ generation, connections }));
   const voiceArea = element('div');
   try {
     const voice = await request('voice.inspect', { sessionKey: 'channel-voice' });

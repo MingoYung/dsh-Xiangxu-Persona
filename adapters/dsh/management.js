@@ -44,7 +44,7 @@ function pageDetail(action, args, value) {
 function memorySummary(row) {
   return { id: row.id, recordType: row.recordType, personId: row.personId ?? null, scope: row.scope ?? null,
     role: row.role ?? null, speakerId: row.speakerId ?? null, createdAt: row.createdAt ?? row.sourceAt ?? null, updatedAt: row.updatedAt ?? null,
-    textPreview: short(row.text ?? row.meaning ?? row.desc ?? row.label ?? row.if ?? ''), chars: row.chars ?? points(row.text ?? '').length,
+    title: row.title ?? null, reference: row.reference == null ? null : short(row.reference), textPreview: short(row.text ?? row.reference ?? row.experience ?? row.meaning ?? row.desc ?? row.label ?? row.if ?? ''), chars: row.chars ?? points(row.text ?? '').length,
     sourceCount: row.srcRefs?.length ?? (row.sourceEventId ? 1 : 0), sourceSessionId: row.sourceSessionId ?? null, sourceEventId: row.sourceEventId ?? null };
 }
 function runSummary(run) {
@@ -190,6 +190,7 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
       return pageList(action, args, people.map(row => ({ id: row.personId, personId: row.personId, displayName: short(row.displayName, 160), aliases: (row.aliases ?? []).slice(0, 10).map(value => short(value, 80)), updatedAt: row.updatedAt })));
     }
     if (action === 'persona.get') {
+      if (args.section === 'deep') return pageDetail(action, args, await repo.introspect({ section: 'deep' }));
       const persona = await repo.getPersona(), section = args.section ?? 'all';
       if (!['all', 'anchor', 'axes', 'facets', 'signatures', 'habits', 'retired'].includes(section)) throw error('BAD_MANAGEMENT_REQUEST', 'Unknown persona section');
       return pageDetail(action, args, section === 'all' ? persona : { version: persona.version, section, value: persona[section] });

@@ -1,6 +1,6 @@
 # 十四模块实现映射
 
-本表说明代码落点；0.6.0当前实现及0.4.1／0.4.0历史测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
+本表说明代码落点；0.7.0当前实现及0.4.1／0.4.0历史测试与限制以[管理说明](management-ui.md)和[渠道接入](channel-integration.md)为准。verification.md与host-test-results.md保留早期实现范围，不能当作当前验收。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |
 |---|---|---|
@@ -12,7 +12,7 @@
 | 记忆时效 | sourceAt/observedAt、recentPreferredDays | 迟到时间不漏处理，源游标不依赖旧时间戳 |
 | 性格培养 | 共同anchor/axes/facets/signatures及有限历史 | 一次经历可主观形成、不强迫新增、回滚不复活撤销 |
 | 行为习惯 | persona.habits及本轮注入 | 结构/容量与共同/人物范围，无固定话术执行器 |
-| 潜意识 | buildSnapshot六段材料与完整路由/时间 | 分段/总预算、独立冻结、无全局lastText串对象 |
+| 潜意识 | buildSnapshot有界材料、深刻参考及完整路由/时间 | 分段/总预算、独立冻结、无全局lastText串对象 |
 | 主动记忆 | memory_search/retrievePlan | 模型选择检索，跨对象明确查询与真实主体 |
 | 主动聊天 | 持久selected schedule→native followup→真实assistant | 定时复查、可见回复、outbox、急停、未知交付对账 |
 | 现实时间 | epoch ms/IANA、clock端口、恢复计时 | 离线到期、原生定时器范围、事件型等待无强制闹钟 |
@@ -45,7 +45,7 @@ voice.js保存有界技术偏好，persona_voice由人格按需选择实际音�
 
 ## 0.5.0 陪伴范围、官方连接、权限与形象创作
 
-> 本节是0.5.0历史实现，当时七工具并禁止人格派发；当前0.6.0使用八工具与独立任务预设。
+> 本节是0.5.0历史实现，当时七工具并禁止人格派发；当前0.7.0使用八工具与独立任务预设。
 
 | 扩展 | 实现与消费点 | 验证含义 |
 |---|---|---|
@@ -60,6 +60,8 @@ voice.js保存有界技术偏好，persona_voice由人格按需选择实际音�
 
 ## 0.6.0 自主委派、独立工作预设与任务资料
 
+> 以下实现继续保留，统计与源码指纹属于0.6.0历史验收；当前新增项见0.7.0节。
+
 | 模块 | 实现与消费点 | 验证含义 |
 |---|---|---|
 | 受控自主派发 | index.js／tool-schema.js的persona_task；delegation/native.js显式原生spawn/caller与xiangxu-task-worker | 新上下文、真实父子归属、实际任务身份，是否派发由人格选择 |
@@ -73,3 +75,19 @@ voice.js保存有界技术偏好，persona_voice由人格按需选择实际音�
 本版最终完整回归495/495通过，失败／取消／跳过均为0，运行期间受检源文件无变化。实际安装的DSH 0.2.1-rc.2原生委派链35/35通过；仓库可复用入口node scripts/dsh-delegation-integration.mjs另行实际运行也为35/35。两轮均使用固定响应fixture模型，真实LLM调用为0；它们验证真实宿主工具、来源、资料、整理与生命周期链路，不证明真实研究质量或长期人格效果。公开回执见[完整回归](verification/0.6.0-tests.json)、[两阶段原生SDK](verification/0.6.0-sdk-fixture.json)及[静态自主性审查](verification/0.6.0-autonomy-audit.json)。原生GUI验收结论在[管理说明](management-ui.md)单独维护。
 
 status默认只返回紧凑任务卡和至多120字的导航摘要，不自动展开完整资料目录；明确传documentOffset／documentLimit可分页取目录，正文按documentId和Unicode offset／maxChars读取，返回nextOffset，下页传offset=nextOffset；通用工具cursor只续同一次有界响应，list.pageCursor只续任务列表。UI单次文件下载上限64MiB，不随档案扩容自动提高。archive_file虽按64KiB读取源文件，归档时仍组合受单资料容量限制的整份文件缓冲，内存随该文件大小增长；DSH冷查询也可能内部载入目标子会话日志，不能将逐页采集宣称为宿主恒定RAM。明确遗忘清理插件任务正文并保留永久撤销凭据，清理失败如实报告；它不会删除DSH原始会话历史或用户另存的工程副本。
+
+
+## 0.7.0 深刻参考、整理供料与社交身份
+
+原十四个维度继续保留，新增功能是其横向扩展，不以模块数量代表完成率。
+
+| 扩展 | 实现与直接消费者 | 边界 |
+|---|---|---|
+| 深刻记忆参考 | global/deep.json、schema/repository/deep-memory/prompts；introspect deep与管理记忆页 | cues不匹配触发；回忆、反应与演化修剪由人格决定，空模块与空patch有效 |
+| 整理供料 | prepare/refreshConsolidationContext→memoryIndexes与deepMemories→冻结页 | 相关旧索引可读，未读尾部不当空库；助手读取不冒充人格读取 |
+| 可选资料助手 | core/review-assistant.js→runtime memory_assistant→reviewAssistant advisory | 默认关、共享调用预算、无patch写权或价值否决，未知不自动付费重放 |
+| 来源保真 | repository实际来源目录与srcRefs核验、source-dependencies撤销链 | 不伪造人类角色、不把同源当多次，空refs解释不需证据门槛 |
+| 社交身份目录 | social-identities.js→surfaces social.*／persona_platform accounts→聊天页 | 账号、连接、许可和能力分开；B站抖音等仅登记与接口预留 |
+| QQ官方策略 | connections/qq.js及真实driver上下文 | 官方主动推送不可用；被动窗口按平台规则，桥按自身实际能力，不改人格判断 |
+
+详见[新增功能说明](memory-reflection-and-social-identities.md)。0.7.0[完整本地回归](verification/0.7.0-tests.json)583/583通过，失败／取消／跳过均为0；[真实DSH SDK](verification/0.7.0-sdk-fixture.json)分别完成新链58/58与委派链35/35，两套有重叠、分别列示，使用固定fixture且真实LLM／平台调用均为0。[原生九页GUI](verification/0.7.0-native-ui.json)使用合成数据、0模型调用；[自主性源码审查](verification/0.7.0-autonomy-audit.json)分列源码链、定向回归与交叉复核。远程CI结果不由本地回执推断；0.6.0的495/35及当时九页GUI、0.5.0和更早结果保留历史含义。0.7.0已修改核心，不能沿用0.6.0核心九文件未变的结论。

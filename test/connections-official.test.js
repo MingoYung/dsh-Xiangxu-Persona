@@ -86,7 +86,7 @@ test('QQ text/media mutations require actual message IDs and never retry unknown
     if (r.method === 'DELETE') return send(null, 204);
     if (r.url.endsWith('/messages')) { sendCount++; return send(noId ? {} : { id: 'sent-' + sendCount, timestamp: '2026-10-26T00:00:00Z' }); }
     send({ id: 'bot' });
-  }); t.after(() => api.close()); const client = createQqClient({ accountId: 'bot', appSecret: 'secret', transport: { contexts: {} } }, { endpoints: { api: api.url } }); t.after(() => client.close());
+  }); t.after(() => api.close()); const client = createQqClient({ accountId: 'bot', appSecret: 'secret', transport: { contexts: { 'group:group-A': { messageId: 'actual-incoming-message', at: Date.now() } } } }, { endpoints: { api: api.url } }); t.after(() => client.close());
   assert.equal((await client.inspectCapabilities())['chat.voice'].supported, false); assert.match((await client.inspectCapabilities())['chat.voice'].reason, /PCM WAV/);
   assert.equal((await client.sendVoice(route('qq'), Buffer.from('RIFF-pcm-wav'), { deliveryId: 'voice-unavailable' })).code, 'QQ_VOICE_CODEC_UNAVAILABLE'); assert.equal(api.requests.length, 0);
   const image = await client.execute(route('qq'), 'chat.image', { bytes: Buffer.from('image-bytes') }, { deliveryId: 'image-1' }); assert.equal(image.status, 'delivered'); assert.equal(image.messageIdKind, 'server_id');

@@ -45,6 +45,7 @@ async function frontend(overrides = {}) {
     if (action === 'voice.inspect') return { profile: { mode: 'persona' }, catalog: [], supported: false };
     if (action === 'media.inspect') return structuredClone(mediaView);
     if (action === 'media.listAssets' || action === 'media.listJobs') return { items: [], total: 0 };
+    if (action === 'social.inspect' || action === 'social.list' || action === 'social.refresh') return { items: [], total: 0, complete: true, nextOffset: null, limits: { perInstance: 32, registryBytes: 262144 }, platforms: [{ id: 'qq', label: 'QQ', adapterAvailable: true }, { id: 'wechat', label: '微信', adapterAvailable: true }, { id: 'bilibili', label: 'B站', adapterAvailable: false }, { id: 'douyin', label: '抖音', adapterAvailable: false }] };
     if (action === 'config.get') return {};
     if (action === 'permissions.configure' || action === 'channels.configure' || action === 'channels.start') return { ok: true };
     throw new Error('Unexpected test owner RPC: ' + action);
@@ -209,4 +210,106 @@ test('a delayed task document cannot render into another selected personality in
   const page = await ui.evaluate("state.page='tasks';tasksPage()"); await ui.button(page, '查看任务与资料').emit('click'); const pending = ui.button(ui.ids.get('detail-content'), '按页查看').emit('click'); await waiting;
   ui.evaluate("state.instanceId='different-instance'"); release({ encoding: 'utf8', text: 'OLD_PRIVATE_TASK_BODY', offset: 0, nextOffset: 21, totalChars: 21, complete: true, sha256: taskFixtureSha }); await pending;
   assert(!ui.ids.get('detail-content').textContent.includes('OLD_PRIVATE_TASK_BODY'));
+});
+
+test('deep memories remain a browsable personality reference without triggering recall or editing their meaning', async () => {
+  const deep = { id: 'deep-memory-one', recordType: 'deep', scope: 'global', title: '一起等雨停', reference: '那次陪伴是珍贵的经历', experience: '一起等雨停。', feltThen: '当时很安心', meaningNow: '现在仍觉得温暖', cues: ['雨声'], srcRefs: [] };
+  const ui = await frontend({ 'memory.list': args => ({ items: args.recordType === 'deep' ? [deep] : [], total: args.recordType === 'deep' ? 1 : 0 }), 'persona.get': () => ({ items: [deep] }) });
+  const page = await ui.evaluate("state.page='memory';memoryPage()");
+  assert.ok(page.textContent.includes('它是参考，不是自动触发器'));
+  await ui.button(page, '查看深刻记忆条目').emit('click');
+  const query = ui.calls.filter(call => call.action === 'memory.list').at(-1); assert.equal(query.args.recordType, 'deep'); assert.equal(query.args.scope, 'all');
+  assert.ok(page.textContent.includes('一起等雨停')); assert.ok(page.textContent.includes('深刻记忆 · 共同参考'));
+  const detail = ui.evaluate('documentView(' + JSON.stringify(deep) + ')');
+  assert.ok(detail.textContent.includes('当时很安心')); assert.ok(detail.textContent.includes('现在仍觉得温暖')); assert.ok(detail.textContent.includes('不表示本轮已经回忆或产生反应'));
+  assert.equal(ui.calls.some(call => /(?:control\.|operations\.start|memory\.forget|config\.update)/.test(call.action)), false);
+});
+
+test('the optional review assistant opens disabled and saving unchanged settings does not start work', async () => {
+  const ui = await frontend(); const panel = ui.evaluate("state.page='settings';reviewAssistantSettings({})");
+  assert.equal(ui.ids.get('review-assistant-enabled').checked, false); assert.ok(panel.textContent.includes('浏览本页不会调用助手'));
+  await ui.button(panel, '保存整理助手设置').emit('click');
+  assert.equal(ui.calls.some(call => ['config.update', 'operations.start', 'control.consolidate'].includes(call.action)), false);
+});
+
+test('enabling a review assistant saves only its explicit config and does not invoke a model', async () => {
+  const ui = await frontend({ 'config.update': () => ({ saved: true }) }); const panel = ui.evaluate("state.page='settings';reviewAssistantSettings({})"); ui.confirm(true);
+  ui.ids.get('review-assistant-enabled').checked = true; await ui.button(panel, '保存整理助手设置').emit('click');
+  const saved = ui.calls.filter(call => call.action === 'config.update'); assert.equal(saved.length, 1); assert.deepEqual(saved[0].args, { instanceId: 'default', config: { reviewAssistant: { enabled: true } } });
+  assert.equal(ui.calls.some(call => ['operations.start', 'control.consolidate'].includes(call.action)), false);
+});
+
+test('review assistant settings reject an oversized processing budget before any save', async () => {
+  const ui = await frontend(); const panel = ui.evaluate("state.page='settings';reviewAssistantSettings({})"); ui.confirm(true);
+  ui.ids.get('review-assistant-output').value = '8193'; await ui.button(panel, '保存整理助手设置').emit('click');
+  assert.equal(ui.calls.some(call => call.action === 'config.update'), false); assert.ok(ui.ids.get('global-error').textContent.includes('有效的助手输出'));
+});
+
+const socialFixture = { identityId: 'social-' + 'd'.repeat(32), platform: 'bilibili', accountId: 'uid-123', displayName: '相续的小站', accountType: 'creator', profileUrl: null, avatarUrl: null, notes: '', bindingSource: 'manual', connection: { adapterAvailable: false, currentAccount: false, connected: false, verification: 'unverified', status: 'unsupported' }, capabilities: [] };
+const socialView = items => ({ items, total: items.length, nextOffset: null, complete: true, limits: { perInstance: 32, registryBytes: 262144 }, platforms: [{ id: 'bilibili', label: 'B站', adapterAvailable: false }] });
+
+test('registering an external social identity does not invent a connection, grant, login or credentials', async () => {
+  let registered = false;
+  const ui = await frontend({ 'social.inspect': () => socialView(registered ? [socialFixture] : []), 'social.upsert': () => { registered = true; return { item: socialFixture, changed: true }; } });
+  const page = await ui.evaluate("state.page='chat';socialIdentitiesPanel()"); ui.confirm(true);
+  ui.ids.get('social-platform').value = 'bilibili'; await ui.ids.get('social-platform').emit('change'); ui.ids.get('social-account-id').value = 'uid-123'; ui.ids.get('social-display-name').value = '相续的小站';
+  await ui.button(page, '保存账号档案').emit('click');
+  const call = ui.calls.find(value => value.action === 'social.upsert'); assert.equal(call.args.instanceId, 'default'); assert.equal(call.args.platform, 'bilibili'); assert.equal(call.args.accountId, 'uid-123'); assert.equal(call.args.accountType, 'creator');
+  assert.equal(Object.hasOwn(call.args, 'verified'), false); assert.equal(Object.hasOwn(call.args, 'capabilities'), false); assert.equal(Object.hasOwn(call.args, 'memoryRoot'), false);
+  assert.ok(page.textContent.includes('仅登记／尚无适配器')); assert.ok(page.textContent.includes('登记本身不会授予能力'));
+  assert.equal(ui.calls.some(value => ['connections.start', 'channels.start', 'permissions.configure', 'media.generate'].includes(value.action)), false);
+});
+
+test('linking a current social account uses only the platform so its real identity is resolved by the backend', async () => {
+  const ui = await frontend({ 'social.linkCurrent': () => ({ changed: true }) }); const page = await ui.evaluate("state.page='chat';socialIdentitiesPanel({connections:[{id:'qq',connected:true}]})"); ui.confirm(true);
+  await ui.button(page, '从当前QQ连接登记').emit('click');
+  const call = ui.calls.find(value => value.action === 'social.linkCurrent'); assert.deepEqual(call.args, { instanceId: 'default', platform: 'qq' });
+  assert.equal(ui.calls.some(value => ['connections.start', 'channels.start', 'permissions.configure'].includes(value.action)), false);
+});
+
+test('a delayed social identity directory cannot expose an old personality account in a new instance', async () => {
+  let release, announce; const started = new Promise(resolve => { announce = resolve; });
+  const ui = await frontend({ 'social.inspect': () => { announce(); return new Promise(resolve => { release = resolve; }); } });
+  const pending = ui.evaluate("state.page='chat';socialIdentitiesPanel()"); await started; ui.evaluate("state.instanceId='new-personality';state.generation++");
+  release(socialView([{ ...socialFixture, displayName: 'OLD_PRIVATE_SOCIAL_IDENTITY' }])); const page = await pending;
+  assert.equal(page.textContent.includes('OLD_PRIVATE_SOCIAL_IDENTITY'), false);
+});
+
+test('social registration is abandoned when the personality changes while confirmation is open', async () => {
+  const ui = await frontend({ 'social.upsert': () => { throw Error('must not save'); } }); const page = await ui.evaluate("state.page='chat';socialIdentitiesPanel()");
+  ui.ids.get('social-platform').value = 'bilibili'; ui.ids.get('social-account-id').value = 'uid-123';
+  const pending = ui.button(page, '保存账号档案').emit('click'); await new Promise(resolve => setImmediate(resolve)); assert.equal(ui.ids.get('confirm-dialog').open, true);
+  ui.evaluate("state.instanceId='new-personality';state.generation++"); ui.ids.get('confirm-dialog').close('confirm'); await pending;
+  assert.equal(ui.calls.some(value => value.action === 'social.upsert'), false);
+});
+
+test('social account pagination follows the returned offset and refresh never rebinds the account', async () => {
+  const ui = await frontend({ 'social.inspect': () => ({ ...socialView([socialFixture]), total: 2, nextOffset: 1, complete: false }), 'social.list': args => ({ ...socialView([{ ...socialFixture, accountId: 'uid-456', identityId: 'social-' + 'e'.repeat(32) }]), offset: args.offset }), 'social.refresh': () => socialView([socialFixture]) });
+  const page = await ui.evaluate("state.page='chat';socialIdentitiesPanel()");
+  await ui.button(page, '下一页账号').emit('click'); assert.equal(ui.calls.find(value => value.action === 'social.list').args.offset, 1);
+  await ui.button(page, '刷新账号实际状态').emit('click'); assert.equal(ui.calls.find(value => value.action === 'social.refresh').args.offset, 1);
+  assert.equal(ui.calls.some(value => ['social.upsert', 'social.linkCurrent', 'connections.start', 'permissions.configure'].includes(value.action)), false);
+});
+
+test('removing a social identity only removes its exact registration without logging out or deleting memories', async () => {
+  let removed = false;
+  const ui = await frontend({ 'social.inspect': () => socialView(removed ? [] : [socialFixture]), 'social.remove': () => { removed = true; return { removed: true }; } }); const page = await ui.evaluate("state.page='chat';socialIdentitiesPanel()"); ui.confirm(true);
+  await ui.button(page, '解除这条身份登记').emit('click'); const call = ui.calls.find(value => value.action === 'social.remove'); assert.deepEqual(call.args, { instanceId: 'default', identityId: socialFixture.identityId });
+  assert.equal(ui.calls.some(value => ['connections.disconnect', 'channels.stop', 'memory.forget', 'permissions.configure'].includes(value.action)), false);
+});
+
+test('social delivery policy is shown as a platform fact without changing the personality proactive choice', async () => {
+  const item = { ...socialFixture, platform: 'qq', connection: { adapterAvailable: true, currentAccount: true, connected: true, verification: 'verified', deliveryPolicy: { proactive: false, passiveReplyRequired: true, reason: '当前驱动只支持有效上下文内的被动回复，不支持主动推送' } }, capabilities: [{ id: 'chat.text', supported: true, allowed: true, available: true }] };
+  const ui = await frontend({ 'social.inspect': () => socialView([item]) }); const page = await ui.evaluate("state.page='chat';socialIdentitiesPanel()");
+  assert.ok(page.textContent.includes('不支持主动推送')); assert.ok(page.textContent.includes('当前连接已核验'));
+  assert.equal(ui.calls.some(value => ['control.mute', 'control.resume', 'config.update'].includes(value.action)), false);
+});
+
+test('a deep memory sourced from human dialogue is labelled as personality memory rather than a human quote', async () => {
+  const ui = await frontend();
+  const memory = { id: 'deep-source-role', recordType: 'deep', scope: 'global', title: '共同经历', reference: '我珍惜这段陪伴', srcRefs: [{ sourceSessionId: 'source-session', sourceEventId: 'source-event', sourceRole: 'user' }] };
+  const row = ui.evaluate('memoryRecord(' + JSON.stringify(memory) + ',()=>{})');
+  assert.ok(row.textContent.includes('人格记忆')); assert.equal(row.textContent.includes('用户原话'), false);
+  const detail = ui.evaluate('documentView(' + JSON.stringify(memory) + ')');
+  assert.ok(detail.textContent.includes('人格记忆（非对话原件）')); assert.ok(detail.textContent.includes('user'));
 });

@@ -37,7 +37,7 @@ export const TOOL_PARAMETERS = {
     limit: { type: 'integer', minimum: 1, maximum: 20 }, cursor,
   },
   persona_platform: {
-    action: { type: 'string', enum: ['inspect', 'execute'] },
+    action: { type: 'string', enum: ['inspect', 'execute', 'accounts'] },
     capability: { type: 'string', enum: ['chat.text','chat.image','chat.video','chat.file','chat.voice','chat.sticker','message.reply','message.retract','contacts.read','groups.read','friend.manage','group.manage','profile.update','feed.read','feed.publish','feed.react','call.voice','call.video'] },
     target, assetId: { type: 'string', maxLength: 256 }, text: { type: 'string', maxLength: 16000 },
     messageId: { type: 'string', maxLength: 256, description: 'Copy an actual platform message ID from current source facts or a confirmed receipt; do not invent one.' },
@@ -53,7 +53,7 @@ export const TOOL_PARAMETERS = {
   memory_search: { query: string, targetPersonId: string, scope: { type: 'string', enum: ['person', 'global', 'all'] }, limit: { type: 'integer' }, cursor },
   memory_forget: { ids: strings, targetPersonId: string, before: { type: 'number' }, reason: string,
     action: { type: 'string', enum: ['forget', 'correction'] }, replacementIds: strings, cursor },
-  persona_introspect: { targetPersonId: string, section: { type: 'string', enum: ['anchor', 'axes', 'facets', 'signatures', 'habits', 'relation', 'state', 'all'] }, cursor },
+  persona_introspect: { targetPersonId: string, section: { type: 'string', enum: ['anchor', 'axes', 'facets', 'signatures', 'habits', 'relation', 'deep', 'state', 'all'] }, cursor },
   persona_decide: {
     identityPlan: nullable({ type: 'object', required: ['action'], properties: {
       action: { type: 'string', enum: ['new', 'associate', 'unknown'] }, personId: string, displayName: string, reason: string,

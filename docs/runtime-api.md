@@ -16,6 +16,7 @@ await runtime.open();
 
 - `purpose:"control"`: `{decision:PersonaDecideInput,usage?,model?}` or a JSON object/text encoding the decision.
 - `purpose:"reply"`: `{text,usage?,model?}` or plain text.
+- `purpose:"memory_assistant"`: optional advisory-only pass returning `{observations:[{category,detail,recordIds}]}` or JSON text; no patch or tools are accepted. It uses the current model route and the existing shared consolidation call budget.
 - `purpose:"consolidation"`: `{patch:{entries,evictSourceIds?},usage?,model?}`, an entries array, or JSON text. Entry document names and structural rules are in `repository-api.md`.
 
 Consolidation prompts carry a value-shape guide for axes (n/position/sd/metric/window), facets, free signatures, habits, index items, codes, impression scalar/coordinate/event values, temporary interpretations and retired entries. These are structural examples, not required opinions or formation thresholds. A single experience can produce a subjective impression/signature; an empty patch is equally valid.
@@ -95,3 +96,18 @@ compose supplies a bounded real resources summary, including usage/limits, press
 ## Management lifecycle boundary (0.3.0)
 
 The DSH management layer owns instance loading, operator receipts and scoped tool/listener cleanup. It never makes an autonomous personality decision by viewing data. Explicit UI consolidation/backfill records a durable receipt before execution; cold interrupted operations are unknown and not replayed. A live setting changes only after repository updateConfig succeeds. Restore/recover leaves the instance unloaded, since normal open can resume previously selected timers/control work. The continuing personality and data contract remain persona-memory/3. See [native management](management-ui.md).
+
+
+## 0.7.0 deep references and optional advisory review
+
+compose now obtains the shared deepMemories reference material. A bounded deep_memory_reference segment prefers complete reference cards. If the first complete card exceeds the budget, an explicitly partial card may carry partial:true, titleTotalChars, referenceTotalChars and omittedFields. The segment retains referenceOnly:true, automaticRecall:false, total/shown/truncated and an omitted-directory position; it never performs keyword matching, recalls a memory on the personality's behalf, or requires a reaction. The default segment budget is600 count units within the unchanged2970 total. Empty deep data add no reference segment.
+
+Frozen consolidation context includes versioned memoryIndexes:{global,person} and deepMemories. Existing Unicode context pages and readContext.cursor continue to expose actual nextCursor and incomplete tails; only the continuing personality's actual provider pages advance its read coverage. A helper seeing the same context does not acknowledge it for the personality.
+
+reviewAssistant defaults to disabled, maxOutputTokens1024 and maxReportChars4000, with maxima8192 and16000. When enabled, runtime may make one independent memory_assistant call for the current material fingerprint if at least two shared call opportunities remain, reserving the personality call. A bounded assistantReceipt is persisted before dispatch and reused after completion; unknown or failed advice is not automatically paid again. Failure degrades the optional advice, not personality autonomy. The personality receives advisory observations as fallible data and can disagree or submit no changes. No semantic personality approval gate is added.
+
+Deep entries evolve only through the personality's selected consolidation patch. Source identity, revocation, optimistic versions and capacity remain executable technical constraints; empty references may express a subjective interpretation. The complete field authority and implementation/verification boundaries are in [the0.7.0 note](memory-reflection-and-social-identities.md) and [schema sections17–19](plan/persona/persona-schema.md).
+
+### Actual helper request reservation (0.7.0)
+
+Before helper dispatch, runtime reserves complete personality framing for bounded advice or an explicit omission/skip status and actual page.callBudget. Helper and personality receive the same selected source fragment. Unusable helper input/report space is skipped before payment; an oversized returned report is bounded, explicitly partial or omitted. The actual shared count is rebuilt after helper dispatch. If even minimal source/status framing cannot fit, no model is called and no source progress is consumed. Helper failures and unknown outcomes remain optional advice states, without patch/veto authority or automatic paid replay. Committed journals use the source-hash revocation receipt described in the repository contract.

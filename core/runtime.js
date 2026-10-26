@@ -1,6 +1,8 @@
 import { SCHEMA_VERSION, defaultConfig, mergeConfig, validateDecision, observationAllows, newId, emptyRuntime } from './schema.js';
 import { detached, freeze, createTokenCounter, buildSnapshot, controlMessages, replyMessages, consolidationMessages, consolidationContextPage, conversationPage } from './prompts.js';
 import { createHash } from 'node:crypto';
+import { reviewAssistantMessages, reviewAssistantReport, visibleContextRecordIds } from './review-assistant.js';
+import { countStringValues, serializedBytes } from './capacity.js';
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const terminal = status => status === 'delivered' || status === 'cancelled';
@@ -337,7 +339,7 @@ export class PersonaRuntime {
         const error = new Error('Selected model input exceeds the supplied model input budget; no source was consumed');
         error.code = 'MODEL_INPUT_BUDGET'; throw error;
       }
-      const maxOutputTokens = purpose === 'consolidation' ? limits.consolidationOutputTokens : purpose === 'control' ? limits.controlOutputTokens : limits.replyOutputTokens;
+      const maxOutputTokens = purpose === 'memory_assistant' ? this.config.reviewAssistant.maxOutputTokens : purpose === 'consolidation' ? limits.consolidationOutputTokens : purpose === 'control' ? limits.controlOutputTokens : limits.replyOutputTokens;
       const response = await call({ purpose, messages, ...extra, requestId, signal: controller.signal, maxOutputTokens });
       await this.repository.recordUsage({ requestId, purpose, startedAt, finishedAt: this.now(), model: response?.model ?? null,
         usage: detached(response?.usage ?? null), observed: response?.usage != null, error: null });
@@ -829,21 +831,102 @@ export class PersonaRuntime {
           if (this.closed) return pause('RUNTIME_CLOSED');
           if (budget.used >= budget.limit) return pause('CONSOLIDATION_CALL_BUDGET');
           const memoryContext = consolidationContextPage(run, { cursor: review.contextCursor, maxChars: limits.consolidationContextChars });
-          let chars = Math.max(0, total - review.dataPartOffset), selected, messages;
-          const requestBudget = this._inputBudget();
-          while (true) {
-            selected = this._sliceConsolidationPage(page, review.dataPartOffset, chars);
+          let chars = Math.max(0, total - review.dataPartOffset), selected, messages, assemblyContext;
+          const requestBudget = this._inputBudget(), assistantEnabled = this.config.reviewAssistant.enabled;
+          const omittedAdvice = { status: 'omitted', advisoryOnly: true, errorCode: 'ASSISTANT_REPORT_REQUEST_BUDGET' };
+          const skippedAdvice = { status: 'skipped', advisoryOnly: true, errorCode: 'SHARED_CALL_BUDGET_RESERVED_FOR_PERSONALITY' };
+          const remainingCalls = budget.limit - budget.used;
+          const makeAssembly = partChars => {
+            const part = this._sliceConsolidationPage(page, review.dataPartOffset, partChars);
             const feedbackCandidate = correctionPending ? correctionCandidate : null;
             const previousDraft = feedbackCandidate && fingerprint(feedbackCandidate) === fingerprint(candidate()) ? [] : [...proposals.values()];
-            messages = consolidationMessages({ ...run, validationError: correctionPending ? run.validationError : null }, { ...context, ...selected,
-              page: { index: dataIndex, from: review.dataPartOffset, to: review.dataPartOffset + chars, total, sameRootEvents: true,
+            return { ...context, ...part,
+              page: { index: dataIndex, from: review.dataPartOffset, to: review.dataPartOffset + partChars, total, sameRootEvents: true,
                 callBudget: { used: budget.used, limit: budget.limit, remaining: Math.max(0, budget.limit - budget.used) } },
               memoryContext, previousProposedPatch: previousDraft, candidatePatch: feedbackCandidate,
-              validationError: correctionPending ? run.validationError : null, capacity });
-            if (await this.tokenCounter.count(JSON.stringify(messages)) <= requestBudget) break;
-            if (chars <= 1) { await pause('MODEL_INPUT_BUDGET'); throw Object.assign(new Error('The frozen context page, draft and framing cannot fit the configured request budget; no model call was made for this page'), { code: 'MODEL_INPUT_BUDGET' }); }
-            chars = Math.floor(chars / 2);
+              validationError: correctionPending ? run.validationError : null, capacity };
+          };
+          const makeMessages = (assembly, advice, used = budget.used) => consolidationMessages({ ...run, validationError: correctionPending ? run.validationError : null },
+            { ...assembly, page: { ...assembly.page, callBudget: { used, limit: budget.limit, remaining: Math.max(0, budget.limit - used) } }, reviewAssistant: advice });
+          let reserveChars = this.config.reviewAssistant.maxReportChars, assistantSpace = assistantEnabled && remainingCalls >= 2;
+          const reservation = () => assistantSpace ? reviewAssistantReport({ observations: [{ category: 'possible_fidelity_issue', detail: 'x'.repeat(reserveChars), recordIds: [] }] }, { maxChars: reserveChars })
+            : remainingCalls < 2 ? skippedAdvice : omittedAdvice;
+          let reservedAdvice = assistantEnabled ? reservation() : null;
+          const fits = async partChars => {
+            const assembly = makeAssembly(partChars);
+            if (!assistantEnabled) return await this.tokenCounter.count(JSON.stringify(makeMessages(assembly, null))) <= requestBudget;
+            // Reserve the same real source page for both calls before paying the assistant.
+            // Both possible dispatch counts are tested; the actual one is rebuilt below.
+            for (const used of [budget.used, Math.min(budget.limit, budget.used + 1)]) for (const advice of [reservedAdvice, omittedAdvice]) {
+              if (await this.tokenCounter.count(JSON.stringify(makeMessages(assembly, advice, used))) > requestBudget) return false;
+            }
+            return true;
+          };
+          const minimum = chars > 0 ? 1 : 0;
+          while (!await fits(minimum)) {
+            if (!assistantEnabled || !assistantSpace) { await pause('MODEL_INPUT_BUDGET'); throw Object.assign(new Error('The frozen context, advice status and framing cannot fit the configured request budget; no model call was made for this page'), { code: 'MODEL_INPUT_BUDGET' }); }
+            reserveChars = Math.max(1, Math.floor(reserveChars / 2)); reservedAdvice = reservation();
+            if (!reservedAdvice.observations?.length) { assistantSpace = false; reservedAdvice = omittedAdvice; }
           }
+          let low = minimum, high = chars, best = minimum;
+          while (low <= high) {
+            const partChars = Math.floor((low + high) / 2);
+            if (await fits(partChars)) { best = partChars; low = partChars + 1; } else high = partChars - 1;
+          }
+          chars = best; selected = this._sliceConsolidationPage(page, review.dataPartOffset, chars); assemblyContext = makeAssembly(chars);
+          messages = makeMessages(assemblyContext, assistantEnabled ? omittedAdvice : null);
+          if (this.config.reviewAssistant.enabled) {
+            const assistantKey = fingerprint({ input: selected.input, traces: selected.traceMaterial, context: memoryContext });
+            const knownIds = [...selected.input.chat, ...selected.input.hot].map(record => record.id).filter(Boolean)
+              .concat(visibleContextRecordIds(run.input?.context, memoryContext));
+            let receipt = review.assistantReceipt;
+            if (receipt?.key === assistantKey && receipt.status === 'in_flight') {
+              receipt = { key: assistantKey, status: 'unknown', errorCode: 'ASSISTANT_OUTCOME_UNKNOWN' };
+              review.assistantReceipt = receipt; review.callInFlight = false; await persist();
+            }
+            if (receipt?.key !== assistantKey) {
+              const assistantMessages = reviewAssistantMessages({ runId: run.runId, input: selected.input, traceMaterial: selected.traceMaterial, memoryContext });
+              const assistantInputFits = await this.tokenCounter.count(JSON.stringify(assistantMessages)) <= requestBudget;
+              if (budget.limit - budget.used >= 2 && assistantSpace && assistantInputFits) {
+                receipt = { key: assistantKey, status: 'in_flight', startedAt: this.now() };
+                review.assistantReceipt = receipt; review.callInFlight = true; review.modelCalls += 1; budget.used += 1; await persist();
+                try {
+                  const answer = await this._call('memory_assistant', assistantMessages, { run: detached(run), context: detached(context) });
+                  const { assistantReceipt: previousAdvice, ...rest } = review;
+                  let cap = Math.max(1, Math.min(this.config.reviewAssistant.maxReportChars,
+                    this.config.capacityLimits.artifactTextChars - countStringValues(rest) - 1024));
+                  let report = reviewAssistantReport(answer, { maxChars: cap, recordIds: knownIds });
+                  while (serializedBytes({ ...rest, assistantReceipt: { key: assistantKey, status: 'completed', report } }) > this.config.capacityLimits.artifactRecordBytes - 512 && cap > 1) {
+                    cap = Math.max(1, Math.floor(cap / 2)); report = reviewAssistantReport(answer, { maxChars: cap, recordIds: knownIds });
+                  }
+                  if (serializedBytes({ ...rest, assistantReceipt: { key: assistantKey, status: 'completed', report } }) > this.config.capacityLimits.artifactRecordBytes ||
+                    countStringValues({ ...rest, assistantReceipt: { key: assistantKey, status: 'completed', report } }) > this.config.capacityLimits.artifactTextChars) throw Object.assign(new Error('Assistant report does not fit the retained work capacity'), { code: 'ASSISTANT_REPORT_CAPACITY' });
+                  receipt = { key: assistantKey, status: 'completed', report };
+                } catch (error) {
+                  receipt = { key: assistantKey, status: 'unavailable', errorCode: /^[A-Z0-9_]+$/.test(error.code ?? '') ? error.code : 'ASSISTANT_UNAVAILABLE' };
+                }
+                review.assistantReceipt = receipt; review.callInFlight = false; await persist();
+              } else {
+                receipt = { key: assistantKey, status: 'skipped', errorCode: budget.limit - budget.used < 2 ? 'SHARED_CALL_BUDGET_RESERVED_FOR_PERSONALITY' : !assistantSpace ? 'ASSISTANT_REPORT_INPUT_BUDGET' : 'ASSISTANT_INPUT_BUDGET' };
+                review.assistantReceipt = receipt; await persist();
+              }
+            }
+            let advice = receipt.report ?? { status: receipt.status, advisoryOnly: true, errorCode: receipt.errorCode ?? null };
+            let adviceCap = this.config.reviewAssistant.maxReportChars;
+            messages = makeMessages(assemblyContext, advice);
+            while (await this.tokenCounter.count(JSON.stringify(messages)) > requestBudget && advice.observations && adviceCap > 1) {
+              adviceCap = Math.max(1, Math.floor(adviceCap / 2));
+              advice = reviewAssistantReport({ observations: receipt.report.observations }, { maxChars: adviceCap, recordIds: knownIds });
+              advice.complete = false; advice.omittedForRequestBudget = true;
+              advice.totalChars = receipt.report.totalChars; advice.unverifiedReferences ||= receipt.report.unverifiedReferences;
+              messages = makeMessages(assemblyContext, advice);
+            }
+            if (await this.tokenCounter.count(JSON.stringify(messages)) > requestBudget) messages = makeMessages(assemblyContext, omittedAdvice);
+            if (await this.tokenCounter.count(JSON.stringify(messages)) > requestBudget) { await pause('MODEL_INPUT_BUDGET'); throw Object.assign(new Error('The actual advice status and shared call budget cannot fit; source progress remains unconsumed'), { code: 'MODEL_INPUT_BUDGET' }); }
+
+          }
+          if (this.closed) return pause('RUNTIME_CLOSED');
+          if (budget.used >= budget.limit) return pause('CONSOLIDATION_CALL_BUDGET');
           review.callInFlight = true; review.status = 'running'; review.modelCalls += 1; budget.used += 1;
           await persist();
           let raw;

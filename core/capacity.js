@@ -1,3 +1,5 @@
+export const DEFAULT_DEEP_MEMORY_LIMITS = Object.freeze({ deepMemories: 128, deepMemoryChars: 100000 });
+
 export const DEFAULT_CAPACITY_LIMITS = Object.freeze({ artifactTextChars: 16000, artifactRecordBytes: 65536, documentBytes: 1048576, storeBytes: 67108864 });
 export const DEFAULT_PROCESSING_LIMITS = Object.freeze({ consolidationInputChars: 4000, consolidationRequestTokens: 32768,
   consolidationContextChars: 4000, consolidationOutputTokens: 16384, controlOutputTokens: 4096, replyOutputTokens: 4096,

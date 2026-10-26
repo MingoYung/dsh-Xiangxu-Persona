@@ -2,7 +2,12 @@ import { randomBytes, createDecipheriv } from 'node:crypto';
 import { CONNECTION_LIMITS, capabilities, digest, endpoint, fail, identifier, mediaBytes, normalizedEvent, requestJson, targetRoute } from './common.js';
 
 export const QQ_SOURCES = Object.freeze({ binding: 'https://www.npmjs.com/package/@tencent-connect/qqbot-connector/v/1.2.0', transport: 'https://github.com/tencent-connect/qqbot-nodejs/tree/main/src/protocol', checkedOn: '2026-10-26' });
-export const QQ_CAPABILITIES = Object.freeze(capabilities(['chat.text', 'chat.image', 'chat.video', 'chat.file', 'message.retract'], { 'chat.voice': '当前本地语音是 PCM WAV，尚无经过验证的 QQ 官方语音编码转换链' }));
+export const QQ_DELIVERY_POLICY = Object.freeze({ proactive: false, passiveReplyRequired: true, privateReplyWindowMs: 3600000, groupReplyWindowMs: 300000,
+  reason: 'QQ 官方主动推送已取消；发送需要仍有效的被动回复上下文',
+  source: 'https://github.com/tencent-connect/bot-docs/blob/main/docs/develop/api-v2/server-inter/message/send-receive/send.md', checkedOn: '2026-10-26' });
+const qqCapabilities = capabilities(['chat.text', 'chat.image', 'chat.video', 'chat.file', 'message.retract'], { 'chat.voice': '当前本地语音是 PCM WAV，尚无经过验证的 QQ 官方语音编码转换链' });
+for (const id of ['chat.text', 'chat.image', 'chat.video', 'chat.file']) qqCapabilities[id] = { ...qqCapabilities[id], reason: QQ_DELIVERY_POLICY.reason, deliveryPolicy: QQ_DELIVERY_POLICY };
+export const QQ_CAPABILITIES = Object.freeze(qqCapabilities);
 const DEFAULTS = { binding: 'https://q.qq.com', api: 'https://api.bot.qq.com' };
 export async function beginQqLogin({ fetchImpl = fetch, endpoints = {}, signal } = {}) {
   const key = randomBytes(32).toString('base64'), base = endpoint(endpoints.binding ?? DEFAULTS.binding, { domains: ['q.qq.com'], local: Boolean(endpoints.binding) });
@@ -40,32 +45,35 @@ export function createQqClient(credentials, { fetchImpl = fetch, WebSocketImpl =
     try { return await tokenPromise; } finally { tokenPromise = null; }
   }
   async function action(method, path, body, signal) {
-    const result = await requestJson(fetchImpl, new URL(path, api), { method, body, headers: { Authorization: 'QQBot ' + await token(signal), 'User-Agent': 'dsh-Xiangxu-Persona/0.5.0' }, signal });
+    const result = await requestJson(fetchImpl, new URL(path, api), { method, body, headers: { Authorization: 'QQBot ' + await token(signal), 'User-Agent': 'dsh-Xiangxu-Persona/0.7.0' }, signal });
     if (Number.isFinite(result.code) && result.code !== 0) fail('QQ_ACTION_REJECTED'); return result;
   }
-  async function probe() { try { await action('GET', '/users/@me'); return { connected: true, accountId, platform: 'qq', status: 'connected', capabilities: { text: true, voice: false, group: true }, supportedCapabilities: supported, chatTypes: ['private', 'group'], platformPermissions: '平台账号需开通相应权限，拒绝以实际API回执为准' }; } catch (error) { return { connected: false, accountId, platform: 'qq', status: 'disconnected', code: error.code ?? 'QQ_PROBE_FAILED', supportedCapabilities: supported, chatTypes: ['private', 'group'] }; } }
+  async function probe() { try { await action('GET', '/users/@me'); return { connected: true, accountId, platform: 'qq', status: 'connected', capabilities: { text: true, voice: false, group: true, proactive: false }, deliveryPolicy: QQ_DELIVERY_POLICY, supportedCapabilities: supported, chatTypes: ['private', 'group'], platformPermissions: '平台账号需开通相应权限；QQ官方仅支持有效上下文内的被动回复，拒绝以实际API回执为准' }; } catch (error) { return { connected: false, accountId, platform: 'qq', status: 'disconnected', code: error.code ?? 'QQ_PROBE_FAILED', supportedCapabilities: supported, deliveryPolicy: QQ_DELIVERY_POLICY, chatTypes: ['private', 'group'] }; } }
   function route(target) { return targetRoute(target, 'qq', accountId); }
   function messagePath(selected) { return '/v2/' + (selected.type === 'group' ? 'groups/' : 'users/') + encodeURIComponent(selected.id) + '/messages'; }
   function passive(selected, deliveryId) {
-    const context = state.contexts[selected.type + ':' + selected.id], ttl = selected.type === 'group' ? 300000 : 1800000;
-    // These are upstream passive-reply token windows; they do not decide when
-    // the personality may initiate. Outside the window the API is called in active mode.
-    return { ...(context && clock() - context.at < ttl ? { msg_id: context.messageId } : {}), msg_seq: parseInt(digest(deliveryId).slice(0, 4), 16) };
+    const context = state.contexts[selected.type + ':' + selected.id], ttl = selected.type === 'group' ? QQ_DELIVERY_POLICY.groupReplyWindowMs : QQ_DELIVERY_POLICY.privateReplyWindowMs, age = clock() - context?.at;
+    // This describes the actual upstream transport, not the personality's wish
+    // to initiate. Unsupported active sends produce an explicit failed receipt.
+    if (!context || typeof context.messageId !== 'string' || !context.messageId || !Number.isFinite(age) || age < 0 || age >= ttl) return null;
+    return { msg_id: context.messageId, msg_seq: parseInt(digest(deliveryId).slice(0, 4), 16) };
   }
   function ack(result, deliveryId) { return typeof result?.id === 'string' && result.id ? { status: 'delivered', deliveryId, messageId: result.id, receiptId: 'qqbot:' + result.id, messageIdKind: 'server_id', deliveredAt: Number.isFinite(Date.parse(result.timestamp)) ? Date.parse(result.timestamp) : clock(), confirmedBy: 'qqbot-message-id' } : { status: 'unknown', deliveryId, code: 'QQ_MESSAGE_ID_MISSING' }; }
   async function sendText(target, text, { deliveryId } = {}) {
     identifier(deliveryId, '交付编号', 160); if (typeof text !== 'string' || !text || Array.from(text).length > CONNECTION_LIMITS.textChars) fail('CONNECTION_TEXT_CAPACITY');
-    try { const selected = route(target); return ack(await action('POST', messagePath(selected), { content: text, msg_type: 0, ...passive(selected, deliveryId) }), deliveryId); } catch (error) { return { status: ['QQ_ACTION_REJECTED', 'CONNECTION_AUTH_REJECTED'].includes(error.code) ? 'failed' : 'unknown', deliveryId, code: error.code ?? 'QQ_DELIVERY_UNKNOWN' }; }
+    try { const selected = route(target), context = passive(selected, deliveryId); if (!context) return { status: 'failed', deliveryId, code: 'QQ_PUSH_UNAVAILABLE' };
+      return ack(await action('POST', messagePath(selected), { content: text, msg_type: 0, ...context }), deliveryId); } catch (error) { return { status: ['QQ_ACTION_REJECTED', 'CONNECTION_AUTH_REJECTED'].includes(error.code) ? 'failed' : 'unknown', deliveryId, code: error.code ?? 'QQ_DELIVERY_UNKNOWN' }; }
   }
   async function execute(target, capability, payload, { deliveryId } = {}) {
     identifier(deliveryId, '交付编号', 160); const selected = route(target); if (!supported[capability]?.supported) return { status: 'unsupported', code: capability === 'chat.voice' ? 'QQ_VOICE_CODEC_UNAVAILABLE' : 'CONNECTION_CAPABILITY_UNSUPPORTED' };
     if (capability === 'chat.text') return sendText(target, payload.text, { deliveryId });
     try {
       if (capability === 'message.retract') { const messageId = identifier(payload.messageId); await action('DELETE', messagePath(selected) + '/' + encodeURIComponent(messageId)); return { status: 'completed', receiptId: 'qqbot-retract:' + deliveryId, confirmedBy: 'qqbot-api-success', affectedMessageId: messageId }; }
+      const context = passive(selected, deliveryId); if (!context) return { status: 'failed', deliveryId, code: 'QQ_PUSH_UNAVAILABLE' };
       const fileType = { 'chat.image': 1, 'chat.video': 2, 'chat.file': 4 }[capability], bytes = mediaBytes(payload);
       const upload = await action('POST', messagePath(selected).replace(/\/messages$/, '/files'), { file_type: fileType, file_data: bytes.toString('base64'), srv_send_msg: false, ...(capability === 'chat.file' ? { file_name: String(payload.filename ?? 'asset').replace(/[\u0000-\u001f\\/]/g, '_').slice(0, 128) } : {}) });
       identifier(upload.file_info, '媒体上传回执', 65536);
-      return ack(await action('POST', messagePath(selected), { msg_type: 7, content: '', media: { file_info: upload.file_info }, ...passive(selected, deliveryId) }), deliveryId);
+      return ack(await action('POST', messagePath(selected), { msg_type: 7, content: '', media: { file_info: upload.file_info }, ...context }), deliveryId);
     } catch (error) { return { status: ['QQ_ACTION_REJECTED', 'CONNECTION_AUTH_REJECTED'].includes(error.code) ? 'failed' : 'unknown', deliveryId, code: error.code ?? 'QQ_MEDIA_UNKNOWN' }; }
   }
   const sendVoice = (target, bytes, options) => execute(target, 'chat.voice', { bytes }, options);
@@ -112,5 +120,5 @@ export function createQqClient(credentials, { fetchImpl = fetch, WebSocketImpl =
     }
     void connect(); try { await initial; } catch (error) { if (lifetime === ownLifetime) await stop(); throw error; } finally { clearTimeout(initialTimeout); if (lifetime === ownLifetime) rejectWaiting = null; }
   }
-  return { probe, sendText, sendVoice, execute, listen, stop, close, inspectCapabilities: async () => supported, get capabilities() { return { text: true, voice: false, group: true }; }, get listening() { return !stopped && connected; } };
+  return { probe, sendText, sendVoice, execute, listen, stop, close, inspectCapabilities: async () => supported, deliveryPolicy: QQ_DELIVERY_POLICY, get capabilities() { return { text: true, voice: false, group: true, proactive: false }; }, get listening() { return !stopped && connected; } };
 }
