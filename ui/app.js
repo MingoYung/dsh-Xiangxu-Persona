@@ -76,8 +76,10 @@ function empty(title, detail, symbol = '◇') { return element('div', { class: '
 function card(title, subtitle, ...content) { return element('section', { class: 'card' }, element('div', { class: 'card-header' }, element('div', {}, element('h2', {}, title), subtitle ? element('p', {}, subtitle) : null)), content); }
 function kv(items) { return element('dl', { class: 'kv-list' }, Object.entries(items).map(([name, value]) => element('div', { class: 'kv-row' }, element('dt', {}, name), element('dd', {}, value instanceof Node ? value : value == null ? '—' : typeof value === 'boolean' ? value ? '是' : '否' : typeof value === 'object' ? disclosure({}, element('summary', {}, '查看内容'), data(value)) : String(value))))); }
 function data(value) { return element('pre', { class: 'data-preview' }, pretty(value) ?? '无数据'); }
-function showError(error) { $('global-error').hidden = false; $('global-error').textContent = errorText(error); toast(errorText(error), true); }
-function clearError() { $('global-error').hidden = true; $('global-error').textContent = ''; }
+let visibleError = null;
+function showError(error) { visibleError = error; $('global-error').hidden = false; $('global-error').textContent = errorText(error); toast(errorText(error), true); }
+function clearError() { visibleError = null; $('global-error').hidden = true; $('global-error').textContent = ''; }
+function clearReadError(error) { if (error && visibleError === error) clearError(); }
 let toastTimer;
 function toast(message, isError = false) { clearTimeout(toastTimer); $('toast').textContent = message; $('toast').className = `toast${isError ? ' error' : ''}`; $('toast').hidden = false; toastTimer = setTimeout(() => { $('toast').hidden = true; }, isError ? 9000 : 5000); }
 async function request(action, args = {}) {
@@ -149,10 +151,34 @@ async function inspectDocument(action, args, title, { actions = [], eyebrow } = 
   }
   try { await load(); } catch (error) { if (generation === state.detailGeneration) replace(body, notice(errorText(error), 'error')); throw error; }
 }
-function paginator(result, next, { pageNumber = 1 } = {}) {
-  return element('div', { class: 'pagination' }, element('span', {}, `第 ${pageNumber} 页 · 本页 ${number(getItems(result).length)} 条${result?.total != null ? ` / 共 ${number(result.total)} 条` : ''}`),
-    result?.nextCursor != null ? button('下一页 →', () => next(result.nextCursor), 'secondary compact', { dataset: { action: 'list-next' } }) : element('span', {}, '已到当前结果末尾'));
+function paginator(result, next, { pageNumber = 1, previous, first, label = '结果', position = 'bottom' } = {}) {
+  const count = getItems(result).length, total = result?.total, from = Number.isSafeInteger(result?.offset) ? result.offset + 1 : null;
+  const summary = !count && total === 0 ? '未找到匹配条目 · 共 0 条' : `第 ${pageNumber} 页 · ${from != null && count ? '显示 ' + number(from) + '–' + number(from + count - 1) + ' 条' : '本页 ' + number(count) + ' 条'}${total != null ? ' / 共 ' + number(total) + ' 条' : ''}`;
+  return element('nav', { class: 'pagination pagination-' + position, 'aria-label': label + '翻页（' + (position === 'top' ? '顶部' : '底部') + '）' },
+    element('span', { class: 'pagination-summary', 'aria-live': 'polite' }, summary),
+    element('div', { class: 'pagination-controls' }, first ? button('回到第一页', first, 'secondary compact', { disabled: pageNumber <= 1, dataset: { action: 'list-first' } }) : null,
+      previous ? button('上一页', previous, 'secondary compact', { disabled: pageNumber <= 1, dataset: { action: 'list-previous' } }) : null,
+      result?.nextCursor != null ? button('下一页 →', () => next(result.nextCursor), 'secondary compact', { dataset: { action: 'list-next' } }) : first || previous ? button('下一页 →', () => {}, 'secondary compact', { disabled: true, dataset: { action: 'list-next' } }) : null),
+    result?.nextCursor == null ? element('span', { class: 'pagination-end' }, count ? '已到当前结果末尾' : total ? '当前页没有可显示的条目' : '可以修改线索后重新查询') : null);
 }
+function scrollListStart(area) {
+  const start = area.querySelector('.pagination-top'); if (!start) return;
+  start.setAttribute('tabindex', '-1'); start.focus?.({ preventScroll: true });
+  const fail = error => { start.setAttribute('data-reveal-state', 'error'); start.setAttribute('data-reveal-code', String(error?.code ?? 'UI_REVEAL_FAILED').slice(0, 80)); start.setAttribute('data-reveal-message', String(error?.message ?? error ?? 'Unknown reveal error').slice(0, 256)); };
+  const top = start.getBoundingClientRect?.().top;
+  if (!Number.isFinite(top)) { fail({ code: 'INVALID_REVEAL_COORDINATE', message: 'The list start has no finite local coordinate' }); return; }
+  if (typeof window.personaBridge?.request !== 'function') { fail({ code: 'BRIDGE_UNAVAILABLE', message: 'The current host has no local UI request port' }); return; }
+  start.setAttribute('data-reveal-state', 'pending');
+  try {
+    void Promise.resolve(window.personaBridge.request('ui.reveal', { top: Math.max(0, top + (Number.isFinite(window.scrollY) ? window.scrollY : 0)) })).then(result => {
+      if (result?.ok === false && result.error) { fail(result.error); return; }
+      start.setAttribute('data-reveal-state', String(result?.status ?? (result?.revealed === true ? 'revealed' : 'returned')).slice(0, 80));
+      if (Number.isFinite(result?.appliedTop)) start.setAttribute('data-reveal-applied-top', String(result.appliedTop));
+    }).catch(fail);
+  } catch (error) { fail(error); }
+}
+function stalePage(error) { return ['MANAGEMENT_CURSOR_STALE', 'INVALID_MANAGEMENT_CURSOR'].includes(error?.code); }
+function pageChanged(reload) { return element('div', { class: 'pagination-recovery' }, notice('资料在翻页期间发生了变化，旧翻页位置已失效。请回到第一页读取最新结果。', 'warning'), button('回到第一页重新读取', reload, 'secondary')); }
 let connecting = false;
 async function connect() {
   if (connecting) return;
@@ -451,20 +477,45 @@ async function retrievalPage() {
   const time = field('hybrid-time', '查看哪个时期的理解', 'all', { choices: [['all','全部已保留资料'],['current','当前有效'],['past','已明确结束的旧理解'],['asOf','指定时间有效']] });
   const asOf = field('hybrid-asof', '指定时间', '', { type: 'datetime-local' });
   const mode = field('hybrid-mode', '检索方式', 'auto', { choices: [['auto','按当前配置检索'],['lexical','文字匹配与已有关系（不用向量）'],['hybrid','文字、语义与已有关系']] });
-  const results = element('div');
+  const results = element('div'); let searchArgs = null, searchPage = 0, searchCursors = [null], searchGeneration = 0, searchReadError = null;
+  const invalidateSearch = () => { searchGeneration++; results.setAttribute('aria-busy', 'false'); searchArgs = null; searchPage = 0; searchCursors = [null]; replace(results, notice('查询条件已修改，请点“查找记忆”读取新的结果。')); };
   const update = () => { person.input.disabled = scope.input.value !== 'person'; asOf.input.disabled = time.input.value !== 'asOf'; }; scope.input.addEventListener('change',update); time.input.addEventListener('change',update); update();
-  async function search() {
-    if (scope.input.value === 'person' && !person.input.value) throw new Error('请选择人物。');
-    const timestamp = time.input.value === 'asOf' ? new Date(asOf.input.value).getTime() : undefined;
-    if (timestamp !== undefined && !Number.isFinite(timestamp)) throw new Error('请选择有效的日期和时间。');
-    const result = await queryRequest('memory.search', { query: query.input.value.trim(), scope: scope.input.value, ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), mode: mode.input.value, timeMode: time.input.value, ...(timestamp !== undefined ? { asOf: timestamp } : {}), limit: 100, pageSize: 100 });
-    if(!alive())return;replace(results, notice(`这次返回 ${number(result.total)} 条候选参考。时间查询依据条目中已注明的有效起止时间；未注明的资料不会被猜测成过去或现在。`),
-      ...getItems(result).map(item => element('article', { class: 'record' }, element('h3', {}, item.title || item.textPreview || item.id),
-        element('p', { class: 'record-meta' }, memoryScopeLabel(item) + ' · ' + (item.retrieval?.channels ?? []).join(' / ')),
-        button('查看完整记忆与来源', () => inspectDocument('memory.detail',{id:item.id},'记忆详情'),'link'),
-        disclosure({}, element('summary',{},'为什么找到这一条'),data(item.retrieval)))),
-      disclosure({},element('summary',{},'本次检索覆盖与限制'),data(result.diagnostics)));
+  async function search(cursor = null, { pageIndex } = {}) {
+    if (!alive()) return;
+    const ticket = ++searchGeneration, reset = pageIndex === undefined && cursor == null;
+    let requestedArgs = searchArgs;
+    if (reset) {
+      if (scope.input.value === 'person' && !person.input.value) throw new Error('请选择人物。');
+      const timestamp = time.input.value === 'asOf' ? new Date(asOf.input.value).getTime() : undefined;
+      if (timestamp !== undefined && !Number.isFinite(timestamp)) throw new Error('请选择有效的日期和时间。');
+      requestedArgs = { query: query.input.value.trim(), scope: scope.input.value, ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), mode: mode.input.value, timeMode: time.input.value, ...(timestamp !== undefined ? { asOf: timestamp } : {}), limit: 100, pageSize: 12 };
+    }
+    if (!requestedArgs) return;
+    const requestedPage = reset ? 0 : pageIndex ?? searchPage + 1;
+    results.setAttribute('aria-busy', 'true');
+    try {
+      const result = await queryRequest('memory.search', { ...requestedArgs, ...(cursor != null ? { cursor } : {}) });
+      if (!alive() || ticket !== searchGeneration) return;
+      clearReadError(searchReadError); searchReadError = null; searchArgs = requestedArgs; searchPage = requestedPage;
+      if (reset) searchCursors = [null]; searchCursors[searchPage] = cursor; searchCursors = searchCursors.slice(0, searchPage + 1);
+      const paging = { pageNumber: searchPage + 1, first: () => search(), previous: () => search(searchCursors[searchPage - 1], { pageIndex: searchPage - 1 }), label: '关联记忆候选' };
+      replace(results, notice(`本次候选范围共 ${number(result.total)} 条，最多保留前 100 条候选供翻页，不代表全库条目总数。指定时间仅依据已注明的有效起止时间，不猜测资料所属时期。`),
+        paginator(result, next => search(next, { pageIndex: searchPage + 1 }), { ...paging, position: 'top' }),
+        getItems(result).length ? element('div', { class: 'record-list' }, ...getItems(result).map(item => element('article', { class: 'record' }, element('h3', {}, item.title || item.textPreview || item.id),
+          element('p', { class: 'record-meta' }, memoryScopeLabel(item) + ' · ' + (item.retrieval?.channels ?? []).join(' / ')),
+          button('查看完整记忆与来源', () => inspectDocument('memory.detail', { id: item.id }, '记忆详情'), 'link'),
+          disclosure({}, element('summary', {}, '为什么找到这一条'), data(item.retrieval))))) : empty('没有匹配的候选参考', '可以调整线索或范围后再次查找；没有结果不代表记忆库为空。'),
+        paginator(result, next => search(next, { pageIndex: searchPage + 1 }), paging),
+        disclosure({}, element('summary', {}, '本次检索覆盖与限制'), data(result.diagnostics)));
+      scrollListStart(results);
+    } catch (error) {
+      if (!alive() || ticket !== searchGeneration) return;
+      if (cursor != null && stalePage(error)) { searchArgs = null; replace(results, pageChanged(() => search())); return; }
+      searchReadError = error; throw error;
+    } finally { if (alive() && ticket === searchGeneration) results.setAttribute('aria-busy', 'false'); }
   }
+  for (const input of [query.input, scope.input, person.input, time.input, asOf.input, mode.input]) input.addEventListener(input === query.input || input === asOf.input ? 'input' : 'change', invalidateSearch);
+  query.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); search().catch(showError); } });
   container.append(notice('检索只提供候选参考，是否回忆、怎样理解和是否记住仍由相续决定。指定时间查询只筛选仍保留的资料，不会恢复当时已删除的数据或重建整个历史状态。'),
     card('查找关联记忆', '', query.wrapper, element('div',{class:'form-grid'},scope.wrapper,person.wrapper,time.wrapper,asOf.wrapper,mode.wrapper),button('查找记忆',search,'primary')), results,
     destinations(destination('可选语义服务','添加向量接口并按批建立索引。',()=>openSection('retrieval-settings')),destination('检索记录','查看程序提供过的参考、计算依据与覆盖情况。',()=>openSection('retrieval-diagnostics'))));
@@ -473,12 +524,13 @@ async function retrievalPage() {
 
 async function memoryPage() {
   if (['retrieval','retrieval-settings','retrieval-diagnostics'].includes(state.view)) return retrievalPage();
-  const container = element('div'), filters = element('div', { class: 'toolbar', role: 'search' }), resultArea = element('div');
+  const container = element('div'), filters = element('div', { class: 'toolbar', role: 'search' }), resultArea = element('div'), ownerInstance = state.instanceId, ownerGeneration = state.generation;
+  const alive = () => state.instanceId === ownerInstance && state.generation === ownerGeneration && state.page === 'memory';
   const query = field('memory-query', '搜索线索', '', { placeholder: '原话、记忆或编码中的文字', class: 'search' });
   const scope = field('memory-scope', '查询范围', 'all', { choices: [['all', '全部关系'], ['person', '指定人物'], ['global', '共同记忆'], ['unknown', '未知暂存']] });
   const person = field('memory-person', '关系人物', '', { choices: [['', '请选择人物'], ...state.people.map(item => [item.personId ?? item.id, item.displayName ?? item.personId ?? item.id])] });
   const type = field('memory-type', '条目类型', state.view === 'deep' ? 'deep' : '', { choices: [['', '全部类型'], ['chat', '对话原件'], ['memory', '记忆索引'], ['deep', '深刻记忆（人格参考）'], ['code', '编码'], ['relation_signature', '关系签名'], ['relation_event', '关系事件'], ['interpretation', '待解释'], ['facet', '人格倾向'], ['signature', '共同签名'], ['habit', '习惯']] });
-  let args = {}, pageNumber = 1, listGeneration = 0;
+  let args = {}, pageNumber = 1, listGeneration = 0, pageCursors = [null], listReadError = null, memoryRendered = false;
   async function openRecord(item) {
     const id = item.id ?? item.recordId;
     await inspectDocument('memory.detail', { id }, '记忆详情', { eyebrow: 'MEMORY / SOURCE', actions: [
@@ -492,13 +544,28 @@ async function memoryPage() {
       } }] : []),
     ] });
   }
-  async function load(cursor) {
-    const generation = ++listGeneration;
-    if (!cursor) { pageNumber = 1; args = { query: query.input.value.trim(), scope: scope.input.value, ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), ...(type.input.value ? { recordType: type.input.value } : {}), pageSize: 12 }; if (args.scope === 'person' && !args.personId) throw new Error('请选择要查看的人物。'); }
-    else pageNumber++;
-    const result = await request('memory.list', { ...args, ...(cursor ? { cursor } : {}) });
-    if (generation !== listGeneration) return;
-    replace(resultArea, getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(item => memoryRecord(item, () => openRecord(item)))) : card('查询结果', '', empty('没有匹配的已保留条目', '可以调整查询范围或线索。未知暂存不自动属于当前人物，原件淘汰或明确撤销后也可能不再可查。', '▤')), paginator(result, load, { pageNumber }));
+  async function load(cursor = null, { pageIndex } = {}) {
+    if (!alive()) return;
+    const generation = ++listGeneration, reset = pageIndex === undefined && cursor == null;
+    const requestedArgs = reset ? { query: query.input.value.trim(), scope: scope.input.value, ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), ...(type.input.value ? { recordType: type.input.value } : {}), pageSize: 12 } : args;
+    if (requestedArgs.scope === 'person' && !requestedArgs.personId) throw new Error('请选择要查看的人物。');
+    const requestedPage = reset ? 0 : pageIndex ?? pageNumber;
+    resultArea.setAttribute('aria-busy', 'true');
+    try {
+      const result = await request('memory.list', { ...requestedArgs, instanceId: ownerInstance, ...(cursor != null ? { cursor } : {}) });
+      if (!alive() || generation !== listGeneration) return;
+      clearReadError(listReadError); listReadError = null; args = requestedArgs; pageNumber = requestedPage + 1;
+      if (reset) pageCursors = [null]; pageCursors[requestedPage] = cursor; pageCursors = pageCursors.slice(0, requestedPage + 1);
+      const paging = { pageNumber, first: () => load(), previous: () => load(pageCursors[requestedPage - 1], { pageIndex: requestedPage - 1 }), label: '记忆列表' };
+      replace(resultArea, paginator(result, next => load(next, { pageIndex: requestedPage + 1 }), { ...paging, position: 'top' }),
+        getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(item => memoryRecord(item, () => openRecord(item)))) : card('查询结果', '', empty('没有匹配的已保留条目', '可以调整查询范围或线索。未知暂存不自动属于当前人物，原件淘汰或明确撤销后也可能不再可查。', '▤')),
+        paginator(result, next => load(next, { pageIndex: requestedPage + 1 }), paging));
+      if (memoryRendered) scrollListStart(resultArea); memoryRendered = true;
+    } catch (error) {
+      if (!alive() || generation !== listGeneration) return;
+      if (cursor != null && stalePage(error)) { replace(resultArea, pageChanged(() => load())); return; }
+      listReadError = error; throw error;
+    } finally { if (alive() && generation === listGeneration) resultArea.setAttribute('aria-busy', 'false'); }
   }
   scope.input.addEventListener('change', () => { person.input.disabled = scope.input.value !== 'person'; if (scope.input.value === 'person' && !person.input.value) { listGeneration++; replace(resultArea, notice('请选择关系人物后查询。')); } else load().catch(showError); }); person.input.disabled = true;
   person.input.addEventListener('change', () => { if (scope.input.value === 'person') load().catch(showError); });
@@ -506,13 +573,28 @@ async function memoryPage() {
   query.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); load().catch(showError); } }); filters.append(query.wrapper, button('搜索', () => load(), 'primary'));
   const advancedFilters = disclosure({}, element('summary', {}, '筛选范围与类型'), element('div', { class: 'form-grid' }, scope.wrapper, person.wrapper, type.wrapper));
   const peopleQuery = field('people-query', '搜索已知人物', '', { placeholder: '姓名、别名或人物 ID' }), peopleResults = element('div');
-  let peopleArgs = {}, peoplePage = 1, peopleGeneration = 0;
-  async function loadPeople(cursor) {
-    const generation = ++peopleGeneration;
-    if (!cursor) { peopleArgs = { query: peopleQuery.input.value.trim(), pageSize: 15 }; peoplePage = 1; } else peoplePage++;
-    const result = await request('people.list', { ...peopleArgs, ...(cursor ? { cursor } : {}) }); if (generation !== peopleGeneration) return;
-    const rows = getItems(result), known = new Map([...state.people, ...rows].map(item => [item.personId ?? item.id, item])); state.people = [...known.values()].slice(-200);
-    replace(peopleResults, rows.length ? element('div', { class: 'people-list' }, rows.map(item => element('div', {}, button(item.displayName ?? item.personId, () => inspectDocument('relation.get', { personId: item.personId ?? item.id, section: 'all' }, '关系 · ' + (item.displayName ?? item.personId), { eyebrow: 'RELATIONSHIP' }), 'person-button', { class: 'person-button' }), button('筛选此人的记忆', async () => { const id = item.personId ?? item.id; if (![...person.input.options].some(option => option.value === id)) person.input.append(element('option', { value: id }, item.displayName ?? id)); state.memoryPerson = { id, name: item.displayName ?? id }; await openSection('', false); }, 'link')))) : empty('没有匹配的已知人物', '这里不会按姓名自动创建或合并人物。'), paginator(result, loadPeople, { pageNumber: peoplePage }));
+  let peopleArgs = {}, peoplePage = 1, peopleGeneration = 0, peopleCursors = [null], peopleReadError = null, peopleRendered = false;
+  async function loadPeople(cursor = null, { pageIndex } = {}) {
+    if (!alive()) return;
+    const generation = ++peopleGeneration, reset = pageIndex === undefined && cursor == null;
+    const requestedArgs = reset ? { query: peopleQuery.input.value.trim(), pageSize: 15 } : peopleArgs, requestedPage = reset ? 0 : pageIndex ?? peoplePage;
+    peopleResults.setAttribute('aria-busy', 'true');
+    try {
+      const result = await request('people.list', { ...requestedArgs, instanceId: ownerInstance, ...(cursor != null ? { cursor } : {}) });
+      if (!alive() || generation !== peopleGeneration) return;
+      clearReadError(peopleReadError); peopleReadError = null; peopleArgs = requestedArgs; peoplePage = requestedPage + 1;
+      if (reset) peopleCursors = [null]; peopleCursors[requestedPage] = cursor; peopleCursors = peopleCursors.slice(0, requestedPage + 1);
+      const rows = getItems(result), known = new Map([...state.people, ...rows].map(item => [item.personId ?? item.id, item])); state.people = [...known.values()].slice(-200);
+      const paging = { pageNumber: peoplePage, first: () => loadPeople(), previous: () => loadPeople(peopleCursors[requestedPage - 1], { pageIndex: requestedPage - 1 }), label: '已知人物列表' };
+      replace(peopleResults, paginator(result, next => loadPeople(next, { pageIndex: requestedPage + 1 }), { ...paging, position: 'top' }),
+        rows.length ? element('div', { class: 'people-list' }, rows.map(item => element('div', {}, button(item.displayName ?? item.personId, () => inspectDocument('relation.get', { personId: item.personId ?? item.id, section: 'all' }, '关系 · ' + (item.displayName ?? item.personId), { eyebrow: 'RELATIONSHIP' }), 'person-button', { class: 'person-button' }), button('筛选此人的记忆', async () => { const id = item.personId ?? item.id; if (![...person.input.options].some(option => option.value === id)) person.input.append(element('option', { value: id }, item.displayName ?? id)); state.memoryPerson = { id, name: item.displayName ?? id }; await openSection('', false); }, 'link')))) : empty('没有匹配的已知人物', '这里不会按姓名自动创建或合并人物。'),
+        paginator(result, next => loadPeople(next, { pageIndex: requestedPage + 1 }), paging));
+      if (peopleRendered) scrollListStart(peopleResults); peopleRendered = true;
+    } catch (error) {
+      if (!alive() || generation !== peopleGeneration) return;
+      if (cursor != null && stalePage(error)) { replace(peopleResults, pageChanged(() => loadPeople())); return; }
+      peopleReadError = error; throw error;
+    } finally { if (alive() && generation === peopleGeneration) peopleResults.setAttribute('aria-busy', 'false'); }
   }
   peopleQuery.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadPeople().catch(showError); } });
   const relations = card('人物与关系', '按真实人物列表分页。查看主观印象、编码与相处状态。', peopleQuery.wrapper, button('搜索人物', () => loadPeople(), 'secondary compact'), peopleResults);
@@ -761,7 +843,7 @@ async function copyText(text, message = '内容已复制。') {
   catch { const input = element('textarea', { value: text, class: 'copy-content', readOnly: true }); const generation = startDetail('复制内容'); replace($('detail-content'), element('p', { class: 'small muted' }, '当前环境不能自动复制，请选中下方内容手动复制。'), input); input.focus(); input.select(); replace($('detail-footer'), button('关闭', () => $('detail-dialog').close())); }
 }
 function safeImageData(value) { return typeof value === 'string' && /^data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(value); }
-const capabilityNames = { 'chat.text': '发送文字', 'chat.image': '发送图片', 'chat.video': '发送视频', 'chat.file': '发送文件', 'chat.voice': '发送语音消息', 'chat.sticker': '使用表情与表情包', 'message.reply': '引用消息', 'message.retract': '撤回自己的消息', 'contacts.read': '读取联系人', 'groups.read': '读取群列表', 'friend.manage': '处理好友请求', 'group.manage': '群管理', 'profile.update': '修改账号资料', 'feed.read': '查看动态／朋友圈', 'feed.publish': '发布动态／朋友圈', 'feed.react': '动态点赞与评论', 'call.voice': '实时语音通话', 'call.video': '实时视频通话' };
+const capabilityNames = { 'chat.text': '发送文字', 'chat.image': '发送图片', 'chat.video': '发送视频', 'chat.file': '发送文件', 'chat.voice': '发送语音消息', 'chat.sticker': '使用表情与表情包', 'chat.mention': '提及聊天对象（@）', 'message.read': '读取所引用的消息', 'message.forward.read': '读取合并转发内容', 'media.cover': '通过已配置服务制作翻唱', 'message.reply': '引用消息', 'message.retract': '撤回自己的消息', 'contacts.read': '读取联系人', 'groups.read': '读取群列表', 'friend.manage': '处理好友请求', 'group.manage': '群管理', 'profile.update': '修改账号资料', 'feed.read': '查看动态／朋友圈', 'feed.publish': '发布动态／朋友圈', 'feed.react': '动态点赞与评论', 'call.voice': '实时语音通话', 'call.video': '实时视频通话' };
 async function permissionsPanel(id) {
   const instanceId = state.instanceId, generation = state.generation, alive = () => state.instanceId === instanceId && state.page === 'chat' && state.generation === generation;
   const permissionRequest = (action, args = {}) => request(action, { ...args, instanceId });
@@ -779,7 +861,7 @@ async function permissionsPanel(id) {
       button('保存这些权限', async () => {
         if (!alive()) return;
         const allowed = [...inputs].filter(([, input]) => input.checked).map(([key]) => key), added = allowed.filter(key => !result.items.some(item => item.id === key && item.allowed === true));
-        if (added.length) { const confirmed = await confirmOperation({ title: '允许更多账号操作', description: '以下操作将获得你的许可。平台仍需实际支持；是否使用由相续自己决定。', preview: { 新增许可: added.map(key => capabilityNames[key] ?? key) }, accept: '允许并保存' }); if (!confirmed || !alive()) return; }
+        if (added.length) { const confirmed = await confirmOperation({ title: '允许更多账号操作', description: '以下操作将获得你的许可。平台仍需实际支持；是否使用由相续自己决定。', preview: { 新增许可: added.map(key => result.items.find(item => item.id === key)?.label ?? capabilityNames[key] ?? key) }, accept: '允许并保存' }); if (!confirmed || !alive()) return; }
         await permissionRequest('permissions.configure', { id, allowed }); if (!alive()) return; toast('权限已保存。'); await renderPage();
       }, 'primary'));
     const saved = await permissionRequest('permissions.list', { id });
@@ -958,7 +1040,13 @@ async function bilibiliPage() {
     if (!alive()) return; replace(loginArea);
     if (waiting()) {
       if (safeImageData(login.qrDataUrl)) loginArea.append(element('img', { class: 'connection-qr', src: login.qrDataUrl, alt: 'B站本次登录授权二维码' }));
-      else loginArea.append(notice('二维码图片尚未生成，可复制本次真实授权链接在手机上打开。', 'warning'));
+      else loginArea.append(notice(login.qrContent ? '二维码图片尚未生成，可复制本次真实授权链接在手机上打开。' : '页面刷新后未保留二维码图片。可以重新显示这次尚未过期的二维码，无需另开扫码任务。', 'warning'),
+        !login.qrContent ? button('重新显示本次二维码', async () => {
+          if (!alive() || !waiting()) return; const flowId = login.flowId, result = await call('loginStart');
+          if (!alive()) { if (result.login?.flowId) await call('loginCancel', { flowId: result.login.flowId }); return; }
+          await useLogin(result);
+          if (result.login?.flowId !== flowId) toast('原二维码已失效，已取得新一轮扫码任务，请使用当前二维码。');
+        }, 'secondary') : null);
       loginArea.append(element('p', {}, phaseName(login.phase)), element('p', { class: 'small muted' }, '请用手机 B 站扫码，并由你本人确认。关闭本页会停止本次查询并取消本地扫码任务。'),
         login.expiresAt ? element('p', { class: 'small muted' }, '本次二维码有效期至 ' + date(login.expiresAt)) : null,
         element('div', { class: 'row-actions' }, button('查询扫码状态', pollLogin, 'secondary'), button('取消本次扫码', async () => { if (!alive() || !login) return; const result = await call('loginCancel', { flowId: login.flowId }); if (alive()) await useLogin(result); }, 'subtle'), login.qrContent ? button('复制授权链接', () => copyText(login.qrContent, '已复制本次 B 站授权链接。'), 'link') : null));

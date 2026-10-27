@@ -1,8 +1,10 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.10.0兼容扩展集中在第22节：混合候选检索、有效时间、参考诊断与可选平台。第20／21节自我档案和生命周期继续有效；历史证据不自动提升为本轮验收。
+当前0.10.1兼容扩展集中在第22节：混合候选检索、有效时间、参考诊断与可选平台。第20／21节自我档案和生命周期继续有效；历史证据不自动提升为本轮验收。
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.10.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+> 0.10.1当前维护：字段沿用persona-memory/3；UI／真实模型／平台只读与上下文投影增量统一见[本轮说明](../../ui-retrieval-context-validation.md)，不把旧测试数字提升为本轮验收。
+
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.10.1 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -1049,6 +1051,8 @@ diagnostics包含真实method、temporal、semantic（enabled/configured/availab
 setSemanticPort(port|null)经仓库队列替换并清cache/provider状态；prepareRetrievalIndex只为显式所选页调用document embed。search只在启用且已有可用索引时按需query embed，并复用同provider/version/query指纹缓存。有限真实非零向量需维度／数值校验，不用字符串hash伪装语义。文档超过向量片段帽时标partialTexts/partialDocumentTexts，原件不截短；pageComplete/nextOffset是页进度，coverage才是实际覆盖。TTL、LRU、换服务和重启可移除可重建向量，不删除原始资料；撤销来源清除受影响缓存／诊断引用。DSH配置文件与密钥在库外，endpoint/model/apiKey/enabled/version经expectedVersion保存；不会回退聊天模型或自动全库索引。
 
 persona_platform保持同一工具，新增platform:bilibili及action:read/job/cancel_job/assets，原inspect/execute/accounts继续按分支使用。B站operation为search/recommend/video/subtitles/comments/frames/comment/reply/share/message；keyword、bvid/cid、page/limit、offset/charOffset/next、times/num、commentId/contentHash、评论父ID及接收UID等仅按对应操作校验，不是任意HTTP代理。读取按实际字幕／分P／采样覆盖，写入按真实rpid/msg_key回执；分享是私信链接。当前memoryRoot、账号、能力授权和真实调用requestId来自可信适配上下文，不能由模型伪造。B站默认没有许可；能力快照只读当前服务状态，不在操作队列内重入排队inspect，probe仍单独排队。unknown及等价未确认操作不得自动重发。
+
+0.10.1字幕返回兼容增加coverage.sourceBinding（aid/bvid/cid、实际签名endpoint与platformDeclaredIdsVerified）、subtitleTrack（轨id、sourceHost、sourceUrlHash、assetBinding:aid_cid_prefix|not_encoded）、contentHash及coverage.contentCorrespondenceAssessed:false。签名/x/player/wbi/v2的身份与可辨识资产来源不匹配时技术拒绝，不回退旧未签名/x/player/v2；not_encoded不能解释为已完成资产ID绑定。续读可提供contentHash核对字节版本。平台声明／来源检查不判断文字是否语义对应视频，不删除或改写字幕，仍由人格解释。实现与样本边界见[0.10.1字幕说明](../../ui-retrieval-context-validation.md#字幕轨来源身份回显还不够)。
 
 QQ OneBot11扩展chat.mention、message.read、message.forward.read和安全rich消息。resolveIncomingMedia默认true、transcribeIncomingAudio默认false；真实图片附件需要视觉模型，语音只经已配置STT处理受支持PCM16 WAV。rich原始安全段、SHA、省略标志、媒体／提及／回复／转发及perception保留技术事实；转写和第三方转发是独立程序材料，不改用户原话或speaker身份。unsupported／失败如实报告，不猜媒体内容；微信与官方Bot不继承QQ桥能力。
 

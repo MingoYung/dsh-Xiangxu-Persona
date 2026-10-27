@@ -14,6 +14,10 @@
 html,body{margin:0;padding:0;min-width:0;background:transparent}
 body{display:flow-root}
 button,input,select,textarea{font:inherit;accent-color:var(--accent)}
+/* Native option popups need an opaque system surface even when the host pane is transparent. */
+select option,select optgroup{background-color:Canvas;color:CanvasText}
+select option:checked{background-color:Highlight;color:HighlightText}
+select option:disabled,select optgroup:disabled{color:GrayText}
 button{cursor:pointer}
 button:disabled,input:disabled,select:disabled{cursor:default;opacity:.5}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}

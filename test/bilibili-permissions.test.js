@@ -65,8 +65,8 @@ test('capability snapshots stay synchronous, isolated and unavailable during clo
 });
 
 test('capability inspection before ready does not touch the queue, expose partial credentials or claim a usable account', async t => {
-  let release; const waiting = new Promise(resolve => { release = resolve; });
-  const bili = createBilibiliService({ storage: { async read() { await waiting; return structuredClone(stored); }, async write() {} }, fetchImpl: async () => { throw new Error('No platform calls expected'); } }); t.after(() => bili.close());
+  let release, platformCalls = 0; const waiting = new Promise(resolve => { release = resolve; });
+  const bili = createBilibiliService({ storage: { async read() { await waiting; return structuredClone(stored); }, async write() {} }, fetchImpl: async (_url, options) => { platformCalls++; assert.equal(options.method, 'GET'); return json({ code: 0, data: { isLogin: true, mid: 1234, uname: '隔离账号' } }); } }); t.after(() => bili.close());
   const before = bili.peekCapabilities(); assert.equal(before.ready, false); assert.equal(before.accountId, null); assert.ok(before.items.every(item => !item.available));
-  release(); await bili.ready; const after = bili.capabilitySnapshot(); assert.equal(after.ready, true); assert.equal(after.accountId, '1234'); assert.equal(after.connected, false); assert.ok(after.items.every(item => !item.available)); assert.ok(!JSON.stringify(after).includes('private-session'));
+  assert.equal(platformCalls, 0); release(); await bili.ready; const after = bili.capabilitySnapshot(); assert.equal(after.ready, true); assert.equal(after.accountId, '1234'); assert.equal(after.connected, true); assert.ok(after.items.every(item => item.available && item.defaultAllowed === false)); assert.equal(platformCalls, 1); assert.ok(!JSON.stringify(after).includes('private-session'));
 });

@@ -1,0 +1,1728 @@
+{
+  "schemaVersion": "xiangxu-public-live-evidence/1",
+  "verifiedAt": "2026-10-27T04:53:58.833Z",
+  "scope": {
+    "source": "three dedicated DSH real Flash runs plus their raw provider-bound, usage and RPC records",
+    "fullRunCount": 3,
+    "publicPrivacyPolicy": "whitelist only: no login account UID/name, credentials, raw tool cursors, signed URLs, session/request identifiers or private absolute directories",
+    "productCodeModifiedByThisAudit": false,
+    "additionalPaidOrPlatformCallsByThisAudit": 0
+  },
+  "aggregate": {
+    "actualModelDispatches": 34,
+    "actualToolCalls": 34,
+    "usageTotals": {
+      "inputTokens": 403249,
+      "outputTokens": 13361,
+      "cacheReadTokens": 73472,
+      "cacheWriteTokens": 0,
+      "totalTokens": 490082
+    },
+    "usageAccounting": "as reported by DSH provider usage; observed totalTokens equals inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens; do not add totalTokens again",
+    "currencyCost": null,
+    "costReason": "No account invoice, applied tariffs, discounts, currency or cache billing contract in these records; token counts do not establish actual money charged.",
+    "systemPromptProjection": {
+      "verifiedRequests": 34,
+      "minimum": 1,
+      "maximum": 1,
+      "staleProjectionAccumulationObserved": false,
+      "limit": "does not imply all message history, tool schema or tool results are bounded by the persona snapshot budget"
+    },
+    "noPublishingOperationObserved": true,
+    "runtimeCompactionTriggered": null,
+    "runtimeCompactionLimit": "policy installation is proven; these logs do not establish a triggered long-history summary or its long-term fidelity"
+  },
+  "runs": [
+    {
+      "ordinal": 1,
+      "status": "technical_failure",
+      "phase": "all",
+      "actualModelDispatches": 18,
+      "configuredDispatchCeiling": 18,
+      "actualToolCalls": 17,
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "modelMetadata": [
+        {
+          "metadataResolved": false,
+          "errorCode": "NO_ADAPTER"
+        }
+      ],
+      "startedAt": "2026-10-27T04:22:38.835Z",
+      "finishedAt": "2026-10-27T04:24:09.212Z",
+      "wallElapsedMs": 90377,
+      "sourceUnchanged": true,
+      "exitCode": 0,
+      "coreLockRemaining": false,
+      "syntheticMemory": true,
+      "productionPersonaRead": false,
+      "credentialsCopied": false,
+      "publishingRequested": false,
+      "usageTotals": {
+        "inputTokens": 245256,
+        "outputTokens": 6837,
+        "cacheReadTokens": 38656,
+        "cacheWriteTokens": 0,
+        "totalTokens": 290749
+      },
+      "perRequest": [
+        {
+          "ordinal": 1,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 4,
+          "messagesJsonUtf8Bytes": 18946,
+          "messagesJsonCodePoints": 13107,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 7140,
+            "outputTokens": 177,
+            "cacheReadTokens": 1664,
+            "cacheWriteTokens": 0,
+            "totalTokens": 8981
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 2,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 6,
+          "messagesJsonUtf8Bytes": 21519,
+          "messagesJsonCodePoints": 15602,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 7228,
+            "outputTokens": 402,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 9806
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 3,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 8,
+          "messagesJsonUtf8Bytes": 24643,
+          "messagesJsonCodePoints": 18592,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 8050,
+            "outputTokens": 337,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 10563
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 4,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 10,
+          "messagesJsonUtf8Bytes": 27449,
+          "messagesJsonCodePoints": 21244,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 8815,
+            "outputTokens": 877,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 11868
+          },
+          "finishKind": "stop"
+        },
+        {
+          "ordinal": 5,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 12,
+          "messagesJsonUtf8Bytes": 31656,
+          "messagesJsonCodePoints": 24509,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 9753,
+            "outputTokens": 284,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 12213
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 6,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 15,
+          "messagesJsonUtf8Bytes": 35863,
+          "messagesJsonCodePoints": 28534,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 10758,
+            "outputTokens": 909,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 13843
+          },
+          "finishKind": "stop"
+        },
+        {
+          "ordinal": 7,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 17,
+          "messagesJsonUtf8Bytes": 40423,
+          "messagesJsonCodePoints": 31842,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 11738,
+            "outputTokens": 240,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 14154
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 8,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 20,
+          "messagesJsonUtf8Bytes": 44998,
+          "messagesJsonCodePoints": 36269,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 12691,
+            "outputTokens": 338,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 15205
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 9,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 22,
+          "messagesJsonUtf8Bytes": 48373,
+          "messagesJsonCodePoints": 39474,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 13518,
+            "outputTokens": 261,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 15955
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 10,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 24,
+          "messagesJsonUtf8Bytes": 51384,
+          "messagesJsonCodePoints": 42319,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 14263,
+            "outputTokens": 243,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 16682
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 11,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 26,
+          "messagesJsonUtf8Bytes": 54283,
+          "messagesJsonCodePoints": 45072,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 15004,
+            "outputTokens": 249,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 17429
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 12,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 28,
+          "messagesJsonUtf8Bytes": 57224,
+          "messagesJsonCodePoints": 48011,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 15803,
+            "outputTokens": 284,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 18263
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 13,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 30,
+          "messagesJsonUtf8Bytes": 59210,
+          "messagesJsonCodePoints": 49973,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 16273,
+            "outputTokens": 1211,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 19660
+          },
+          "finishKind": "stop"
+        },
+        {
+          "ordinal": 14,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 32,
+          "messagesJsonUtf8Bytes": 65316,
+          "messagesJsonCodePoints": 54803,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 17584,
+            "outputTokens": 119,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 19879
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 15,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 34,
+          "messagesJsonUtf8Bytes": 68175,
+          "messagesJsonCodePoints": 57648,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 18216,
+            "outputTokens": 293,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 20685
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 16,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 36,
+          "messagesJsonUtf8Bytes": 71299,
+          "messagesJsonCodePoints": 60756,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 19051,
+            "outputTokens": 215,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 21442
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 17,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 38,
+          "messagesJsonUtf8Bytes": 73644,
+          "messagesJsonCodePoints": 62977,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 19581,
+            "outputTokens": 171,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 21928
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 18,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 40,
+          "messagesJsonUtf8Bytes": 74892,
+          "messagesJsonCodePoints": 64169,
+          "toolsJsonUtf8Bytes": 15818,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 19790,
+            "outputTokens": 227,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 22193
+          },
+          "finishKind": "tool-calls"
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "retrieval-current",
+          "status": "observed",
+          "visibleMessages": 1,
+          "toolCallCount": 3,
+          "durationMs": 17907,
+          "toolCalls": [
+            {
+              "tool": "memory_search",
+              "timeMode": "all",
+              "scope": "global",
+              "limit": 20,
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": null,
+              "resultCode": null,
+              "returnedItems": 1,
+              "boundedCandidateTotal": 20,
+              "retrieval": {
+                "method": "lexical+association",
+                "referenceOnly": true,
+                "automaticRecall": false,
+                "semantic": {
+                  "enabled": false,
+                  "configured": false,
+                  "indexed": 0,
+                  "eligible": 38,
+                  "coverageComplete": false,
+                  "reason": "disabled"
+                }
+              }
+            },
+            {
+              "tool": "memory_search",
+              "timeMode": "all",
+              "scope": "global",
+              "limit": 20,
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": null,
+              "resultCode": null,
+              "returnedItems": 1,
+              "boundedCandidateTotal": 20,
+              "retrieval": {
+                "method": "lexical+association",
+                "referenceOnly": true,
+                "automaticRecall": false,
+                "semantic": {
+                  "enabled": false,
+                  "configured": false,
+                  "indexed": 0,
+                  "eligible": 38,
+                  "coverageComplete": false,
+                  "reason": "disabled"
+                }
+              }
+            },
+            {
+              "tool": "memory_search",
+              "timeMode": "all",
+              "scope": "global",
+              "limit": 20,
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": null,
+              "resultCode": null,
+              "returnedItems": 1,
+              "boundedCandidateTotal": 20,
+              "retrieval": {
+                "method": "lexical+association",
+                "referenceOnly": true,
+                "automaticRecall": false,
+                "semantic": {
+                  "enabled": false,
+                  "configured": false,
+                  "indexed": 0,
+                  "eligible": 38,
+                  "coverageComplete": false,
+                  "reason": "disabled"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "retrieval-past-and-associated",
+          "status": "observed",
+          "visibleMessages": 1,
+          "toolCallCount": 2,
+          "durationMs": 11756,
+          "toolCalls": [
+            {
+              "tool": "memory_search",
+              "timeMode": "past",
+              "scope": "global",
+              "limit": 20,
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": null,
+              "resultCode": null,
+              "returnedItems": 1,
+              "boundedCandidateTotal": 1,
+              "retrieval": {
+                "method": "lexical+association",
+                "referenceOnly": true,
+                "automaticRecall": false,
+                "semantic": {
+                  "enabled": false,
+                  "configured": false,
+                  "indexed": 0,
+                  "eligible": 1,
+                  "coverageComplete": false,
+                  "reason": "disabled"
+                }
+              }
+            },
+            {
+              "tool": "memory_search",
+              "timeMode": "all",
+              "scope": "global",
+              "limit": 20,
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": null,
+              "resultCode": null,
+              "returnedItems": 1,
+              "boundedCandidateTotal": 20,
+              "retrieval": {
+                "method": "lexical+association",
+                "referenceOnly": true,
+                "automaticRecall": false,
+                "semantic": {
+                  "enabled": false,
+                  "configured": false,
+                  "indexed": 0,
+                  "eligible": 38,
+                  "coverageComplete": false,
+                  "reason": "disabled"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "qq-unconfigured",
+          "status": "observed",
+          "visibleMessages": 1,
+          "toolCallCount": 7,
+          "durationMs": 32174,
+          "toolCalls": [
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "qq",
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 0,
+                "to": 790,
+                "total": 4360,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "accounts",
+              "platform": "qq",
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": null,
+              "resultCode": null,
+              "returnedItems": 0
+            },
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "qq",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 790,
+                "to": 1570,
+                "total": 4360,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "qq",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 1570,
+                "to": 2352,
+                "total": 4360,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "qq",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 2352,
+                "to": 3146,
+                "total": 4360,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "qq",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 3146,
+                "to": 4086,
+                "total": 4360,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "qq",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 4086,
+                "to": 4360,
+                "total": 4360,
+                "complete": true
+              }
+            }
+          ]
+        },
+        {
+          "name": "bilibili-real-read",
+          "status": "technical_failure",
+          "visibleMessages": 0,
+          "toolCallCount": 5,
+          "durationMs": 17828,
+          "toolCalls": [
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "bilibili",
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 0,
+                "to": 920,
+                "total": 2496,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "bilibili",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 920,
+                "to": 1880,
+                "total": 2496,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "bilibili",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 1880,
+                "to": 2496,
+                "total": 2496,
+                "complete": true
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "execute",
+              "platform": "bilibili",
+              "operation": "search",
+              "limit": 5,
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "memory_error",
+              "resultCode": "BILI_OPERATION_UNSUPPORTED"
+            },
+            {
+              "tool": "persona_platform",
+              "action": "execute",
+              "platform": "bilibili",
+              "operation": "search",
+              "limit": 5,
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "memory_error",
+              "resultCode": "BILI_OPERATION_UNSUPPORTED"
+            }
+          ]
+        }
+      ],
+      "sourceFileHashes": {
+        "result.json": "e952f52b94a80fbbd7986e3800927ee893e7779fd3052ef901acb7c6cf9a98d3",
+        "provider-bound.jsonl": "67d18ee31a3cba7915d3edbc424f6361b4c716e8bb0c6444fe1613849cc17c65",
+        "provider-usage.jsonl": "ed4c29b268bc750f5ebcabb4a8cf073e725ba2e9eb26e2f5e898840b7bd45a04",
+        "rpc.jsonl": "2d7caf51be1d6bd2fc4ae6ae2b89300dab68c6e5f5818e05b0d5a6228cceb54e",
+        "native-history-policy.jsonl": "a0aa750fb39270fbb12619992a26312cf92fe58b39f3e037d341b0ebb95c5d0a",
+        "model-info.jsonl": "26e561e01828c11fb3418910aad1c230087156831a1657cd22002848437edb12"
+      },
+      "productSourceDigests": {
+        "adapters/dsh/index.js": "2fa2a6750b6301e2aa7af5e39165f6c5eca29898bfbe8d3de9c90e1b0a7f88f6",
+        "adapters/dsh/tool-schema.js": "cf0878468692ade273e5092f25f11c1792fdeedad09bc39f9d5d403fedd8713e",
+        "adapters/dsh/bilibili/client.js": "e11f2e31de2553c03ba8db1900c28b064f54160a43f7589f6788debb8623fd37"
+      },
+      "nativePolicy": {
+        "presetCompactionPresent": true,
+        "presetPrunerPresent": true,
+        "compactionConfig": {
+          "thresholdRatio": 0.8,
+          "headroomTokens": 8192,
+          "retainRatio": 0.16,
+          "maxTokens": 4096,
+          "compactionRetries": 0,
+          "maxOverflowRetries": 1,
+          "modelPolicies": [
+            {
+              "provider": "deepseek-official",
+              "model": "deepseek-flash",
+              "thresholdRatio": 0.049152,
+              "retainTokens": 8192
+            }
+          ],
+          "auto": true
+        },
+        "prunerConfig": {
+          "thresholdChars": 8192,
+          "headChars": 4096,
+          "tailChars": 1024
+        },
+        "compositionLeakedServiceCount": 0
+      },
+      "failure": {
+        "code": "UNKNOWN",
+        "category": "dedicated_model_dispatch_budget_reached",
+        "nextModelRequestWasNotSent": true
+      }
+    },
+    {
+      "ordinal": 2,
+      "status": "completed",
+      "phase": "bilibili",
+      "actualModelDispatches": 7,
+      "configuredDispatchCeiling": 18,
+      "actualToolCalls": 9,
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "modelMetadata": [
+        {
+          "provider": "deepseek-official",
+          "id": "deepseek-flash",
+          "name": "DeepSeek-V4.1-Flash",
+          "context": {
+            "contextWindow": 1000000
+          },
+          "defaultMaxTokens": 256000,
+          "inputModalities": [
+            "text",
+            "image"
+          ],
+          "systemPromptUpdate": "in-history"
+        }
+      ],
+      "startedAt": "2026-10-27T04:27:56.099Z",
+      "finishedAt": "2026-10-27T04:28:41.686Z",
+      "wallElapsedMs": 45587,
+      "sourceUnchanged": true,
+      "exitCode": 0,
+      "coreLockRemaining": false,
+      "syntheticMemory": true,
+      "productionPersonaRead": false,
+      "credentialsCopied": false,
+      "publishingRequested": false,
+      "usageTotals": {
+        "inputTokens": 65040,
+        "outputTokens": 2872,
+        "cacheReadTokens": 15232,
+        "cacheWriteTokens": 0,
+        "totalTokens": 83144
+      },
+      "perRequest": [
+        {
+          "ordinal": 1,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 4,
+          "messagesJsonUtf8Bytes": 19117,
+          "messagesJsonCodePoints": 13156,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 6777,
+            "outputTokens": 80,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 9033
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 2,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 6,
+          "messagesJsonUtf8Bytes": 21808,
+          "messagesJsonCodePoints": 15847,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 7370,
+            "outputTokens": 122,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 9668
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 3,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 8,
+          "messagesJsonUtf8Bytes": 24469,
+          "messagesJsonCodePoints": 18264,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 8061,
+            "outputTokens": 181,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 10418
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 4,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 10,
+          "messagesJsonUtf8Bytes": 27080,
+          "messagesJsonCodePoints": 20518,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 8618,
+            "outputTokens": 243,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 11037
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 5,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 13,
+          "messagesJsonUtf8Bytes": 31969,
+          "messagesJsonCodePoints": 24973,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 9970,
+            "outputTokens": 701,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 12847
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 6,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 16,
+          "messagesJsonUtf8Bytes": 36403,
+          "messagesJsonCodePoints": 29145,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 11255,
+            "outputTokens": 670,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 14101
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 7,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 19,
+          "messagesJsonUtf8Bytes": 42276,
+          "messagesJsonCodePoints": 34410,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 12989,
+            "outputTokens": 875,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 16040
+          },
+          "finishKind": "stop"
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "bilibili-real-read",
+          "status": "observed",
+          "visibleMessages": 1,
+          "toolCallCount": 9,
+          "durationMs": 37360,
+          "toolCalls": [
+            {
+              "tool": "persona_platform",
+              "action": "inspect",
+              "platform": "bilibili",
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 0,
+                "to": 920,
+                "total": 2496,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "search",
+              "limit": 5,
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 0,
+                "to": 737,
+                "total": 1414,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "video",
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": null,
+              "resultCode": null
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 0,
+                "to": 798,
+                "total": 5798,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "comments",
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 0,
+                "to": 674,
+                "total": 2193,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "memory_error",
+              "resultCode": "INVALID_TOOL_CURSOR"
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "comments",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 674,
+                "to": 1394,
+                "total": 2193,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 798,
+                "to": 1579,
+                "total": 5798,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "comments",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 1394,
+                "to": 1948,
+                "total": 2193,
+                "complete": false
+              }
+            }
+          ]
+        }
+      ],
+      "sourceFileHashes": {
+        "result.json": "250c5f6f92d0918dfc2d25ab0bfa66de4aee202558e72cc103538ba452f44390",
+        "provider-bound.jsonl": "e1c103b52a3ef4ecb0b2beab3cc8f11d3e8e9a68d8ed0722b79a56467e2990f8",
+        "provider-usage.jsonl": "28add4055204e7af5515cda7797b8b07b5f66c85f647de18b67a7254bffb1658",
+        "rpc.jsonl": "26fb37b60edf43d0864f8b7916e4f3e0308f1ee1a37dd3b1a43b390b234738dc",
+        "native-history-policy.jsonl": "16e375b9ec8d684d1703c01c2f00cbf91941c89a1320189408f023ab1e26dfc8",
+        "model-info.jsonl": "604c52a8f731c06784ab31dc0428b8342aefadf7e698e0b9ecf679a1cf7e1f5c"
+      },
+      "productSourceDigests": {
+        "adapters/dsh/index.js": "2fa2a6750b6301e2aa7af5e39165f6c5eca29898bfbe8d3de9c90e1b0a7f88f6",
+        "adapters/dsh/tool-schema.js": "6f7a4dc525fd72b440d3f5328620ddf3d199d8fd830e182a17dbfa02499561c4",
+        "adapters/dsh/bilibili/client.js": "e11f2e31de2553c03ba8db1900c28b064f54160a43f7589f6788debb8623fd37"
+      },
+      "nativePolicy": {
+        "presetCompactionPresent": true,
+        "presetPrunerPresent": true,
+        "compactionConfig": {
+          "thresholdRatio": 0.8,
+          "headroomTokens": 8192,
+          "retainRatio": 0.16,
+          "maxTokens": 4096,
+          "compactionRetries": 0,
+          "maxOverflowRetries": 1,
+          "modelPolicies": [
+            {
+              "provider": "deepseek-official",
+              "model": "deepseek-flash",
+              "thresholdRatio": 0.049152,
+              "retainTokens": 8192
+            }
+          ],
+          "auto": true
+        },
+        "prunerConfig": {
+          "thresholdChars": 8192,
+          "headChars": 4096,
+          "tailChars": 1024
+        },
+        "compositionLeakedServiceCount": 0
+      }
+    },
+    {
+      "ordinal": 3,
+      "status": "completed",
+      "phase": "subtitles",
+      "actualModelDispatches": 9,
+      "configuredDispatchCeiling": 18,
+      "actualToolCalls": 8,
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "modelMetadata": [
+        {
+          "provider": "deepseek-official",
+          "id": "deepseek-flash",
+          "name": "DeepSeek-V4.1-Flash",
+          "context": {
+            "contextWindow": 1000000
+          },
+          "defaultMaxTokens": 256000,
+          "inputModalities": [
+            "text",
+            "image"
+          ],
+          "systemPromptUpdate": "in-history"
+        }
+      ],
+      "startedAt": "2026-10-27T04:44:32.401Z",
+      "finishedAt": "2026-10-27T04:45:22.125Z",
+      "wallElapsedMs": 49724,
+      "sourceUnchanged": true,
+      "exitCode": 0,
+      "coreLockRemaining": false,
+      "syntheticMemory": true,
+      "productionPersonaRead": false,
+      "credentialsCopied": false,
+      "publishingRequested": false,
+      "usageTotals": {
+        "inputTokens": 92953,
+        "outputTokens": 3652,
+        "cacheReadTokens": 19584,
+        "cacheWriteTokens": 0,
+        "totalTokens": 116189
+      },
+      "perRequest": [
+        {
+          "ordinal": 1,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 4,
+          "messagesJsonUtf8Bytes": 19145,
+          "messagesJsonCodePoints": 13194,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 6789,
+            "outputTokens": 179,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 9144
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 2,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 6,
+          "messagesJsonUtf8Bytes": 21992,
+          "messagesJsonCodePoints": 15897,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 7552,
+            "outputTokens": 382,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 10110
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 3,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 8,
+          "messagesJsonUtf8Bytes": 25409,
+          "messagesJsonCodePoints": 19126,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 8517,
+            "outputTokens": 496,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 11189
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 4,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 10,
+          "messagesJsonUtf8Bytes": 29289,
+          "messagesJsonCodePoints": 22838,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 9595,
+            "outputTokens": 275,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 12046
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 5,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 12,
+          "messagesJsonUtf8Bytes": 32160,
+          "messagesJsonCodePoints": 25523,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 10434,
+            "outputTokens": 265,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 12875
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 6,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 14,
+          "messagesJsonUtf8Bytes": 35004,
+          "messagesJsonCodePoints": 28193,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 11272,
+            "outputTokens": 264,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 13712
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 7,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 16,
+          "messagesJsonUtf8Bytes": 37854,
+          "messagesJsonCodePoints": 30887,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 12114,
+            "outputTokens": 265,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 14555
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 8,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 18,
+          "messagesJsonUtf8Bytes": 40700,
+          "messagesJsonCodePoints": 33607,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 12972,
+            "outputTokens": 293,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 15441
+          },
+          "finishKind": "tool-calls"
+        },
+        {
+          "ordinal": 9,
+          "systemPromptProjectionCount": 1,
+          "messageCount": 20,
+          "messagesJsonUtf8Bytes": 43421,
+          "messagesJsonCodePoints": 36328,
+          "toolsJsonUtf8Bytes": 16275,
+          "maxOutputTokens": 4096,
+          "reasoningEffort": "high",
+          "usage": {
+            "inputTokens": 13708,
+            "outputTokens": 1233,
+            "cacheReadTokens": 2176,
+            "cacheWriteTokens": 0,
+            "totalTokens": 17117
+          },
+          "finishKind": "stop"
+        }
+      ],
+      "scenarios": [
+        {
+          "name": "bilibili-signed-subtitle-verification",
+          "status": "observed",
+          "visibleMessages": 1,
+          "toolCallCount": 8,
+          "durationMs": 41727,
+          "toolCalls": [
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": false,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 0,
+                "to": 782,
+                "total": 6358,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 782,
+                "to": 1564,
+                "total": 6358,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 1564,
+                "to": 2332,
+                "total": 6358,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 2332,
+                "to": 3081,
+                "total": 6358,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 3081,
+                "to": 3842,
+                "total": 6358,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 3842,
+                "to": 4618,
+                "total": 6358,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 4618,
+                "to": 5426,
+                "total": 6358,
+                "complete": false
+              }
+            },
+            {
+              "tool": "persona_platform",
+              "action": "read",
+              "platform": "bilibili",
+              "operation": "subtitles",
+              "cursorSupplied": true,
+              "isError": false,
+              "resultStatus": "bounded_preview",
+              "resultCode": null,
+              "fragment": {
+                "from": 5426,
+                "to": 6358,
+                "total": 6358,
+                "complete": true
+              }
+            }
+          ]
+        }
+      ],
+      "sourceFileHashes": {
+        "result.json": "336c3647afe8c6497ce113f05574fff66f55858259ecc4f6e52454c54baad8d6",
+        "provider-bound.jsonl": "ce5e1b4b63b157762685fb061480cd75e6b7f40c0cdc7cb2071fd66822c609ba",
+        "provider-usage.jsonl": "03cacee160cb148d5e437846fb7f1dbfde8c855ad36856c1a33ca72c7c520bb6",
+        "rpc.jsonl": "a8057725451244bab156c33fb1e2db58341d1e7067d56889c1692b72604476a5",
+        "native-history-policy.jsonl": "68396b724ef2f208cc65940058197526b50d73c78ebdad9a68a2066b0772a45b",
+        "model-info.jsonl": "604c52a8f731c06784ab31dc0428b8342aefadf7e698e0b9ecf679a1cf7e1f5c"
+      },
+      "productSourceDigests": {
+        "adapters/dsh/index.js": "2fa2a6750b6301e2aa7af5e39165f6c5eca29898bfbe8d3de9c90e1b0a7f88f6",
+        "adapters/dsh/tool-schema.js": "6f7a4dc525fd72b440d3f5328620ddf3d199d8fd830e182a17dbfa02499561c4",
+        "adapters/dsh/bilibili/client.js": "81071d4a7a3d774a77147804b3fb2edaa25c1316d06a4b720a58253b9231c2e1"
+      },
+      "nativePolicy": {
+        "presetCompactionPresent": true,
+        "presetPrunerPresent": true,
+        "compactionConfig": {
+          "thresholdRatio": 0.8,
+          "headroomTokens": 8192,
+          "retainRatio": 0.16,
+          "maxTokens": 4096,
+          "compactionRetries": 0,
+          "maxOverflowRetries": 1,
+          "modelPolicies": [
+            {
+              "provider": "deepseek-official",
+              "model": "deepseek-flash",
+              "thresholdRatio": 0.049152,
+              "retainTokens": 8192
+            }
+          ],
+          "auto": true
+        },
+        "prunerConfig": {
+          "thresholdChars": 8192,
+          "headChars": 4096,
+          "tailChars": 1024
+        },
+        "compositionLeakedServiceCount": 0
+      }
+    }
+  ],
+  "verifiedOutcomes": {
+    "memory": {
+      "runOrdinal": 1,
+      "syntheticOnly": true,
+      "relevantRecords": [
+        {
+          "id": "ui-fixture-current",
+          "text": "隔离验收：当前理解，合成测试者现在偏爱乌龙茶。",
+          "temporal": {
+            "eligible": true,
+            "mode": "all",
+            "at": 1793074973133,
+            "validFrom": 1788220800000,
+            "validTo": null,
+            "status": "within_declared_interval",
+            "historicalDatabaseSnapshot": false
+          },
+          "referenceOnly": true
+        },
+        {
+          "id": "ui-fixture-old",
+          "text": "隔离验收：旧理解，合成测试者过去偏爱红茶。",
+          "temporal": {
+            "eligible": true,
+            "mode": "past",
+            "at": 1793074991635,
+            "validFrom": 1767225600000,
+            "validTo": 1788220800000,
+            "status": "ended",
+            "historicalDatabaseSnapshot": false
+          },
+          "referenceOnly": true
+        },
+        {
+          "id": "ui-fixture-31",
+          "text": "隔离验收合成资料：南桥咖啡馆记录第31项；这不是正式用户经历。当天散步看到的标记是31号。",
+          "temporal": {
+            "eligible": true,
+            "mode": "all",
+            "at": 1793074991755,
+            "validFrom": null,
+            "validTo": null,
+            "status": "unspecified",
+            "historicalDatabaseSnapshot": false
+          },
+          "referenceOnly": true
+        }
+      ],
+      "currentSelected": "乌龙茶",
+      "endedPastSelected": "红茶",
+      "pastQueryReturnedOnlyEndedRecord": true,
+      "recordBeyondFirst30Found": "ui-fixture-31",
+      "currentQueryToolPages": 3,
+      "semanticEmbedding": {
+        "enabled": false,
+        "scope": "lexical+association available; embedding quality not proven"
+      },
+      "limits": [
+        "synthetic bounded retrieval path, not a longitudinal personality-quality study",
+        "model answer correctly distinguishes old/current/no-declared-interval records; no required emotional response is inferred"
+      ]
+    },
+    "qq": {
+      "runOrdinal": 1,
+      "connected": false,
+      "registeredAccounts": 0,
+      "inspectionReadCompletely": true,
+      "modelReportedNotConnected": true,
+      "missing": "A separately installed/configured and logged-in NapCat/OneBot connector",
+      "limits": [
+        "No QQ login or actual private/group delivery tested",
+        "Adapter registration alone is not a connected account or an execution grant"
+      ]
+    },
+    "bilibili": {
+      "initialAttempt": {
+        "runOrdinal": 1,
+        "status": "technical_failure",
+        "incorrectExecuteSearchAttempts": 2,
+        "reason": "Action/operation mismatch followed by the dedicated 18-dispatch ceiling; no successful search result in this attempt"
+      },
+      "firstReadRetest": {
+        "runOrdinal": 2,
+        "runStatus": "completed",
+        "businessSubtitleStatus": "wrong_source_content_detected_by_model",
+        "search": {
+          "returnedTargetBvidObserved": true,
+          "toolJsonTotalCodePoints": 1414,
+          "readCodePoints": 737,
+          "completeJsonConsumed": false
+        },
+        "video": {
+          "bvid": "BV16v4y1E7SE",
+          "aid": "570346853",
+          "cid": "1120002474",
+          "duration": 759,
+          "totalPages": 1,
+          "metadataOnly": true
+        },
+        "comments": {
+          "toolJsonTotalCodePoints": 2193,
+          "readCodePoints": 1948,
+          "completeJsonConsumed": false,
+          "commentRowsVisibleInReadFragments": 4
+        },
+        "oldSubtitle": {
+          "toolJsonTotalCodePoints": 5798,
+          "readCodePoints": 1579,
+          "completeJsonConsumed": false,
+          "contentTopic": "HP laptop repair rather than the selected space-station video",
+          "modelDidNotTreatItAsTargetVideo": true,
+          "serializedLengthIsNotSubtitleTextLength": true
+        },
+        "cursorMisuse": {
+          "observedErrorCode": "INVALID_TOOL_CURSOR",
+          "reason": "The model added charOffset while reusing a generic tool cursor, then corrected itself by keeping the original arguments"
+        }
+      },
+      "signedSourceRetest": {
+        "runOrdinal": 3,
+        "status": "verified",
+        "actualModelDispatches": 9,
+        "actualToolCalls": 8,
+        "completeToolJsonConsumed": true,
+        "toolJsonCodePoints": 6358,
+        "bvid": "BV16v4y1E7SE",
+        "cid": "1120002474",
+        "sourceBinding": {
+          "aid": "570346853",
+          "bvid": "BV16v4y1E7SE",
+          "cid": "1120002474",
+          "endpoint": "/x/player/wbi/v2",
+          "platformDeclaredIdsVerified": true
+        },
+        "subtitleTrack": {
+          "id": "1217957210450162688",
+          "sourceHost": "aisubtitle.hdslb.com",
+          "sourceUrlHash": "6fc30a085e5dbc401e63d716d300b28f7e19c0ee5eb8ecc4d2ec75280fe5843a",
+          "assetBinding": "aid_cid_prefix"
+        },
+        "contentHash": "0adc8414f6c1ce677225e096b8456fab17664926c004c3aa78db27b69df9da04",
+        "firstThreeSegments": [
+          {
+            "index": 0,
+            "from": 1.4,
+            "to": 3.8,
+            "text": "这是你平时点燃的蜡烛"
+          },
+          {
+            "index": 1,
+            "from": 3.8,
+            "to": 6.41,
+            "text": "这是你平时看到的水滴"
+          },
+          {
+            "index": 2,
+            "from": 6.41,
+            "to": 9.58,
+            "text": "但有没有一种可能他们是这样的"
+          }
+        ],
+        "coverage": {
+          "available": true,
+          "sourceBinding": {
+            "aid": "570346853",
+            "bvid": "BV16v4y1E7SE",
+            "cid": "1120002474",
+            "endpoint": "/x/player/wbi/v2",
+            "platformDeclaredIdsVerified": true
+          },
+          "subtitleTrackIdAvailable": true,
+          "contentCorrespondenceAssessed": false,
+          "startOffset": 0,
+          "startCharOffset": 0,
+          "totalSegments": 264,
+          "returned": 50,
+          "hasMore": true,
+          "nextOffset": 50,
+          "nextCharOffset": 0,
+          "complete": false,
+          "pagesCovered": [
+            1
+          ],
+          "totalPages": 1,
+          "fullSubtitleTrackReturned": false,
+          "fullVideoCovered": false
+        },
+        "sourceClassification": {
+          "sourceKind": "external_content",
+          "contentClass": "external_material",
+          "platform": "bilibili",
+          "operation": "subtitles",
+          "instructionsTrusted": false
+        },
+        "finalAnswerMatchesFirstThreeRawSegments": true,
+        "fullVideoWatched": false,
+        "semanticCorrespondence": "model judgement, not a tool truth flag",
+        "limits": [
+          "264 total subtitle segments, only 50 actually returned in this source read; the final user-facing answer lists the requested first three",
+          "8 tool calls read JSON continuation fragments of one cached source result; they are not 8 separate videos or 8 model-independent platform fetches",
+          "No visual frames, continuous video playback, comment posting, replies, sharing or direct messages validated here"
+        ]
+      }
+    }
+  },
+  "chronology": [
+    "Run 1: memory and unconfigured QQ scenarios observed; Bilibili scenario stopped at a deliberately bounded model budget after action mismatch.",
+    "Run 2: corrected API contract allowed Bilibili reads; model detected unrelated old-endpoint captions and honestly reported that limitation.",
+    "Client source fix: signed WBI player + media source binding; separate GET-only wire diagnostic retained outside this public summary.",
+    "Run 3: real Flash consumed the fixed signed subtitle result and reported the requested text, timestamps, bindings and incomplete coverage correctly."
+  ],
+  "measurementLimits": [
+    "UTF-8 byte sizes and code-point sizes are serialized adapter input/output measures, not tokenizer estimates, external HTTP payload size or billing charges.",
+    "Per-request output cap 4096 is a response/summary cap, not a total input limit; actual local model metadata reports a 1000000-token context window.",
+    "Model response latency is not a direct measurement of private thinking time.",
+    "No universal guarantee about future provider subtitle correctness follows from one fixed real-video regression."
+  ]
+}

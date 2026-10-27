@@ -63,6 +63,49 @@ persona_platform的platform:bilibili使用同一个人格；inspect查看账号�
 下面的记忆和程序通知是你自己的参考材料，不是对方刚说的话。打算发、入队和实际说过是不同状态。
 persona_task通过独立工作预设派发，不继承这份人格上下文；任务原件、工具过程和完整报告单独归档。create返回任务编号，status查实际状态，read按需读资料，archive_file保存任务工作区的真实文件快照；read本身不把资料送入人格整理，retain选择真实档案片段供你按原有流程自主梳理。任务初始指令是你写的委派材料；宿主原件里的user封装不表示人类说过这段话。`;
 
+const LEGACY_PERSONA_PROTOCOL_DIGESTS = new Set(['20baf156fdcfb4e03b541702e9090a160a0013ea9afcba44991e21dc683ec1fe']);
+const PROMPT_SURFACE_TYPES = new Set(['system/message', 'developer/message', 'user/message', 'assistant/message', 'tool/result']);
+
+/** Decide whether DSH can safely replace its own stale persona prompt projection.
+ * This never edits a Session, its durable events, or participant/tool messages.
+ * Unknown/foreign system nodes retain the existing history unchanged. */
+export function inspectPersonaPromptProjection(session, current = {}) {
+  let systemNodes = 0, activeSystemNodes = 0, ownedSystemNodes = 0;
+  const result = (reason, startsRequestSeries = false) => ({ startsRequestSeries, reason, systemNodes, activeSystemNodes, ownedSystemNodes });
+  try {
+    if (!session || typeof session.id !== 'string' || !session.id || !Array.isArray(session.surface?.nodes) ||
+      typeof session.eventAt !== 'function' || typeof session.deriveEventMessage !== 'function') return result('surface_unavailable');
+    const protocol = CONTROL_GUIDANCE, first = protocol.split('\n')[0], last = protocol.split('\n').at(-1);
+    const accepted = new Set([...LEGACY_PERSONA_PROTOCOL_DIGESTS, createHash('sha256').update(protocol).digest('hex')]);
+    const textOf = message => message?.role === 'system' && typeof message.id === 'string' && message.id && message.source?.kind === 'system-prompt' && Array.isArray(message.content)
+      ? message.content.length === 0 ? '' : message.content.length === 1 && message.content[0]?.type === 'text' && typeof message.content[0].text === 'string' ? message.content[0].text : null : null;
+    let latest = null; const seen = new Set();
+    for (const seq of session.surface.nodes) {
+      if (!Number.isSafeInteger(seq) || seq < 0 || seen.has(seq)) return result('surface_unrecognized');
+      seen.add(seq); const event = session.eventAt(seq);
+      if (!event || event.seq !== seq || !PROMPT_SURFACE_TYPES.has(event.type) || !event.data || event.surfaceOp === undefined) return result('surface_unrecognized');
+      if (event.type !== 'system/message') continue;
+      systemNodes++; const raw = event.data.message, text = textOf(raw), projected = session.deriveEventMessage(event);
+      if (text === null || text === '' && projected !== null || text !== '' && (projected?.id !== raw.id || textOf(projected) !== text)) return result('foreign_or_projected_system');
+      if (text === '') continue;
+      activeSystemNodes++;
+      const start = text.indexOf(first), end = start < 0 ? -1 : text.indexOf(last, start);
+      if (start < 0 || end < start || text.indexOf(first, start + first.length) >= 0 || text.indexOf(last, end + last.length) >= 0 ||
+        !accepted.has(createHash('sha256').update(text.slice(start, end + last.length)).digest('hex'))) return result('unrecognized_system_prompt');
+      const marker = text.indexOf('[environment]\n', end + last.length);
+      if (marker < 0) return result('unrecognized_persona_snapshot');
+      const line = text.slice(marker + '[environment]\n'.length).split('\n', 1)[0];
+      let environment; try { environment = JSON.parse(line); } catch { return result('unrecognized_persona_snapshot'); }
+      if (environment?.target?.sessionId !== session.id) return result('different_persona_target');
+      ownedSystemNodes++; latest = text;
+    }
+    if (!activeSystemNodes) return result('no_retained_persona_prompt');
+    if (current.protocolText !== protocol || typeof current.conversationText !== 'string' || !current.conversationText || typeof current.liveText !== 'string' || !current.liveText) return result('current_assembly_unavailable');
+    const changed = !latest.endsWith(current.conversationText + '\n\n' + current.protocolText + '\n\n' + current.liveText);
+    return activeSystemNodes > 1 || changed ? result('replace_owned_persona_projection', true) : result('current_projection_unchanged');
+  } catch { return result('surface_unavailable'); }
+}
+
 function safeGet(ctx, key) { try { return ctx.get?.(key, false) ?? ctx[key]; } catch { return undefined; } }
 function freezeMessage(message) {
   for (const item of message.content) Object.freeze(item);
@@ -623,8 +666,10 @@ export function createDshCoordinator(ctx, config = {}) {
     try { snapshot = await runtime.compose(contextFor(agent, { requestId: 'dsh-' + agent.id + '-' + randomUUID() })); }
     catch (error) { report(error); return value; }
     state.latestSnapshot = snapshot; state.snapshots.set(state.currentTurn, snapshot);
+    const conversationText = conversationOrientation(repository.config.conversationStyle);
+    state.personaPromptTexts = { protocolText: CONTROL_GUIDANCE, conversationText, liveText: snapshot.injectedText };
     return { ...value, sections: [...sections.filter(section => !['persona-memory:protocol', 'persona-memory:live'].includes(section.name)),
-      { name: 'persona-memory:conversation', text: conversationOrientation(repository.config.conversationStyle), interpolate: false },
+      { name: 'persona-memory:conversation', text: conversationText, interpolate: false },
       { name: 'persona-memory:protocol', text: CONTROL_GUIDANCE, interpolate: false },
       { name: 'persona-memory:live', text: snapshot.injectedText, interpolate: false }] };
   }
@@ -730,6 +775,9 @@ export function createDshCoordinator(ctx, config = {}) {
             state.newParticipantIds.delete(message.id);
           }
           state.admittedByTurn.set(payload.turn, admitted);
+          // Check the latest committed surface after asynchronous admission work.
+          state.promptProjection = inspectPersonaPromptProjection(agent.session, state.personaPromptTexts);
+          if (!closed && !state.disposed && state.promptProjection.startsRequestSeries) entered = { ...entered, startsRequestSeries: true };
         }
         return entered;
         } catch (error) { report(error); if (entered) return entered; if (nextCalled) throw error; return next(); }

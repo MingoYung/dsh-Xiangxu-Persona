@@ -37,9 +37,9 @@ export const TOOL_PARAMETERS = {
     limit: { type: 'integer', minimum: 1, maximum: 20 }, cursor,
   },
   persona_platform: {
-    action: { type: 'string', enum: ['inspect', 'read', 'execute', 'accounts', 'job', 'cancel_job', 'assets'] },
+    action: { type: 'string', enum: ['inspect', 'read', 'execute', 'accounts', 'job', 'cancel_job', 'assets'], description: 'Bilibili: read for search/recommend/video/subtitles/comments/frames; execute for comment/reply/share/message. QQ/WeChat use capability to select their supported read or execute operation; omit the Bilibili operation field.' },
     platform: { type: 'string', enum: ['qq','wechat','bilibili'] },
-    operation: { type: 'string', enum: ['search','recommend','video','subtitles','comments','frames','comment','reply','share','message'] },
+    operation: { type: 'string', enum: ['search','recommend','video','subtitles','comments','frames','comment','reply','share','message'], description: 'Bilibili only. Pair search/recommend/video/subtitles/comments/frames with action:read; pair comment/reply/share/message with action:execute. For QQ/WeChat omit operation and provide capability instead.' },
     keyword: { type: 'string', maxLength: 256 }, limit: { type: 'integer', minimum: 1, maximum: 100 }, offset: { type: 'integer', minimum: 0 }, charOffset: { type: 'integer', minimum: 0 }, next: { type: 'integer', minimum: 0 }, order: { type: 'string', enum: ['totalrank','click','pubdate','dm','stow'] }, num: { type: 'integer', minimum: 1, maximum: 6 },
     commentId: {type:'string',maxLength:32}, contentHash:{type:'string',pattern:'^[a-f0-9]{64}$'}, receiverUid: { type: 'string', maxLength: 20 }, replyId: { type: 'string', maxLength: 32 }, rootId: { type: 'string', maxLength: 32 },
     query: { type: 'string', maxLength: 256 }, bvid: { type: 'string', maxLength: 32 }, cid: { type: 'string', maxLength: 32 },

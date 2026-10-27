@@ -81,6 +81,21 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
           for(let parent=element.parentElement;parent;parent=parent.parentElement){if(/auto|scroll|hidden|clip/.test(getComputedStyle(parent).overflowY)){const bounds=parent.getBoundingClientRect();top=Math.max(top,bounds.top);bottom=Math.min(bottom,bounds.bottom)}}
           channel.port1.postMessage({type:'persona-viewport',top:Math.max(0,Math.min(60000,top-rect.top)),height:Math.max(0,Math.min(60000,bottom-top))});
         }
+        async function revealFrameLocation(offset){
+          if(!Number.isFinite(offset)||offset<0||offset>60000)throw new Error('无效的列表定位');
+          // Wait for the iframe ResizeObserver height to commit in the host before positioning.
+          await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+          if(disposed)return{status:'disposed'};
+          for(let parent=element.parentElement;parent;parent=parent.parentElement){
+            if(/^(auto|scroll)$/.test(getComputedStyle(parent).overflowY)&&parent.scrollHeight>parent.clientHeight){
+              const frameBounds=element.getBoundingClientRect(),bounds=parent.getBoundingClientRect();
+              const top=parent.scrollTop+frameBounds.top+offset-bounds.top-(parent.clientTop||0)-12;
+              parent.scrollTop=Math.max(0,Math.min(parent.scrollHeight-parent.clientHeight,top));sendViewport();
+              return{status:'revealed',appliedTop:parent.scrollTop,requestedTop:offset};
+            }
+          }
+          return{status:'not_scrollable'};
+        }
         function connect(){
           channel?.port1.close();channel?.port2.close();channel=new MessageChannel();
           channel.port1.onmessage=async event=>{
@@ -89,6 +104,10 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
             if(disposed||!message||typeof message.id!=='string'||message.id.length>100||typeof message.action!=='string'||!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(message.action))return;
             const current=channel;
             try{
+              if(message.action==='ui.reveal'){
+                const args=message.args??{};if(Object.keys(args).some(key=>key!=='top'))throw new Error('无效的列表定位');
+                const value=await revealFrameLocation(args.top);if(!disposed&&current===channel)channel.port1.postMessage({id:message.id,ok:true,value});return;
+              }
               if(message.action==='ui.asset.download'||message.action==='ui.audio.download'||message.action==='ui.task.download'){
                 if(downloadInProgress)throw new Error('已有资产正在下载');downloadInProgress=true;try{
                 const args=message.args??{},isTask=message.action==='ui.task.download',isAudio=message.action==='ui.audio.download';
@@ -128,7 +147,7 @@ window.__ModuleLoader__.load({id:${JSON.stringify(pkg.name)},factory:function(re
         window.addEventListener('scroll',sendViewport,true);window.addEventListener('resize',sendViewport);const frameSize=new ResizeObserver(sendViewport);frameSize.observe(element);
         return()=>{disposed=true;observer.disconnect();frameSize.disconnect();scheme.removeEventListener('change',sendTheme);window.removeEventListener('scroll',sendViewport,true);window.removeEventListener('resize',sendViewport);element.removeEventListener('load',connect);channel?.port1.close();channel?.port2.close()};
       },[nonce]);
-      return React.createElement('iframe',{ref:frame,title:'相续人格管理',sandbox:'allow-scripts',style:{display:'block',width:'100%',height:frameHeight+'px',minHeight:0,border:0,background:'transparent'}});
+      return React.createElement('iframe',{ref:frame,title:'相续人格管理',sandbox:'allow-scripts',style:{display:'block',width:'100%',height:frameHeight+'px',minHeight:0,border:0,background:'transparent',overflowAnchor:'none'}});
     }
     ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'persona-memory',order:70,label:()=> '相续人格'},PersonaManagementPage));
   }

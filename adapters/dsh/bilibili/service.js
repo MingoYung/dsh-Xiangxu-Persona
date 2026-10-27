@@ -37,6 +37,18 @@ export function createBilibiliService({ registryPath, storage, fetchImpl = fetch
     try {
       await persistence.acquire?.(); const saved = await persistence.read(); state = saved ? validate(copy(saved)) : { schemaVersion: SCHEMA, enabled: false, credential: null, receipts: [] };
       if (state.receipts.some(receipt => receipt.status === 'prepared')) { const next = { ...state, receipts: state.receipts.map(receipt => receipt.status === 'prepared' ? { ...receipt, status: 'unknown', code: 'BILI_INTERRUPTED_UNKNOWN', updatedAt: clock() } : receipt) }; await persistence.write(validate(next)); state = next; }
+      // An already enabled, authorized account gets one ordinary startup check.
+      // Disabled/unconfigured inspection stays offline; failure does not retry
+      // or prevent the independent persona core from becoming available.
+      if (state.enabled && state.credential && !closing && !lifetime.signal.aborted) {
+        try {
+          const checked = await client.probe(state.credential, lifetime.signal);
+          if (!closing && !closed && !lifetime.signal.aborted) probeStatus = checked;
+        } catch (error) {
+          probeStatus = null;
+          if (!closing && !lifetime.signal.aborted) report(error);
+        }
+      }
       initialized = true;
     } catch (error) { await persistence.release?.().catch(() => {}); const safe = report(error); throw Object.assign(new Error(safe.message), { code: safe.code }); }
   })();
@@ -101,9 +113,9 @@ export function createBilibiliService({ registryPath, storage, fetchImpl = fetch
     let permitted; try { permitted = await authorize({ memoryRoot: context.memoryRoot, platform: 'bilibili', accountId: context.accountId, capability: BILIBILI_OPERATIONS[operation], operation }); } catch { fail('BILI_PERMISSION_DENIED'); }
     if (permitted === false) fail('BILI_PERMISSION_DENIED');
   }
-  function read(args = {}, context) { const requested = copy(args), scoped = contextSnapshot(context); if (!READS.includes(requested.operation)) fail('BILI_OPERATION_UNSUPPORTED'); return queue(async () => { await allowed(requested.operation, scoped); return client.read(requested, state.credential, scoped.signal); }); }
+  function read(args = {}, context) { const requested = copy(args), scoped = contextSnapshot(context); if (!READS.includes(requested.operation)) fail('BILI_OPERATION_UNSUPPORTED', 'Bilibili action:read accepts search/recommend/video/subtitles/comments/frames. Use action:execute for comment/reply/share/message; the request was not rerouted or sent.'); return queue(async () => { await allowed(requested.operation, scoped); return client.read(requested, state.credential, scoped.signal); }); }
   function execute(args = {}, context) {
-    const requested = copy(args), scoped = contextSnapshot(context); if (!WRITES.includes(requested.operation)) fail('BILI_OPERATION_UNSUPPORTED'); id(scoped.deliveryId);
+    const requested = copy(args), scoped = contextSnapshot(context); if (!WRITES.includes(requested.operation)) fail('BILI_OPERATION_UNSUPPORTED', 'Bilibili action:execute accepts comment/reply/share/message. Use action:read for search/recommend/video/subtitles/comments/frames; the request was not rerouted or sent.'); id(scoped.deliveryId);
     return queue(async () => {
       await allowed(requested.operation, scoped);
       const scopeHash = hash([process.platform === 'win32' ? scoped.memoryRoot.toLowerCase() : scoped.memoryRoot, scoped.accountId]), key = hash([scopeHash, scoped.deliveryId]), payloadHash = hash(canonical(requested)), found = state.receipts.find(receipt => receipt.key === key);

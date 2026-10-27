@@ -26,7 +26,11 @@ function videoData(raw) {
 }
 export function createBilibiliClient({ http, clock = Date.now, transformFrames } = {}) {
   let wbi;
-  const getVideo = async (value, auth, signal) => videoData(await http.json('api', '/x/web-interface/view', { bvid: bvid(value) }, { auth, signal }));
+  const getVideo = async (value, auth, signal) => {
+    const requested = bvid(value), result = videoData(await http.json('api', '/x/web-interface/view', { bvid: requested }, { auth, signal }));
+    if (result.bvid !== requested) fail('BILI_VIDEO_IDENTITY_MISMATCH', 'The returned video does not match the requested bvid; no related source was attributed.');
+    return result;
+  };
   async function probe(auth, signal) { const result = await http.json('api', '/x/web-interface/nav', {}, { auth, signal }); if (result.isLogin !== true || String(result.mid) !== auth.accountId) fail('BILI_AUTH_REJECTED'); return { accountId: auth.accountId, name: short(result.uname, 128), connected: true }; }
   async function signed(parameters, auth, signal) {
     if (!wbi || clock() >= wbi.until) {
@@ -54,12 +58,28 @@ export function createBilibiliClient({ http, clock = Date.now, transformFrames }
     const cid = args.cid === undefined ? meta.cid : positiveId(args.cid), page = meta.pages.find(value => value.cid === cid);
     if (cid !== meta.cid && !page) fail('BILI_VIDEO_PAGE_MISMATCH');
     if (operation === 'subtitles') {
-      const player = await http.json('api', '/x/player/v2', { bvid: bv, cid }, { auth, signal }), choices = player.subtitle?.subtitles;
+      // The signed player endpoint binds the subtitle listing to verified media
+      // IDs. The legacy unsigned endpoint can return unrelated subtitle assets
+      // even while echoing the requested IDs, so it is never used as fallback.
+      const player = await http.json('api', '/x/player/wbi/v2', await signed({ aid: meta.aid, bvid: meta.bvid, cid }, auth, signal), { auth, signal });
+      if (String(player.aid) !== meta.aid || player.bvid !== meta.bvid || String(player.cid) !== cid) fail('BILI_VIDEO_PAGE_MISMATCH', 'The player media IDs do not match the selected video page; no subtitle was fetched.');
+      const sourceBinding = { aid: meta.aid, bvid: meta.bvid, cid, endpoint: '/x/player/wbi/v2', platformDeclaredIdsVerified: true };
+      const choices = player.subtitle?.subtitles;
       if (!Array.isArray(choices) || choices.length > 128) fail('BILI_RESPONSE_INVALID');
-      if (!choices.length) return { operation, bvid: bv, cid, segments: [], source: externalSource(operation, bv, clock), coverage: { available: false, complete: false, reason: 'no_platform_subtitle', pagesCovered: [page?.page ?? 1], totalPages: meta.totalPages } };
+      if (!choices.length) return { operation, bvid: bv, cid, segments: [], source: externalSource(operation, bv, clock), coverage: { available: false, complete: false, reason: 'no_platform_subtitle', sourceBinding, pagesCovered: [page?.page ?? 1], totalPages: meta.totalPages } };
       const chosen = choices.find(value => ['ai-zh', 'zh-CN', 'zh'].includes(value.lan)) ?? choices[0];
-      const target = trustedUrl(chosen.subtitle_url, ['hdslb.com', 'bilibili.com'], http.localBases), response = await http.raw(target, { signal, image: true }), document = (() => { try { return JSON.parse(response.bytes.toString('utf8')); } catch { fail('BILI_RESPONSE_INVALID'); } })();
+      const target = trustedUrl(chosen.subtitle_url, ['hdslb.com', 'bilibili.com'], http.localBases);
+      const namedAsset = /^\/bfs\/ai_subtitle\/prod\/([a-f0-9]+)(?:\.json)?$/i.exec(target.pathname), expectedPrefix = meta.aid + cid;
+      const encodedMediaIds = Boolean(namedAsset && /^[0-9]+[a-f0-9]{32}$/i.test(namedAsset[1])), assetMediaMatches = Boolean(namedAsset && namedAsset[1].startsWith(expectedPrefix) && namedAsset[1].length === expectedPrefix.length + 32);
+      if (encodedMediaIds && !assetMediaMatches) fail('BILI_SUBTITLE_SOURCE_MISMATCH', 'The declared AI subtitle asset belongs to different media IDs; no subtitle was fetched.');
+      const rawTrackId = chosen.id_str ?? chosen.id;
+      const trackId = typeof rawTrackId === 'string' && /^[0-9]{1,32}$/.test(rawTrackId) ? rawTrackId : Number.isSafeInteger(rawTrackId) && rawTrackId > 0 ? String(rawTrackId) : null;
+      const response = await http.raw(target, { signal, image: true }), document = (() => { try { return JSON.parse(response.bytes.toString('utf8')); } catch { fail('BILI_RESPONSE_INVALID'); } })();
       if (!object(document) || !Array.isArray(document.body) || document.body.length > 20000) fail('BILI_RESPONSE_INVALID');
+      const contentHash = hash(response.bytes);
+      if (args.contentHash !== undefined && args.contentHash !== contentHash) fail('BILI_SOURCE_CHANGED', 'The subtitle source changed; restart its paged read rather than joining different versions.');
+      const subtitleTrack = { id: trackId, sourceHost: target.host, sourceUrlHash: hash(target.href),
+        assetBinding: encodedMediaIds && assetMediaMatches ? 'aid_cid_prefix' : 'not_encoded' };
       let offset = integer(args.offset, 0, 0, document.body.length), charOffset = integer(args.charOffset, 0, 0, LIMITS.responseBytes), remaining = LIMITS.resultChars;
       const startOffset = offset, startCharOffset = charOffset, limit = integer(args.limit, 50, 1, 100), segments = [];
       while (offset < document.body.length && segments.length < limit && remaining > 0) {
@@ -69,7 +89,7 @@ export function createBilibiliClient({ http, clock = Date.now, transformFrames }
         if (end < item.content.length) { charOffset = end; break; } offset++; charOffset = 0;
       }
       const hasMore = offset < document.body.length;
-      return { operation, bvid: bv, cid, language: short(chosen.lan, 64), languageName: short(chosen.lan_doc, 64), segments, source: externalSource(operation, bv, clock), coverage: { available: true, startOffset, startCharOffset, totalSegments: document.body.length, returned: segments.length, hasMore, nextOffset: hasMore ? offset : null, nextCharOffset: hasMore ? charOffset : null, complete: startOffset === 0 && startCharOffset === 0 && !hasMore, pagesCovered: [page?.page ?? 1], totalPages: meta.totalPages, fullSubtitleTrackReturned: startOffset === 0 && startCharOffset === 0 && !hasMore, fullVideoCovered: false } };
+      return { operation, bvid: bv, cid, language: short(chosen.lan, 64), languageName: short(chosen.lan_doc, 64), segments, contentHash, subtitleTrack, source: externalSource(operation, bv, clock), coverage: { available: true, sourceBinding, subtitleTrackIdAvailable: trackId !== null, contentCorrespondenceAssessed: false, startOffset, startCharOffset, totalSegments: document.body.length, returned: segments.length, hasMore, nextOffset: hasMore ? offset : null, nextCharOffset: hasMore ? charOffset : null, complete: startOffset === 0 && startCharOffset === 0 && !hasMore, pagesCovered: [page?.page ?? 1], totalPages: meta.totalPages, fullSubtitleTrackReturned: startOffset === 0 && startCharOffset === 0 && !hasMore, fullVideoCovered: false } };
     }
     if (operation === 'comments') {
       const limit = integer(args.limit, 20, 1, 20), root = args.root === undefined ? null : positiveId(args.root), pn = integer(args.page, 1, 1, 1000), cursor = integer(args.next, 0, 0, 1000000);
