@@ -18,7 +18,7 @@ async function admit(root) {
 
 /** Host lifecycle only. No autonomous personality decisions are created here. */
 export function createInstanceManager({ initialRoot, config={}, createCoordinator, registryPath, onLoaded=async()=>{}, onStarted=async()=>{}, onStopping=async()=>{}, beforeMaintenance=async()=>{}, isBusy=()=>false,
-  lifecycleClock=Date.now, lifecycleUnlink=fs.unlink }) {
+  lifecycleClock=Date.now, lifecycleUnlink=fs.unlink, maintenanceOptions={} }) {
   const firstRoot=path.resolve(initialRoot), location=registryPath??path.join(path.dirname(firstRoot),path.basename(firstRoot)+'.instances.json');
   let registry, active=null, activeId=null, closed=false, lastError=null, tail=Promise.resolve();
   const queue=work=>{const result=tail.then(work);tail=result.catch(()=>{});return result;};
@@ -100,10 +100,10 @@ export function createInstanceManager({ initialRoot, config={}, createCoordinato
       if(wasActive){await capture(item);await stop();}
       let result,error;
       try {
-        if(kind==='validate')result=await validateMemoryRoot(item.memoryRoot);
-        if(kind==='backup')result=await createBackup({root:item.memoryRoot,destination:await rootPath(args.destination)});
-        if(kind==='restore')result=await restoreBackup({root:item.memoryRoot,source:await rootPath(args.source)});
-        if(kind==='recover')result=await recoverRestore({root:item.memoryRoot});
+        if(kind==='validate')result=await validateMemoryRoot(item.memoryRoot,maintenanceOptions);
+        if(kind==='backup')result=await createBackup({...maintenanceOptions,root:item.memoryRoot,destination:await rootPath(args.destination)});
+        if(kind==='restore')result=await restoreBackup({...maintenanceOptions,root:item.memoryRoot,source:await rootPath(args.source)});
+        if(kind==='recover')result=await recoverRestore({...maintenanceOptions,root:item.memoryRoot});
       }catch(failure){error=failure;}
       // Validate/backup resume the exact previously loaded instance. Restore and
       // recovery remain stopped: reopening may release saved timers/model work.

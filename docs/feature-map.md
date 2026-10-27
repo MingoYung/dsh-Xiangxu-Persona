@@ -1,6 +1,6 @@
 # 十四模块实现映射
 
-本表说明代码落点；当前0.10.0增量见[接入与检索说明](integrations-and-retrieval.md)，0.9.0及更早测试保留历史范围。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
+本表说明代码落点；当前0.11.0的个人QQ受管向导见[操作与验收](qq-one-click-setup.md)，0.10.0检索／平台与0.10.1界面／上下文验收保留各自历史范围。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |
 |---|---|---|
@@ -142,3 +142,7 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 | 自备动态／翻唱 | channels/social-provider.js、audio-transfers.js、persona_platform与owner面板 | 用户自备协议服务；真实音频与有界作业，不自动部署或付费重放 |
 
 以上是运行接口与代码映射，不代替真实账号或供应商验收；最终范围统一见[0.10.0 接入与检索说明](integrations-and-retrieval.md)。
+
+## 0.11.0 个人QQ接入消费者
+
+受管NapCat准备与扫码留在DSH connections适配层；channels沿用户确认的默认自主社交或可选指定对象范围、真实账号与原生binding收发，支持NapCat原生HMAC事件验签。管理桥提供qqBridgeSetup.inspect/start/poll/connect/stop，权限仍由permissions按实例／平台／账号核对。它不增加第十五个人格模块或第二套记忆，不增加关注、回复、主动和成长规则。当前实际通过范围见[最终验收](qq-one-click-setup.md#0110-final-acceptance)。

@@ -66,10 +66,16 @@ function knownFile(name) {
     || /^people\/[A-Za-z0-9_-]{1,160}\/(?:identity|index|codes|impression|pending|state)\.json$/.test(name)
     || /^people\/[A-Za-z0-9_-]{1,160}\/(?:stream|hot)\.jsonl$/.test(name)
     || /^journal\/runs\/[A-Za-z0-9_-]{1,160}\.json$/.test(name)
-    || /^\.wal\/[a-f0-9]{64}\.json$/.test(name);
+    || /^\.wal\/[a-f0-9]{64}\.json$/.test(name)
+    || name === 'extensions/qq-account/index.json'
+    || /^extensions\/qq-account\/queries\/qqquery-[a-f0-9]{32}\.json$/.test(name)
+    || /^extensions\/qq-account\/\.wal\/[a-f0-9]{64}\.json$/.test(name)
+    || /^extensions\/qq-account\/receipts\/qqop-[a-f0-9]{32}\/(?:00000[0-9]|0000[1-5][0-9]|00006[0-4])\.json$/.test(name);
 }
 const knownDirectory = name => ['meta', 'self', 'global', 'identity', 'voice', 'ops', 'operator', 'staging', 'people', 'journal', 'journal/runs', '.wal', 'extensions', 'extensions/qq-social'].includes(name)
-  || /^people\/[A-Za-z0-9_-]{1,160}$/.test(name);
+  || /^people\/[A-Za-z0-9_-]{1,160}$/.test(name)
+  || ['extensions/qq-account','extensions/qq-account/queries','extensions/qq-account/receipts','extensions/qq-account/.wal'].includes(name)
+  || /^extensions\/qq-account\/receipts\/qqop-[a-f0-9]{32}$/.test(name);
 export async function hashManagedFile(root, relative) {
   await safeInstanceRoot(root);
   const file = path.resolve(root, relative);
@@ -99,7 +105,7 @@ export async function scanManagedText(root, items, instanceId, protectedFiles = 
       if (info.isSymbolicLink()) fail('INSTANCE_PATH', '目录包含链接或目录联接，未开始清除');
       if (info.isDirectory()) { if (!knownDirectory(name)) fail('INSTANCE_CLEAR_UNKNOWN_FILE', '人格目录中有不属于受管文本库的目录，未开始清除'); await safeInstanceRoot(path.join(root, name)); await visit(name); continue; }
       if (!info.isFile()) fail('INSTANCE_CLEAR_UNKNOWN_FILE', '人格目录中有未知文件类型，未开始清除');
-      if (['writer.lock','extensions/qq-social/state.json.writer.lock'].includes(name)) continue; // Active owner removes its own lock on close; it is never unlinked here.
+      if (['writer.lock','extensions/qq-social/state.json.writer.lock','extensions/qq-account/writer.lock'].includes(name)) continue; // Active owner removes its own lock on close; it is never unlinked here.
       if (!knownFile(name)) fail('INSTANCE_CLEAR_UNKNOWN_FILE', '人格目录中有不属于受管文本库的文件，未开始清除');
       if (files.length >= INSTANCE_LIMITS.files) fail('INSTANCE_CLEAR_CAPACITY', '文件数量超过安全清除预览容量');
       const item = await hashManagedFile(root, name); files.push(item); bytes += item.bytes;
@@ -126,7 +132,7 @@ export async function acquireClearGate(root) {
   return { async release() { try { const owner = JSON.parse(await readInstanceMetadata(file, 65536)); if (owner.token === token) await fs.unlink(file); } catch (error) { if (error.code !== 'ENOENT') throw error; } } };
 }
 export async function requireNoWriter(root) {
-  for(const name of ['writer.lock','extensions/qq-social/state.json.writer.lock']) {
+  for(const name of ['writer.lock','extensions/qq-social/state.json.writer.lock','extensions/qq-account/writer.lock']) {
     try { await fs.lstat(path.join(root, name)); fail('INSTANCE_WRITER_ACTIVE', '人格或扩展服务的写入锁仍存在，未开始清除；请先确认实例已停用'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }

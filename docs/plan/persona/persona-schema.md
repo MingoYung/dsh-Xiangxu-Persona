@@ -1,10 +1,10 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.10.1兼容扩展集中在第22节：混合候选检索、有效时间、参考诊断与可选平台。第20／21节自我档案和生命周期继续有效；历史证据不自动提升为本轮验收。
+当前0.11.0兼容扩展在第23／24节：受管QQ准备／扫码／授权与独立账号工具、完整档案和通用维护端口。第20／21节自我档案和生命周期、第22节检索与可选平台继续有效；历史证据不自动提升为本轮验收。
 
-> 0.10.1当前维护：字段沿用persona-memory/3；UI／真实模型／平台只读与上下文投影增量统一见[本轮说明](../../ui-retrieval-context-validation.md)，不把旧测试数字提升为本轮验收。
+> 0.11.0当前维护：受管连接见persona-schema第23节；独立QQ账号工具、完整档案和通用维护扩展见第24节及[QQ账号操作](../../qq-account-operations.md)。源码接线、正式宿主加载、真人收件与操作者诊断分层，以[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)为准；0.10.1及更早证据保留历史范围。
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.10.1 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.11.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -658,17 +658,17 @@ validationError可含responseText:{format:"text_fragment",text,fragment:{from:0,
 
 ### 14.1 平台配置、环境与owner管理
 
-owner管理action为channels.status/configure/start/stop/probe/rotateIngress/capabilities、connections.status/start/poll/cancel/disconnect、permissions.inspect/configure/list/reset，以及voice.inspect/registerCatalog/configure/preview。管理页“聊天渠道与语音”，官方QQBot／微信iLink扫码为主入口，已有兼容桥参数默认折叠为高级配置；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
+owner管理action为channels.status/configure/start/stop/probe/rotateIngress/capabilities、connections.status/start/poll/cancel/disconnect、permissions.inspect/configure/list/reset，以及voice.inspect/registerCatalog/configure/preview。当前管理页“连接 → QQ”以个人QQ受管准备与扫码为默认向导，官方QQBot与已有兼容桥为次级方式；微信iLink保持自己的私聊扫码；mobile网页管理不在本版主入口挂载，实验说明单独留在[未来网页接口](../../mobile-chat-and-voice.md)。
 
 ChannelProfile固定两项：{id/platform:'qq',protocol:'onebot11'}和{id/platform:'wechat',protocol:'onebot12'}。config={mode:'official'|'bridge',apiUrl:string,accountId:string,accessToken:string,allowedPrivateIds:string[],allowedGroupIds:string[],voiceMode:'text'|'both'|'voice',allowRemote:boolean}。初值disabled，接入列表空、voiceMode:text、allowRemote:false。空API令牌配置保留旧值；clearAccessToken:true明确清除，不能同时提交新值。status只返回hasAccessToken/hasIngressToken，不回显令牌。
 
-API默认只接受本机/私网字面地址或localhost；远程API必须明确allowRemote且HTTPS，不允许URL凭据、query令牌或fragment。独立桥回调默认127.0.0.1:17654、默认无listener，路径/channels/{qq|wechat}/events，Bearer只存SHA；生成/旋转只返回一次明文，读body后排队时再次核当前hash。Host/Origin、JSON和64KiB正文帽分别验证，没有通用RPC转发或个人网页连接。
+API默认只接受本机/私网字面地址或localhost；远程API必须明确allowRemote且HTTPS，不允许URL凭据、query令牌或fragment。独立桥回调默认127.0.0.1:17654、默认无listener，路径/channels/{qq|wechat}/events，Bearer模式只存SHA；0.11.0另有明确onebot-hmac模式保留本机专用HMAC secret，以便对原始字节验签，普通status不回显。生成/旋转只返回一次明文，排队时再次核当前hash／模式。Host/Origin、JSON和64KiB正文帽分别验证，没有通用RPC转发或个人网页连接。
 
 ChannelFacts={platform,accountId,conversation:{id,type:'private'|'group'},sender:{id,name?}}，另保留源消息ID、平台sourceAt、宿主receivedAt、textComplete与未读消息段事实。OneBot只把实际text段作为原话，不从CQ码、昵称、alt_message或媒体占位猜文字。专用binding按memoryRoot/代次/platform/account/room/actor稳定生成xiangxu-social-<hash>，关系personId仍由人格选择。
 
 ### 14.2 去重、外发与生命周期
 
-独立登记schemaVersion=xiangxu-channels/1，与人格备份分离；最多1MiB，bindings最多128，scope列表各256项、串行队列32、最近未接入对象/群元数据8项，登记不保存聊天正文。API访问令牌只在本机受限文件，入站鉴权只保存哈希。
+独立登记schemaVersion=xiangxu-channels/1，与人格备份分离；最多1MiB，bindings最多128，scope列表各256项、串行队列32、最近未接入对象/群元数据8项，登记不保存聊天正文。API访问令牌只在本机受限文件；Bearer入站仅保存哈希，明确选择的NapCat HMAC模式额外保留专用secret，状态不回显。
 
 入站先保存prepared回执，再执行native create/send/flush；稳定源ID由platform/account/messageId生成，原文只留hash于外部回执。保存native模型路由仅provider/model/reasoningEffort/maxTokens，不保存密钥。native已接收但终态落盘失败返回unknown；冷恢复prepared转unknown，不自动付费重放。
 
@@ -702,7 +702,7 @@ xiangxu-connections/1最多两个平台档案、1MiB；传输上限来自CONNECT
 
 能力目录保留chat.text、chat.image、chat.video、chat.file、chat.voice、chat.sticker、message.reply、message.retract、contacts.read、groups.read、friend.manage、group.manage、profile.update、feed.read、feed.publish、feed.react、call.voice、call.video；0.10.0兼容增加chat.mention、message.read、message.forward.read与media.cover。它们是能力目录，当前call.*仍未实现；0.10.0的feed.*、media.cover、chat.mention、message.read、message.forward.read按第22节的实际适配／服务核对；系统表情与自定义表情包、视频文件与实时视频通话分别核实，不能凭勾选宣布支持。
 
-persona_platform action=inspect|execute|accounts，可选capability、真实target、assetId、text、messageId、stickerId与结果cursor。inspect读取当前目标支持／许可／可用；execute校验实际原生binding、当前实例／账号、接入范围、driver、用户授权与真实资产，再调用有限平台动作，不读取任意路径或泛化客户端控制。外发prepared／unknown不自动重放；微信ret=0但无远程messageId时以client_id标注API接受回执种类，不虚构平台消息ID或用户已读。具体实现事实见[渠道接入](../../channel-integration.md)。
+本节普通聊天分支persona_platform action=inspect|execute|accounts，可选capability、真实target、assetId、text、messageId、stickerId与结果cursor；0.11.0独立QQ账号scope:account分支另见第24节，不套用聊天target要求。inspect读取当前目标支持／许可／可用；execute校验实际原生binding、当前实例／账号、接入范围、driver、用户授权与真实资产，再调用有限平台动作，不读取任意路径或泛化客户端控制。外发prepared／unknown不自动重放；微信ret=0但无远程messageId时以client_id标注API接受回执种类，不虚构平台消息ID或用户已读。具体实现事实见[渠道接入](../../channel-integration.md)。
 
 ## 15. 形象、媒体服务与资产技术契约（0.5.0）
 
@@ -1059,3 +1059,47 @@ QQ OneBot11扩展chat.mention、message.read、message.forward.read和安全rich
 media.cover和QQ feed.*使用用户自备xiangxu-social-provider/1。配置分别含feed/cover的baseUrl/apiKey/allowRemote/accountId、同源probe/read/publish/react或submit/poll/cancel路径、model/targetVoice和明确downloadOrigins；不存在即不可用。作业保存真实requestId、目标／内容指纹、状态和来源，音频资产存真实bytes/mime/SHA与来源，导入经有界分块和整件校验。未确认不自动重交；取消本机等待不冒充远端取消。人格记什么仍自主选择。受管extensions/qq-social/state.json计入实例文本清除，库外音频、账号凭据、任务原件和备份不属于该删除清单；来源撤销另核永久撤销表并报告远端未删除边界。
 
 owner动作和各服务具体响应以[接口补充](api-surface.md#0100-检索与可选平台接口)和[本轮说明](../../integrations-and-retrieval.md)为消费说明。2970仍是动态snapshot总帽，参考不等于回忆；本节字段校验不代替本轮最终运行／真实账号验收。
+
+## 23. 个人QQ一键准备与受管连接（0.11.0）
+
+本节定义DSH受管连接兼容扩展，persona-memory/3与八工具保持兼容；本轮核心另有第24节通用维护端口增量，平台代码仍不进入核心。默认QQ页面提供个人QQ／NapCat，官方Bot与已有OneBot桥仍可明确选择。Windows x64受管安装检查真实QQ安装，固定官方NapCat Shell版本、字节与SHA，独立保存downloads、versions和runtime；runtime的config/cache/logs不属于人格文本。既有QQ安装包不被替换，不将正常QQ用户数据当成只读；实际平台登录仍由本人手机扫码确认。
+
+owner动作qqBridgeSetup.inspect/start/poll/connect/stop使用当前实例选择，可通过flowId继续同一任务。phase为not_installed|installing|starting|waiting_login|authorized|configuring|connected|failed|stopped；扫码已接受与实际QQ核心在线分别核实，不能只按进度显示connected。owner可得到本次QR内容与实际账号线索，管理前端不取得WebUI密码、临时Credential、OneBot token或事件secret；诊断不回显。具体通俗步骤与真实验收在[操作说明](../../qq-one-click-setup.md)。
+
+connect之前核对当前已加载人格和QQ实际账号，并由本人确认接入。个人QQ受管向导默认自主社交：allowedPrivateIds与allowedGroupIds均为['*']，授权该独立QQ的私聊与群聊；不要求逐个指定社交对象。用户也可切换指定对象作为可选隐私／测试范围；该模式空列表仍表示未接入。此处扩展第14节手动桥初值，不把准备或扫码本身当作渠道已启用。范围只控制平台通路，不规定人格的注意、联系对象、是否尝试加好友、认人、亲密关系、回复、主动、记忆或睡眠。仍沿实际实例、平台、账号、room和actor记录原件与回执，不把外部ID当personId。
+
+channels.rotateIngress({id,authMode})默认bearer；onebot-hmac仅支持OneBot11。记录沿xiangxu-channels/1兼容扩展：ingressHash仍用于轮换核验，HMAC模式额外保存ingressHmacSecret；status返回ingressAuthMode而不返回secret，rotate仅在本次操作返回ingressToken。NapCat HTTP Client发送x-signature:sha1=<HMAC-SHA1 hex>，签名覆盖准确的原始JSON字节，接收端在64KiB帽内保留原始body验签后解析，并在排队执行前核轮换。Host／Origin、真实self_id、实例／账号和范围核验继续有效，不能关闭鉴权、把secret塞URL或将HMAC误当Bearer。
+
+受管恢复只沿已成功connect、同实例／同memoryRoot且channel仍enabled的记录，不自动下载、不扩大范围或切换账号。人工stop清除恢复意愿，并停止DSH通道、禁用本应用的OneBot网络项、结束可证归属的启动句柄；不能证实QQ子进程全树退出时返回需人工关闭或停止未确认事实，不按QQ.exe名称结束所有进程。平台凭据和原生进程状态与人格记忆分离，停止不会清除人格文本。
+
+好友申请分两项能力：NapCat固定版本已有set_friend_add_request处理真实入站申请，但插件尚未接入申请事件与执行；公开OneBot仍无主动申请action。原创原生适配器的friend.query／friend.request契约已核并在源码接线，不能以此宣称所有好友管理已实现。主动申请字段、版本、原始档案与验收见[第24节](#24-独立qq账号工具与维护扩展0110)及[账号操作](../../qq-account-operations.md)。
+
+本节只定义技术契约；实际安装、本人扫码、正式人格接入、私聊与群聊回执及停止恢复分别见[0.11.0最终验收](../../qq-one-click-setup.md#0110-final-acceptance)，未完成不预填成功，不改变第14节中未被本节兼容扩展的其它渠道规则。
+
+## 24. 独立QQ账号工具与维护扩展（0.11.0）
+
+本节保持persona-memory/3与八工具兼容，在persona_platform内增加scope:account、platform:qq分支；普通聊天分支继续沿真实target／binding执行。账号操作不要求先有人发来消息，不伪造target、入站事件或人物归属。一次许可friend.query／friend.request后，查询谁、是否申请、验证文字、人物associate与记什么仍由人格自主选择，不逐次交回人工审批。friend.manage仍表示未接线的入站申请处理。
+
+~~~ts
+interface QQAccountTool {
+  scope: "account";
+  platform: "qq";
+  action: "inspect" | "read" | "execute";
+  accountOperation?: "friend.query" | "friend.options" | "friend.request" | "friend.status" | "receipts" | "receipt";
+  accountId?: string; userId?: string; targetRef?: string; optionsRef?: string;
+  text?: string; receiptId?: string; limit?: number; pageCursor?: string;
+  offset?: number; maxChars?: number;
+}
+~~~
+
+inspect核真实账号与原生能力；read分别执行friend.query／friend.options／friend.status／receipts／receipt，execute仅friend.request。operationId取宿主可信工具编号，不允许模型填写；当前memoryRoot、实例和实际账号取宿主可信上下文。账号操作拒绝聊天target，不进入普通聊天delivered投影；sourceSessionId／sourceRefs／sourceRecordIds保留实际工具来源，humanDialogue:false、bindingCreated:false，不自动写人格记忆。
+
+查询回传targetRef与optionsRef，绑定实例／根／账号／bootId及expiresAt；旧引用可回查原件，不能在重启或换号后直接执行。当前支持按已核原生回调保留身份字段，包括合法空UID；不将OneBot UID跨填原生字段，不猜source枚举或验证码。结果状态prepared／unknown／submitted／accepted／failed／unsupported；submitted仅已核提交，accepted需实际friend_list关系确认。未知结果只核同一receiptId，相同宿主操作编号不获得第二次原生提交机会。
+
+原生运行协议xiangxu-qq-native/1，当前ABI qq-win-53644-req-to-friend/1，仅精确Windows QQ wrapper与固定NapCat bundle哈希支持。原创loader捕获官方启动所用同一会话，不修改厂商bundle、QQ文件或allowlist。私有配置／令牌仅在适配层；getNativeRuntime内部核marker／boot／账号／owned进程树及认证inspect后提供描述符，设置页不回显。停止、换号、旧boot／PID失配或离线如实不可用；普通OneBot聊天不因原生能力缺失停止。
+
+人格内extensions/qq-account使用xiangxu-qq-account/1：index.json含instanceId／revision／receipts／queries，queries/qqquery-<32hex>.json保存完整查询，receipts/qqop-<32hex>/000000.json保留准备原文，000001至000064为不可变状态修订；JsonStore的writer.lock与.wal是技术元数据。容量唯一见QQ_ACCOUNT_LIMITS：索引2MiB、记录256KiB、2048收据／2048查询、每收据64修订、总64MiB；列表最多50条／页、正文每次8000 Unicode字符。原始记录保留完整信息，超限拒新操作，不静默淘汰旧收据。
+
+core维护可选extensionValidator({path,value,kind:'content'|'writerLock'})，仅返回true才接纳扩展；validateMemoryRoot／validateBackup／createBackup／restoreBackup／recoverRestore及恢复完成链均传递同端口，缺省严格拒未知扩展。DSH只认精确qq-account与既有qq-social路径／结构，nested WAL核文件名、digest及每条entry，active nested writer拒维护；停止排空并releaseRoot后才允许校验、备份、恢复或明确清除。精确清除仍有20000文件／256MiB扫描帽；库外共享native journal、凭据、作品和备份排除。
+
+本轮验收仅同人格原目录backup／restore；receipt标识含原root与instance，跨人格／换根迁移未实现，不盲改不可变原件。库外native journal另有跨进程prepare锁和严格2048项容量；崩溃残锁不按时间自动回收，确认旧writer已停后才可受控技术修复。CONTROL_GUIDANCE本轮增加API用法与事实回执说明，核心新增通用维护端口，未加人格频率或价值裁决。源码接线、操作者诊断、真人聊天收件与正式工具实测分层见[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)。

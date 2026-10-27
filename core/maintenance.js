@@ -54,7 +54,7 @@ async function syncWrite(file, value) {
   finally { await handle.close(); }
   try { await atomicReplaceWithRetry(temp, file); } catch (e) { await fs.unlink(temp).catch(() => {}); throw e; }
 }
-async function scan(root, maxBytes) {
+async function scan(root, maxBytes, extensionValidator) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) fail('INVALID_CAPACITY', 'maxBytes must be a positive safe integer');
   await noLinks(root); const files = []; let totalBytes = 0;
   async function visit(relative) {
@@ -65,6 +65,13 @@ async function scan(root, maxBytes) {
       if (entry.isDirectory()) { await visit(name); continue; }
       if (!entry.isFile()) fail('UNSUPPORTED_FILE', 'Unexpected non-file in memory root');
       if (name === 'writer.lock' || name === MARKER || name.includes('.tmp-')) continue;
+      if (name.endsWith('/writer.lock') || name.endsWith('.writer.lock')) {
+        const value = await json(inside(root, name));
+        if (typeof extensionValidator !== 'function' || await extensionValidator({ path: name, value, kind: 'writerLock' }) !== true) fail('UNSUPPORTED_FILE', 'Unknown extension writer lock: ' + name);
+        if (!Number.isSafeInteger(value?.pid) || value.pid < 1) fail('INVALID_MEMORY', 'Extension writer lock is invalid');
+        try { process.kill(value.pid, 0); fail('WRITER_LOCKED', 'Stop extension writers before maintenance'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+        continue;
+      }
       const data = await fs.readFile(inside(root, name));
       totalBytes += data.length; if (totalBytes > maxBytes) fail('BACKUP_CAPACITY', 'Selected memory exceeds maxBytes');
       files.push({ path: name, bytes: data.length, sha256: sha(data) });
@@ -72,7 +79,7 @@ async function scan(root, maxBytes) {
   }
   await visit(''); files.sort((a, b) => a.path.localeCompare(b.path)); return { files, totalBytes };
 }
-async function validateContent(root, files) {
+async function validateContent(root, files, extensionValidator) {
   const required = ['config.json', 'meta/state.json', 'self/persona.json', 'global/state.json'];
   for (const name of required) if (!files.some((f) => f.path === name)) fail('INVALID_MEMORY', 'Missing required memory file: ' + name);
   let preparedWal = 0;
@@ -82,6 +89,11 @@ async function validateContent(root, files) {
     const values = file.path.endsWith('.jsonl') ? text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line)) : [JSON.parse(text)];
     for (const value of values) {
       if (file.path === SELF_PROFILE_PATH) { validateSelfProfile(value); continue; }
+      if (file.path.startsWith('extensions/')) {
+        if (typeof extensionValidator !== 'function' || await extensionValidator({ path: file.path, value, kind: 'content' }) !== true) fail('SCHEMA_UNSUPPORTED', 'Unsupported extension in ' + file.path);
+        if (file.path.includes('/.wal/') && value.state === 'prepared') preparedWal++;
+        continue;
+      }
       if (value && typeof value === 'object' && value.schemaVersion && value.schemaVersion !== SCHEMA_VERSION) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema in ' + file.path);
       if (file.path === 'config.json') validateConfig(value);
       else if (file.path === 'self/persona.json') validatePersona(value);
@@ -104,18 +116,18 @@ async function validateContent(root, files) {
   }
   return { preparedWal };
 }
-export async function validateMemoryRoot(root, { maxBytes = DEFAULT_MAX } = {}) {
+export async function validateMemoryRoot(root, { maxBytes = DEFAULT_MAX, extensionValidator } = {}) {
   root = await noLinks(root);
   if (await activeWriter(root)) fail('WRITER_LOCKED', 'Stop the memory writer before maintenance');
-  const result = await scan(root, maxBytes); const details = await validateContent(root, result.files);
+  const result = await scan(root, maxBytes, extensionValidator); const details = await validateContent(root, result.files, extensionValidator);
   return { schemaVersion: SCHEMA_VERSION, root, ...result, ...details };
 }
-export async function validateBackup(source, { maxBytes = DEFAULT_MAX } = {}) {
+export async function validateBackup(source, { maxBytes = DEFAULT_MAX, extensionValidator } = {}) {
   source = await noLinks(source); const manifest = await json(path.join(source, 'manifest.json'));
   if (manifest.backupFormat !== FORMAT || manifest.schemaVersion !== SCHEMA_VERSION || !Array.isArray(manifest.files)) fail('INVALID_BACKUP', 'Unsupported backup manifest');
-  const dataRoot = path.join(source, 'data'); const actual = await scan(dataRoot, maxBytes);
+  const dataRoot = path.join(source, 'data'); const actual = await scan(dataRoot, maxBytes, extensionValidator);
   if (JSON.stringify(actual.files) !== JSON.stringify(manifest.files) || actual.totalBytes !== manifest.totalBytes) fail('BACKUP_CHECKSUM', 'Backup contents do not match manifest');
-  await validateContent(dataRoot, actual.files); return { ...manifest, source, dataRoot };
+  await validateContent(dataRoot, actual.files, extensionValidator); return { ...manifest, source, dataRoot };
 }
 async function copyFiles(from, to, files) {
   await fs.mkdir(to, { recursive: true });
@@ -177,7 +189,7 @@ async function sanitizeSelfProfile(root, meta) {
   const stored = await json(file), result = redactSelfProfile(stored, meta);
   if (result.changed) await syncWrite(file, validateSelfProfile({ ...result.profile, version: stored.version + 1, updatedAt: Date.now() }));
 }
-async function carryRevocations(currentRoot, candidate, maxBytes) {
+async function carryRevocations(currentRoot, candidate, maxBytes, extensionValidator) {
   const current = await json(path.join(currentRoot, 'meta', 'state.json'));
   const ids = new Set(current.revokedIds ?? []), roots = new Set(current.revokedSources ?? []);
   if (!ids.size && !roots.size) return;
@@ -204,8 +216,8 @@ async function carryRevocations(currentRoot, candidate, maxBytes) {
     }
     return next;
   };
-  for (const file of (await scan(candidate, maxBytes)).files) {
-    if (file.path.startsWith('.wal/') || file.path === 'meta/state.json') continue;
+  for (const file of (await scan(candidate, maxBytes, extensionValidator)).files) {
+    if (file.path.startsWith('.wal/') || file.path === 'meta/state.json' || file.path.startsWith('extensions/')) continue;
     if (file.path === SELF_PROFILE_PATH) { await sanitizeSelfProfile(candidate, candidateMeta); continue; }
     if (file.path.startsWith('journal/runs/')) {
       const run = await json(inside(candidate, file.path)); delete run.input; delete run.candidatePatch; delete run.validationError; delete run.attemptRecordedAt; delete run.reviewState; delete run.progressUpdatedAt; run.validatedPatch = [];
@@ -241,11 +253,11 @@ async function carryRevocations(currentRoot, candidate, maxBytes) {
     await syncWrite(destination, combined.map((value) => JSON.stringify(value)).join('\n') + (combined.length ? '\n' : ''));
   }
 }
-async function sanitizeTemporaryDependencies(candidate, maxBytes) {
+async function sanitizeTemporaryDependencies(candidate, maxBytes, extensionValidator) {
   const metaPath = path.join(candidate, 'meta', 'state.json'), meta = await json(metaPath);
   if (!(meta.revokedSources?.length || meta.revokedIds?.length || meta.invalidatedHotContextGroups?.length)) return;
   await sanitizeSelfProfile(candidate, meta);
-  const files = (await scan(candidate, maxBytes)).files, hotFiles = new Map(), runs = [];
+  const files = (await scan(candidate, maxBytes, extensionValidator)).files, hotFiles = new Map(), runs = [];
   for (const file of files) {
     if (/^(people\/[^/]+\/hot|staging\/hot)\.jsonl$/.test(file.path)) {
       const rows = (await fs.readFile(inside(candidate, file.path), 'utf8')).split(/\r?\n/).filter(Boolean).map(JSON.parse);
@@ -277,7 +289,7 @@ async function sanitizeTemporaryDependencies(candidate, maxBytes) {
     state.version++; state.updatedAt = Date.now(); await syncWrite(file, state);
   }
 }
-export async function createBackup({ root, destination, maxBytes = DEFAULT_MAX, clock = Date.now, fault } = {}) {
+export async function createBackup({ root, destination, maxBytes = DEFAULT_MAX, clock = Date.now, fault, extensionValidator } = {}) {
   root = await noLinks(root); destination = await noLinks(destination); separate(root, destination);
   if (!await exists(root)) fail('INVALID_MEMORY', 'Backup source memory root does not exist');
   const gate = await acquireGate(root); let store, candidate;
@@ -287,13 +299,13 @@ export async function createBackup({ root, destination, maxBytes = DEFAULT_MAX, 
     const deployment = await store.readJson('config.json');
     maxBytes = Math.min(maxBytes, deployment.retention.backupMaxBytes);
     if (maxBytes <= 0) fail('BACKUP_CAPACITY', 'Deployment backupMaxBytes disables backup storage');
-    const snapshot = await scan(root, maxBytes); await validateContent(root, snapshot.files);
+    const snapshot = await scan(root, maxBytes, extensionValidator); await validateContent(root, snapshot.files, extensionValidator);
     await fs.mkdir(path.dirname(destination), { recursive: true });
     candidate = destination + '.candidate-' + randomUUID(); await fs.mkdir(candidate, { recursive: false });
     await syncWrite(path.join(candidate, MARKER), { schemaVersion: SCHEMA_VERSION, kind: 'candidate', root });
     await copyFiles(root, path.join(candidate, 'data'), snapshot.files);
     const manifest = { backupFormat: FORMAT, schemaVersion: SCHEMA_VERSION, createdAt: typeof clock === 'function' ? clock() : clock.now(), files: snapshot.files, totalBytes: snapshot.totalBytes };
-    await syncWrite(path.join(candidate, 'manifest.json'), manifest); await validateBackup(candidate, { maxBytes }); await fault?.('backup_candidate_ready');
+    await syncWrite(path.join(candidate, 'manifest.json'), manifest); await validateBackup(candidate, { maxBytes, extensionValidator }); await fault?.('backup_candidate_ready');
     const previous = destination + '.previous';
     if (await exists(destination)) {
       if (!await backupMarker(destination)) fail('UNMANAGED_TARGET', 'Backup destination is not a managed backup');
@@ -306,12 +318,14 @@ export async function createBackup({ root, destination, maxBytes = DEFAULT_MAX, 
     if (candidate && await exists(candidate)) await removeManaged(candidate, path.dirname(destination), async (dir) => await backupMarker(dir) || await candidateMarker(dir, root));
   }
 }
-async function fingerprint(root, maxBytes) { return sha(JSON.stringify((await scan(root, maxBytes)).files)); }
-async function finishRestore(root, journal, gate, fault, maxBytes) {
+async function fingerprint(root, maxBytes, extensionValidator) { return sha(JSON.stringify((await scan(root, maxBytes, extensionValidator)).files)); }
+async function finishRestore(root, journal, gate, fault, maxBytes, extensionValidator) {
   const { candidate, rollback, hadRoot, candidateHash, oldHash } = journal;
+  if (await exists(candidate)) await validateContent(candidate, (await scan(candidate, maxBytes, extensionValidator)).files, extensionValidator);
   if (await exists(root)) {
-    const currentHash = await fingerprint(root, maxBytes);
+    const currentHash = await fingerprint(root, maxBytes, extensionValidator);
     if (currentHash === candidateHash && (journal.phase === 'installed' || await candidateMarker(root, root))) {
+      await validateContent(root, (await scan(root, maxBytes, extensionValidator)).files, extensionValidator);
       await fs.unlink(path.join(root, MARKER)).catch((e) => { if (e.code !== 'ENOENT') throw e; });
       await fs.unlink(gate.journal); return { root, rollback: hadRoot ? rollback : null, recovered: true };
     }
@@ -322,16 +336,16 @@ async function finishRestore(root, journal, gate, fault, maxBytes) {
     await syncWrite(path.join(rollback, MARKER), { schemaVersion: SCHEMA_VERSION, kind: 'rollback', root });
     journal.phase = 'root_moved'; await syncWrite(gate.journal, journal); await fault?.('after_root_moved');
   } else if (hadRoot && !await exists(rollback)) fail('RESTORE_AMBIGUOUS', 'Original root and rollback are both missing');
-  if (!await exists(candidate) || (await fingerprint(candidate, maxBytes)) !== candidateHash) fail('BACKUP_CHECKSUM', 'Restore candidate changed');
+  if (!await exists(candidate) || (await fingerprint(candidate, maxBytes, extensionValidator)) !== candidateHash) fail('BACKUP_CHECKSUM', 'Restore candidate changed');
   await fs.rename(candidate, root);
   journal.phase = 'installed'; await syncWrite(gate.journal, journal); await fault?.('after_candidate_installed');
-  await validateContent(root, (await scan(root, maxBytes)).files);
+  await validateContent(root, (await scan(root, maxBytes, extensionValidator)).files, extensionValidator);
   await fs.unlink(path.join(root, MARKER)); await fs.unlink(gate.journal);
   return { root, rollback: hadRoot ? rollback : null, recovered: journal.phase !== 'prepared' };
 }
-export async function restoreBackup({ root, source, maxBytes = DEFAULT_MAX, fault } = {}) {
+export async function restoreBackup({ root, source, maxBytes = DEFAULT_MAX, fault, extensionValidator } = {}) {
   root = await noLinks(root); source = await noLinks(source); separate(root, source);
-  const backup = await validateBackup(source, { maxBytes });
+  const backup = await validateBackup(source, { maxBytes, extensionValidator });
   const backupConfig = await json(path.join(backup.dataRoot, 'config.json'));
   let configuredLimit = backupConfig.retention.backupMaxBytes;
   if (await exists(path.join(root, 'config.json'))) {
@@ -345,12 +359,12 @@ export async function restoreBackup({ root, source, maxBytes = DEFAULT_MAX, faul
     if (await exists(gate.journal)) fail('RESTORE_PENDING', 'Recover the previous restore first');
     const hadRoot = await exists(root);
     if (hadRoot) { store = await offlineStore(root, gate.token); await store.close(); store = null; }
-    const oldHash = hadRoot ? await fingerprint(root, maxBytes) : null;
+    const oldHash = hadRoot ? await fingerprint(root, maxBytes, extensionValidator) : null;
     candidate = root + '.candidate-' + randomUUID(); await fs.mkdir(candidate);
     await syncWrite(path.join(candidate, MARKER), { schemaVersion: SCHEMA_VERSION, kind: 'candidate', root });
     await copyFiles(backup.dataRoot, candidate, backup.files);
-    if (hadRoot) await carryRevocations(root, candidate, maxBytes);
-    await sanitizeTemporaryDependencies(candidate, maxBytes);
+    if (hadRoot) await carryRevocations(root, candidate, maxBytes, extensionValidator);
+    await sanitizeTemporaryDependencies(candidate, maxBytes, extensionValidator);
     // A historical queued send may already have occurred after the backup. Require reconciliation.
     const outbox = path.join(candidate, 'global', 'outbox.jsonl');
     if (await exists(outbox)) {
@@ -359,17 +373,17 @@ export async function restoreBackup({ root, source, maxBytes = DEFAULT_MAX, faul
       await syncWrite(outbox, rows.map((record) => JSON.stringify(record)).join('\n') + (rows.length ? '\n' : ''));
     }
     await syncWrite(path.join(candidate, MARKER), { schemaVersion: SCHEMA_VERSION, kind: 'candidate', root });
-    await validateContent(candidate, (await scan(candidate, maxBytes)).files);
-    const candidateHash = await fingerprint(candidate, maxBytes);
+    await validateContent(candidate, (await scan(candidate, maxBytes, extensionValidator)).files, extensionValidator);
+    const candidateHash = await fingerprint(candidate, maxBytes, extensionValidator);
     const journal = { schemaVersion: SCHEMA_VERSION, root, candidate, rollback: gate.rollback, hadRoot, oldHash, candidateHash, maxBytes, phase: 'prepared' };
     await syncWrite(gate.journal, journal); journalWritten = true; await fault?.('after_restore_prepared');
-    return await finishRestore(root, journal, gate, fault, maxBytes);
+    return await finishRestore(root, journal, gate, fault, maxBytes, extensionValidator);
   } finally {
     await store?.close(); await releaseGate(gate);
     if (!journalWritten && candidate && await exists(candidate)) await removeManaged(candidate, gate.parent, (dir) => candidateMarker(dir, root));
   }
 }
-export async function recoverRestore({ root, maxBytes = DEFAULT_MAX, fault } = {}) {
+export async function recoverRestore({ root, maxBytes = DEFAULT_MAX, fault, extensionValidator } = {}) {
   root = await noLinks(root); const gate = await acquireGate(root);
   try {
     if (!await exists(gate.journal)) return { root, recovered: false, status: 'no_pending_restore' };
@@ -378,7 +392,7 @@ export async function recoverRestore({ root, maxBytes = DEFAULT_MAX, fault } = {
       !same(path.dirname(journal.candidate), gate.parent) || !path.basename(journal.candidate).startsWith(path.basename(root) + '.candidate-')) fail('INVALID_RESTORE_JOURNAL', 'Restore journal paths are invalid');
     await noLinks(journal.candidate); await noLinks(journal.rollback);
     maxBytes = Math.min(maxBytes, journal.maxBytes ?? DEFAULT_MAX);
-    return await finishRestore(root, journal, gate, fault, maxBytes);
+    return await finishRestore(root, journal, gate, fault, maxBytes, extensionValidator);
   } finally { await releaseGate(gate); }
 }
 export const exportMemory = createBackup;

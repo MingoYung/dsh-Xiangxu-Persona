@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "xiangxu-qq-live-evidence/1",
+  "checkedAt": "2026-10-27T13:16:07.786Z",
+  "formalInstanceUnchanged": true,
+  "privateBindings": 1,
+  "groupBindings": 1,
+  "inboundAccepted": 2,
+  "outboundDelivered": 2,
+  "outcomeUnknown": 0,
+  "modelTurns": 2,
+  "modelErrors": 0,
+  "modelRoutes": [
+    {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "reasoningEffort": "high"
+    }
+  ],
+  "recipientConfirmedPrivateReply": true,
+  "recipientConfirmedGroupReply": true,
+  "groupIsThreePeopleAsReportedByUser": true,
+  "diagnosticFriendRequest": {
+    "nativeCalls": 3,
+    "successfulNativeReceipts": 1,
+    "automaticReplay": false,
+    "recipientConfirmedReceivedAndAccepted": true,
+    "platformRateWarningReported": true,
+    "platformCountingRulesKnown": false,
+    "testingStopped": true
+  },
+  "productionNativeToolTested": false,
+  "limits": [
+    "Real social round trips precede the new account-tool deployment; later source changes must be revalidated separately.",
+    "No additional real friend request will be sent; existing relationship is preserved.",
+    "Nickname and account identity variants are isolated tests, not a claim that multiple real humans were identified."
+  ],
+  "productionNativeRuntimeTested": true,
+  "productionNativeRuntime": {
+    "officialOriginalSessionCaptured": true,
+    "authenticatedProtocolBootAndAccountMatched": true,
+    "ready": true,
+    "friendQueryAvailable": true,
+    "friendRequestAvailable": true,
+    "incomingFriendRespondAvailable": false,
+    "operatorReadOnlyQueryConfirmedExistingFriend": true,
+    "additionalFriendRequestSent": false,
+    "formalPersonaCapabilityGrantApplied": [
+      "friend.query",
+      "friend.request"
+    ],
+    "nativeSettingsPageConfirmedReady": true
+  },
+  "productionNativeToolScope": "The account-scoped persona_platform call by a real model remains pending; an operator client read is recorded separately."
+}

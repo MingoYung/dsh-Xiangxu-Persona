@@ -1,8 +1,8 @@
 # 本批修订与文档一致性核验
 
-本轮文档同步针对0.10.0检索／QQ丰富消息／B站／可选协议服务；字段、执行、镜像与历史证据分开核对，不新增人格干预规则。
+本轮文档同步针对0.11.0受管QQ、独立账号工具和维护扩展；字段／消费者／真实证据分开核对，正式宿主加载后的工具测试尚待完成，不新增人格干预规则。
 
-> 0.10.1当前维护：字段沿用persona-memory/3；UI／真实模型／平台只读与上下文投影增量统一见[本轮说明](../../ui-retrieval-context-validation.md)，不把旧测试数字提升为本轮验收。
+> 0.11.0当前维护：受管连接见persona-schema第23节；独立QQ账号工具、完整档案和通用维护扩展见第24节及[QQ账号操作](../../qq-account-operations.md)。源码接线、正式宿主加载、真人收件与操作者诊断分层，以[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)为准；0.10.1及更早证据保留历史范围。
 
 修订日期：2026-10-27。当前设计版本：`persona-memory/3`。第1至4节保留方案修订的核验范围，第5节记录随后实际实现与验证。软件执行通过和长期人格质量分开报告。
 
@@ -176,3 +176,17 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 ## 0.10.1 当前核验入口
 
 新增文档核对选择框、分页和异步实例保护、同flow扫码／中文许可、一次启动核实与同源系统投影范围；当前／过去／第31项和QQ未配置场景、B站只读结果以[本轮最终验收](../../ui-retrieval-context-validation.md#本轮最终验收)记录为准。未增加人格规则，未将动态参考字节估计、压缩摘要输出或保留尾部写成整包token上限。
+
+## 0.11.0 QQ文档同步核验
+
+本批将个人QQ默认入口统一为受管NapCat准备、本人扫码、默认自主社交（私聊／群均['*']）并接入当前正式人格，指定对象范围可选；官方Bot和已有桥保留次级路径。字段第23节、owner接口、架构与通俗操作同步，HMAC与旧Bearer区分，停止未证和同实例恢复不扩范围分别说明。主计划加persona十三份共十四份继续镜像到原reports位置；正文保持一致，本地链接按两套目录精确重定位后核对。
+
+本批现有文件固定改前备份在C:/Users/Administrator/DSH/backup/persona-qq-live-latest/docs，包含SHA清单；新增操作说明无伪造旧备份。结构／本地链接／镜像与备份SHA核查回执由本批work/persona-qq-live/docs维护，不能将文档检查当作真实安装、登录或收发通过。唯一[0.11.0最终验收](../../qq-one-click-setup.md#0110-final-acceptance)由执行方回填，0.10.1历史验收文件不改。
+
+## 0.11.0 独立账号与维护文档核验
+
+主计划、persona-schema第24节、架构、API、gaps、README、用户／管理／渠道说明及qq-account-operations保持同一契约：persona_platform scope:account不伪造binding；friend.query／friend.request一次许可、自主选择，friend.manage仍未接线；操作档案是技术材料，不自动人格记忆。CONTROL_GUIDANCE本轮新增API说明，core本轮新增通用extensionValidator维护端口，不能沿用旧版“全部核心未变”。
+
+当前真实证据统一见[公开QQ记录](../../verification/0.11.0-qq-live.json)与[验收表](../../qq-one-click-setup.md#0110-final-acceptance)：私聊／群各一次、真实模型两轮、三次受控原生调用仅最后一次提交成功且用户收到通过。三人群只一位发言者，改名／换号等未冒称多人真人实测。最终full已1161/1161通过，见[完整回归](../../verification/0.11.0-tests.json)；正式工具部署后验收仍待回填，不能用本地全量代替。
+
+文档核验只检查现行术语、相对链接、围栏和证据边界，不把它当模型、平台或长期人格效果验收；本轮stage文档由root负责再同步原reports镜像，不自行修改真实repo或历史回执。

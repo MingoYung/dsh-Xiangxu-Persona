@@ -2,6 +2,8 @@
 
 目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。本目录提供收录材料，不表示已向收录仓库发起申请或已获收录。
 
+0.11.0当前增加个人QQ受管准备与扫码，默认自主社交接入该独立QQ的私聊与群聊，指定对象范围可选；真实安装、本人登录、正式人格接入、收发与停止分别见[本轮最终验收](qq-one-click-setup.md#0110-final-acceptance)。以下旧版说明和数字保留历史含义，不作为本轮申请所需的实际平台证据。
+
 依据：[awesome-dsh-plugin 贡献指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)，核对日期2026-10-26。
 
 插件根package.json同时声明dsh.bundle和dsh.client；cordis.patch.yml提供协调器与可选相续人格预设，ui/client.js是预构建的宿主客户端。0.8.0沿用DSH原生主题，以五个主入口和任务式子页管理既有能力，包括可演化的深刻记忆参考、默认关闭的整理资料助手、账号与社交身份目录、persona_task自主委派、独立工作预设与任务档案、陪伴工具范围、QQ官方Bot／微信iLink扫码、已有OneBot高级接入、实际能力权限、本机语音、形象档案及可选图片／视频服务。图片／视频默认关闭，视频需用户实际可运行的ComfyUI工作流。QQ扫码不是桌面个人账号接管；微信官方只支持私聊，朋友圈、实时通话和官方WAV语音发送未实现。0.10.0交付时没有本人真实扫码、真实平台往返或付费媒体生成验收；0.10.1的B站本人扫码与仅feed.read只读范围另见[当前验收](ui-retrieval-context-validation.md)，不据此宣称平台外发通过。个人移动端应用／网页与Telegram仍留接口，不在本版发布入口。安装不要求新增前端依赖或自动启动模型，不复制宿主或其它插件。

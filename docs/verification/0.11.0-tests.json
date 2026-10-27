@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "xiangxu-test-verification/1",
+  "version": "0.11.0",
+  "scope": "isolated source snapshot; no real QQ or model calls",
+  "startedAt": "2026-10-27T13:18:38.591Z",
+  "finishedAt": "2026-10-27T13:21:17.289Z",
+  "durationMs": 158697,
+  "exitCode": 0,
+  "counts": {
+    "tests": 1161,
+    "pass": 1161,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "todo": 0
+  },
+  "changedDuringRun": [],
+  "logSha256": "d50d16bde5277dc47daedc7eda8af8b40b7c3797db94493da4ccb243c0890035",
+  "sourceFilesChecked": 184,
+  "limits": [
+    "Isolated source regression with mocks and loopback fixtures; no real QQ native execution or paid model calls in this run.",
+    "Includes the final nickname-refresh and native-journal admission changes.",
+    "Production native-account tool deployment and real-runtime verification remain separate.",
+    "Final run follows newline/trailing-whitespace cleanup in eight newly introduced files; no behavior change."
+  ]
+}

@@ -5,11 +5,26 @@ const fail = (code, message) => { throw Object.assign(new Error(message), { code
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** Owner-only composition behind the existing native DSH management route. */
-export function createPersonaSurfaces({ management, channels, connections, permissions, social, bilibili, speech, mobile, getCoordinator }) {
+export function createPersonaSurfaces({ management, channels, connections, permissions, social, bilibili, speech, mobile, qqBridgeSetup, qqAccounts, getCoordinator }) {
   if (typeof management?.dispatch !== 'function' || typeof getCoordinator !== 'function') throw new TypeError('Management and current coordinator ports are required');
   return {
     async dispatch(action, args = {}) {
       if (!object(args)) fail('BAD_MANAGEMENT_REQUEST', 'An argument object is required');
+      if (action.startsWith('qqAccount.')) {
+        if (!qqAccounts) fail('QQ_ACCOUNT_UNAVAILABLE', '个人 QQ 账号操作尚未就绪');
+        const method = action.slice(10);
+        if (!['inspect', 'read'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', '账号管理面板只提供状态和资料读取');
+        if (method === 'read' && !['receipts','receipt','friend.status'].includes(args.accountOperation)) fail('BAD_MANAGEMENT_REQUEST', '请选择账号操作记录或状态');
+        return qqAccounts[method](args);
+      }
+      if (action.startsWith('qqBridgeSetup.')) {
+        if (!qqBridgeSetup) fail('QQ_SETUP_UNAVAILABLE', '个人QQ一键连接组件尚未就绪');
+        const method = action.slice(14);
+        if (!['inspect', 'start', 'poll', 'connect', 'stop'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown QQ setup action');
+        const result = await qqBridgeSetup[method](args);
+        if (result?.qrContent) { try { return { ...result, qrDataUrl: createLoginQr(result.qrContent) }; } catch { return { ...result, qrDataUrl: null, qrUnavailable: true }; } }
+        return result;
+      }
       if (action.startsWith('channels.')) {
         if (!channels) fail('CHANNEL_UNAVAILABLE', '聊天渠道服务尚未就绪');
         const method = action.slice(9);

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { atomicReplaceWithRetry } from '../../../core/store.js';
 import { createOneBotClient, decodeOneBotEvent } from './onebot.js';
 import { CAPABILITY_IDS, capabilities as capabilityMap, normalizedEvent } from '../connections/common.js';
@@ -56,6 +56,7 @@ function validateRegistry(value) {
     const selected = value.profiles.filter(profile => profile?.id === id);
     if (selected.length !== 1 || selected[0].platform !== id || selected[0].protocol !== (id === 'qq' ? 'onebot11' : 'onebot12') || typeof selected[0].enabled !== 'boolean' || selected[0].ingressHash !== null && !/^[0-9a-f]{64}$/.test(selected[0].ingressHash) || !Array.isArray(selected[0].recentExcluded) || selected[0].recentExcluded.length > CHANNEL_LIMITS.excluded) fail('CHANNEL_REGISTRY_INVALID', '渠道档案无效');
     configuration(selected[0].config);
+    if (selected[0].ingressHmacSecret !== undefined && (typeof selected[0].ingressHmacSecret !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(selected[0].ingressHmacSecret) || hash(selected[0].ingressHmacSecret) !== selected[0].ingressHash)) fail('CHANNEL_REGISTRY_INVALID', '渠道签名凭据无效');
     if (selected[0].generation !== undefined && (!Number.isSafeInteger(selected[0].generation) || selected[0].generation < 0)) fail('CHANNEL_REGISTRY_INVALID', '渠道代次无效');
   }
   const sessions = new Set();
@@ -174,7 +175,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
         status: suspended && selected.enabled ? 'suspended' : !selected.enabled ? 'disabled' : connected ? 'connected' : last?.status ?? 'disconnected',
         error: last?.code ? { code: last.code, message: '本地桥未确认连接，请检查桥运行状态、账号和鉴权。' } : null,
         capabilities: { private: connected, group: connected && (selected.platform === 'qq' || capabilities.group === true), text: connected && capabilities.text !== false, voice: connected && capabilities.voice === true && speech.supported === true }, chatTypes: official && selected.id === 'wechat' ? ['private'] : ['private', 'group'],
-        config: Object.fromEntries(Object.entries(selected.config).filter(([key]) => key !== 'accessToken')), hasAccessToken: Boolean(selected.config.accessToken), hasIngressToken: Boolean(selected.ingressHash), callbackUrl: callbackUrl(selected.id), recentExcluded: clone(selected.recentExcluded), currentInstance: root ?? null,
+        config: Object.fromEntries(Object.entries(selected.config).filter(([key]) => key !== 'accessToken')), hasAccessToken: Boolean(selected.config.accessToken), hasIngressToken: Boolean(selected.ingressHash), ingressAuthMode: selected.ingressHmacSecret ? 'onebot-hmac' : 'bearer', callbackUrl: callbackUrl(selected.id), recentExcluded: clone(selected.recentExcluded), currentInstance: root ?? null,
         driverRequired: !official, livePlatformVerified: false };
     }), listener: { running: Boolean(listener), host: '127.0.0.1', port: livePort }, voice: { supported: speech.supported === true, provider: speech.provider ?? null, catalog: { voices: speech.voices ?? [] }, capabilities: speech.capabilities ?? {} }, limits: { ...CHANNEL_LIMITS }, extensions: { telegram: 'reserved', mobileWeb: 'reserved' } };
   }
@@ -190,7 +191,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     return new Promise((resolve, reject) => {
       let size = 0, chunks = [], done = false;
       request.on('data', chunk => { if (done) return; size += chunk.length; if (size > CHANNEL_LIMITS.bodyBytes) { done = true; chunks = []; reject(failure('CHANNEL_BODY_CAPACITY', '渠道事件超过64KiB')); } else chunks.push(chunk); });
-      request.once('end', () => { if (done) return; done = true; try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(failure('CHANNEL_EVENT_INVALID', '渠道事件不是有效JSON')); } });
+      request.once('end', () => { if (done) return; done = true; resolve(Buffer.concat(chunks)); });
       request.once('error', () => { if (!done) { done = true; reject(failure('CHANNEL_REQUEST_ABORTED', '渠道事件读取中断')); } });
     });
   }
@@ -206,9 +207,13 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       const selected = profile(match[1]), authorization = request.headers.authorization;
       if (selected.config.mode === 'official') fail('CHANNEL_TRANSPORT_MISMATCH', '此渠道已选择官方连接，不接收兼容桥回调');
       const incoming = typeof authorization === 'string' && authorization.startsWith('Bearer ') ? hash(authorization.slice(7)) : null;
-      if (!selected.ingressHash || !incoming || !timingSafeEqual(Buffer.from(selected.ingressHash), Buffer.from(incoming))) fail('CHANNEL_AUTH_REQUIRED', '渠道事件鉴权失败');
-      const payload = await body(request), result = await queue(() => {
-        if (profile(selected.id).ingressHash !== incoming) fail('CHANNEL_AUTH_REQUIRED', '渠道事件令牌已经更新');
+      const signature = request.headers['x-signature'], hmac = !incoming && selected.protocol === 'onebot11' && selected.ingressHmacSecret;
+      if (!selected.ingressHash || (incoming ? !timingSafeEqual(Buffer.from(selected.ingressHash), Buffer.from(incoming)) : !hmac || typeof signature !== 'string' || !/^sha1=[a-fA-F0-9]{40}$/.test(signature) || String(request.headers['x-self-id'] ?? '') !== selected.config.accountId)) fail('CHANNEL_AUTH_REQUIRED', '渠道事件鉴权失败');
+      const raw = await body(request);
+      if (hmac && !timingSafeEqual(createHmac('sha1', hmac).update(raw).digest(), Buffer.from(signature.slice(5), 'hex'))) fail('CHANNEL_AUTH_REQUIRED', '渠道事件签名无效');
+      let payload; try { payload = JSON.parse(raw.toString('utf8')); } catch { fail('CHANNEL_EVENT_INVALID', '渠道事件不是有效JSON'); }
+      const authorizedHash = selected.ingressHash, result = await queue(() => {
+        if (profile(selected.id).ingressHash !== authorizedHash || hmac && profile(selected.id).ingressHmacSecret !== hmac) fail('CHANNEL_AUTH_REQUIRED', '渠道事件令牌已经更新');
         return ingest(selected.id, payload);
       }); reply(response, 200, result);
     } catch (error) {
@@ -225,7 +230,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   }
   async function configure({ id, config } = {}) { return queue(async () => { await ready; const selected = profile(id); if (selected.enabled) fail('CHANNEL_STOP_BEFORE_CONFIG', '请先停用此渠道再修改接入配置'); const next = configuration(config, selected.config); if (next.mode !== 'official' && next.apiUrl && next.accountId) createOneBotClient({ platform: selected.platform, protocol: selected.protocol, ...next }); const changedIdentity = (selected.config.mode ?? 'bridge') !== next.mode || selected.config.accountId !== next.accountId; await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, config: next, ...(changedIdentity ? { generation: (value.generation ?? 0) + 1 } : {}) } : value), bindings: changedIdentity ? registry.bindings.map(value => value.profileId === id ? { ...value, retired: true } : value) : registry.bindings }); clients.delete(id); probes.delete(id); return status(); }); }
   async function probe({ id } = {}) { return queue(async () => { await ready; await runProbe(profile(id)); return status(); }); }
-  async function rotateIngress({ id } = {}) { return queue(async () => { await ready; const selected = profile(id), value = randomBytes(32).toString('base64url'); await save({ ...registry, profiles: registry.profiles.map(item => item.id === id ? { ...item, ingressHash: hash(value) } : item) }); return { callbackUrl: callbackUrl(selected.id), ingressToken: value }; }); }
+  async function rotateIngress({ id, authMode = 'bearer' } = {}) { return queue(async () => { await ready; const selected = profile(id); if (!['bearer', 'onebot-hmac'].includes(authMode) || authMode === 'onebot-hmac' && selected.protocol !== 'onebot11') fail('CHANNEL_BAD_CONFIG', '此渠道不支持所选上报鉴权方式'); const value = randomBytes(32).toString('base64url'); await save({ ...registry, profiles: registry.profiles.map(item => { if (item.id !== id) return item; const { ingressHmacSecret, ...rest } = item; return { ...rest, ingressHash: hash(value), ...(authMode === 'onebot-hmac' ? { ingressHmacSecret: value } : {}) }; }) }); return { callbackUrl: callbackUrl(selected.id), ingressToken: value, authMode }; }); }
   async function start({ id, port: selectedPort } = {}) { return queue(async () => {
     await ready; const selected = profile(id), coordinator = await current();
     if (selectedPort !== undefined) {
@@ -264,10 +269,16 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     const root = coordinator.memoryRoot, generation = registry.generations.find(value => sameRoot(value.memoryRoot, root))?.value ?? 0;
     const facts = { platform: event.platform, accountId: event.accountId, conversation: event.conversation, sender: event.sender }, stable = hash([normalizedRoot(root), generation, facts.platform, facts.accountId, facts.conversation.type, facts.conversation.id, facts.sender.id, ...(selected.generation ? [selected.generation] : [])]);
     let binding = registry.bindings.find(value => value.sessionId === 'xiangxu-social-' + stable.slice(0, 32));
+    const guardIntake = async () => { const live = await current(); if (!sameRoot(live.memoryRoot, root) || !sameRoot(root, boundRoot) || suspended || closed || !profile(id).enabled) fail('CHANNEL_INSTANCE_CHANGED', '人格实例或当前渠道已经切换，事件未继续派发'); };
     const sourceId = 'im-' + hash([event.platform, event.accountId, event.message.id, ...(normalized ? ['official'] : [])]), receiptId = hash([normalizedRoot(root), 'inbound', sourceId]), textHash = event.rich?.hasStructuredContent ? hash({ text:event.message.text,rich:event.rich }) : hash(event.message.text);
     const previous = registry.receipts.find(value => value.id === receiptId);
     if (previous) { if (previous.textHash !== textHash) fail('CHANNEL_MESSAGE_CONFLICT', '同一平台消息ID不能替换原文'); return { status: previous.status === 'prepared' ? 'unknown' : previous.status, accepted: previous.status === 'accepted', duplicate: true, messageId: previous.messageId }; }
     if (!binding && registry.bindings.length >= CHANNEL_LIMITS.bindings) fail('CHANNEL_BINDING_CAPACITY', '渠道会话登记已达到128条技术上限');
+    if (binding) {
+      if (binding.facts.platform !== facts.platform || binding.facts.accountId !== facts.accountId || binding.facts.conversation.type !== facts.conversation.type || binding.facts.conversation.id !== facts.conversation.id || binding.facts.sender.id !== facts.sender.id) fail('CHANNEL_BINDING_MISMATCH', '通道稳定来源与本次实际发言者不符');
+      // Display clues may change; stable routing and all prior message originals remain untouched.
+      binding = { ...binding, facts: clone(facts) };
+    }
     binding ??= { profileId: id, sessionId: 'xiangxu-social-' + stable.slice(0, 32), memoryRoot: root, facts: clone(facts), generation, retired: false, createdAt: clock(), outboundWatermark: -1, inboundFloorAt: -1 };
     const receipt = { id: receiptId, kind: 'inbound', sessionId: binding.sessionId, messageId: sourceId, textHash, status: 'prepared', at: clock(), sourceAt: event.message.createdAt };
     const next = compact(clone(registry));
@@ -276,14 +287,20 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       next.profiles = next.profiles.map(value => value.id === id ? { ...value, recentExcluded: [...value.recentExcluded, { senderId: event.sender.id, ...(event.conversation.type === 'group' ? { groupId: event.conversation.id } : {}), at: clock(), code: 'CHANNEL_EVENT_OUTSIDE_DEDUPE_WINDOW' }].slice(-CHANNEL_LIMITS.excluded) } : value);
       await save(next); fail('CHANNEL_EVENT_OUTSIDE_DEDUPE_WINDOW', '此事件早于已保留去重窗口，未接收且没有送入模型');
     }
-    if (!next.bindings.some(value => value.sessionId === binding.sessionId)) next.bindings.push({ ...binding, inboundFloorAt: previousFloor }); next.receipts.push(receipt); await save(next);
+    if (!next.bindings.some(value => value.sessionId === binding.sessionId)) next.bindings.push({ ...binding, inboundFloorAt: previousFloor });
+    else next.bindings = next.bindings.map(value => value.sessionId === binding.sessionId ? { ...value, facts: clone(binding.facts) } : value);
+    next.receipts.push(receipt); await guardIntake(); await save(next);
     try {
+      await guardIntake();
       const native = await channelPort.create(clone(binding));
+      await guardIntake();
       if (native?.agentOptions) {
         binding = { ...binding, agentOptions: retainedRoute(native.agentOptions) };
         await save({ ...registry, bindings: registry.bindings.map(value => value.sessionId === binding.sessionId ? { ...value, agentOptions: binding.agentOptions } : value) });
       }
+      await guardIntake();
       const incoming = event.rich?.hasStructuredContent ? await incomingMediaPort?.prepare(event,{client:client(selected).value,binding,config:selected.config}) : null;
+      await guardIntake();
       await channelPort.send(clone(binding), { messageId: sourceId, text: event.message.text, ...(incoming ? { structured: incoming } : event.rich?.hasStructuredContent ? { structured: { rich:event.rich,derived:[],images:[] } } : {}), sourceFacts: { ...clone(facts), messageId: event.message.id, sourceMessageId: event.message.id, sourceAt: event.message.createdAt, textComplete: event.textComplete, ...(event.unsupportedSegments ? { unsupportedSegments: event.unsupportedSegments } : {}) } });
     } catch (error) {
       const safe = report(error);

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "xiangxu-document-verification/1",
+  "version": "0.11.0",
+  "scope": "Current production and staged documentation; 14 original reports mirrors verified after link relocation",
+  "files": {
+    "README.md": {
+      "beforeSha256": "7b9ba9a85b2151783f48eb4bde9d0325c081c27f2fa49e008bba04ffc7f2fb2f",
+      "afterSha256": "80a94fa85df73d427165b7bf62003698042a398a7c3f538d3b9778b162b319f9"
+    },
+    "docs/qq-one-click-setup.md": {
+      "beforeSha256": "def9732ec0b4c82fd6a330083f67ed830a807101fe3215de9d8d5eee5f532639",
+      "afterSha256": "4c5a46617346bf57309200d62217ad9544de2e99ce5e5525e5f4eec14a3b5ac4"
+    },
+    "docs/user-guide.md": {
+      "beforeSha256": "f6b2465da2aa2c2d30ef1bcd9d394f605db9372ce6ab39dbcd10e544ac20bb8b",
+      "afterSha256": "86d6ad26d6611a73be8844a439cc98d29b050f3d4323d433d8038d5f04478789"
+    },
+    "docs/management-ui.md": {
+      "beforeSha256": "f0ba09cf26058e6ee5823a4f14f6881811074eb79bb3e3d40d6c8fb26dcc3c32",
+      "afterSha256": "bab4202ab961d62ff2ef763243d077fc52fb51b999a765945cf8cdc7ec9f9db0"
+    },
+    "docs/channel-integration.md": {
+      "beforeSha256": "ab31f99e216b5e4300ecf124d3f85642e89a5d827db65216872b2a63850f0d09",
+      "afterSha256": "1c75b61fa69c9eabfb943b1e9cd1656f29017012058b73633e34c3e89085aa0a"
+    },
+    "docs/plan/长期AI人格插件-实施计划.md": {
+      "beforeSha256": "024693a304397b6803ecf316cd19268c0af685c372189781a57455487593dab9",
+      "afterSha256": "1378623f263643e2ce55a184a691523e547840c6d200aadcc32227b423e80ab8"
+    },
+    "docs/plan/persona/README.md": {
+      "beforeSha256": "e0032dfa0ff8180e3d9f28f51999c28aab853b9f860880c2c4911cc4645aa3c0",
+      "afterSha256": "5d20159946e8698bad3e5e44293af8642897afff03147e021173a953d72dc947"
+    },
+    "docs/plan/persona/persona-schema.md": {
+      "beforeSha256": "c82769023079eea409256b01cc6d11c106aa5047ded4ea6c5258c58920b3bc2b",
+      "afterSha256": "ebfa1ae555e5ad3be73bb63342a2a61582c1388e71ada883f5197dfd2d968955"
+    },
+    "docs/plan/persona/architecture.md": {
+      "beforeSha256": "9831cd52419fcfc4ff2349408eae311184d81aa4784f836fd369e7c2751addb1",
+      "afterSha256": "a16b9e449dc5efc2d493a042c44bc987afcd49ad80287351a32c885c41f6d643"
+    },
+    "docs/plan/persona/api-surface.md": {
+      "beforeSha256": "997365129bd2c743196d767efdd1c3b757661255e404c9c0a907b07182fb378f",
+      "afterSha256": "aa77949a73ca259d2f7bc8c50fba88fbb9208117b77cbdb6f8dcf9ac350fde16"
+    },
+    "docs/plan/persona/gaps.md": {
+      "beforeSha256": "a967ec8870c3ced929175d4cfa66792b88022a15261d54b3f6cb68c2e96c5f1f",
+      "afterSha256": "bf46c3ea90464ac925b6f2190b3dc659eadc1fbe48445f6ea076cdbbac81814a"
+    },
+    "docs/plan/persona/self-check.md": {
+      "beforeSha256": "eacca66ae7a087339e470b2df6a170830391bb768360594bb17c9bf97b2616c9",
+      "afterSha256": "aec5f6b4a4d62add88c90ed715619e952ef455dac15f49ba849de3913eda1fcb"
+    },
+    "docs/repository-api.md": {
+      "beforeSha256": "f1d13e7b0a40a62b7c8bf74763be1fd954687b15f6c4575cf0a6791b51bf178c",
+      "afterSha256": "8119b385f707ef6e92d372722d37ea95338fcde1a0ae9ae1ebf8af6226c128ce"
+    },
+    "docs/runtime-api.md": {
+      "beforeSha256": "17ae09ad5568ccc98fbb2b4dae5c98dc7a2979405dc3d55c3ef2e9ff5beb7098",
+      "afterSha256": "ea4f10325600db2fa0f3455cd4c7cbea33e6047318dc4c8093a5edccebd896dc"
+    },
+    "docs/qq-account-operations.md": {
+      "beforeSha256": "b0e8ec24055511da15f61713bd626e7badbbd9f1fe96f838278e69c150185a26",
+      "afterSha256": "041a66d299822301e9f4985df2544fd746f17e26264c5c48dd9f53847dd6c5c7"
+    },
+    "docs/verification/0.11.0-tests.json": {
+      "newFile": true,
+      "afterSha256": "dc30a2eada3a0460406b157467f8ee2d2ede5c1e6c55eb6c6557e5d21c106640"
+    }
+  },
+  "checks": {
+    "repositoryDocCheck": {
+      "status": "passed",
+      "planDocuments": 14,
+      "implementationDocuments": 25,
+      "localLinks": 790
+    },
+    "touchedDocumentLocalAnchors": "passed",
+    "newPrivateValues": "none",
+    "historyVerificationReceiptsModified": false,
+    "codeModifiedByThisDocumentationPass": false,
+    "publicTestsRecord": {
+      "tests": 1161,
+      "pass": 1161,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "logSha256": "d50d16bde5277dc47daedc7eda8af8b40b7c3797db94493da4ccb243c0890035"
+    },
+    "originalReportsMirrors": 14
+  },
+  "limits": [
+    "Documentation consistency does not prove real host execution or longitudinal personality quality.",
+    "QQ private/group round trips precede deployment of the new native account tools.",
+    "Production runtime and operator read-only query are verified separately; a real-model account-scoped persona_platform call remains pending.",
+    "Current manager supports one active personality; unified external model settings and simultaneous per-chat personalities are future suggestions."
+  ],
+  "checkedAt": "2026-10-27T13:23:29.408Z"
+}

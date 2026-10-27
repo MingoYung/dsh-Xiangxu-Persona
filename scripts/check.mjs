@@ -9,7 +9,7 @@ async function walk(dir) {
     if (entry.name.startsWith('.') || ['node_modules', 'artifacts', 'outputs'].includes(entry.name)) continue;
     const path = join(dir, entry.name);
     if (entry.isDirectory()) { await walk(path); continue; }
-    if (!/\.(?:js|mjs)$/.test(entry.name)) continue;
+    if (!/\.(?:js|mjs|cjs)$/.test(entry.name)) continue;
     const result = spawnSync(process.execPath, ['--check', path], { encoding: 'utf8', windowsHide: true });
     if (result.status !== 0) throw new Error(`${path}: ${result.stderr}`);
     if (dir === join(root, 'core')) {

@@ -1,8 +1,8 @@
 # 长期 AI 人格插件：实施架构
 
-当前0.10.1增加独立检索模块与DSH可选平台端口，仍是同一个人格、同一来源与既有八工具；动态快照总帽2970不变，不增加人格判断规则。
+当前0.11.0包含受管QQ连接与独立账号工具执行链；核心仅增通用维护扩展端口，平台原生协议仍在DSH适配层。八工具和动态快照2970保持兼容，不增加人格判断规则。
 
-> 0.10.1当前维护：字段沿用persona-memory/3；UI／真实模型／平台只读与上下文投影增量统一见[本轮说明](../../ui-retrieval-context-validation.md)，不把旧测试数字提升为本轮验收。
+> 0.11.0当前维护：受管连接见persona-schema第23节；独立QQ账号工具、完整档案和通用维护扩展见第24节及[QQ账号操作](../../qq-account-operations.md)。源码接线、正式宿主加载、真人收件与操作者诊断分层，以[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)为准；0.10.1及更早证据保留历史范围。
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
@@ -340,3 +340,19 @@ QQ渠道保留安全rich段和真实角色，解析媒体后将图片作为真�
 ## 0.10.1 原生系统投影与过程保留
 
 inspectPersonaPromptProjection只确认已识别的同会话相续system-prompt投影与当前完整协议／目标，必要时请求DSH原生startsRequestSeries。它不编辑持久Session事件；foreign或未知系统节点保守不清，用户／助手／工具历史不因该技术去重被删除。CONTROL_GUIDANCE未修改，可能影响模型热缓存命中，不保证费用或时延下降。动态2970、H1默认20万字符过程存储与宿主摘要／尾部配置分别约束不同层；本轮未改C1/H1整理重叠，完整解释与最终实测见[本轮说明](../../ui-retrieval-context-validation.md)。
+
+## 0.11.0 个人QQ受管准备执行链
+
+owner向导qqBridgeSetup先检查已有QQ／受管安装，再按明确请求下载固定Shell并校验、准备独立运行目录与回环管理口、启动owned进程，提供真实二维码。本人扫码后必须核实QQ核心在线，随后核对账号并由本人确认接入，默认自主社交为私聊／群scope均['*']，并绑定当前正式实例的memoryRoot；指定对象范围是可选隐私／测试模式。准备或扫码本身仍不完成通道启用，联系人选择、是否尝试加好友和回应由人格决定。入站好友申请事件／执行尚未接线，主动申请的独立账号原生适配按第24节新增，不能以批准入站申请冒充主动添加。
+
+OneBot HTTP Server接收有token的操作，HTTP Client推送原始JSON并带HMAC-SHA1；channels在有界原始字节上验签，保留既有Bearer兼容及排队后轮换复核。受管启动意愿仅来自已成功connect且同实例／同根并仍启用的连接；恢复不下载、不换账号或扩范围，人工stop取消意愿。停止只处理本应用网络项和可证归属的进程，无法证实QQ全树停止则提示人工关闭。以上均为适配层工程事实，八工具、C1来源、人格自主派发和整理判断不改。唯一字段见[第23节](persona-schema.md#23-个人qq一键准备与受管连接0110)，实际状态见[最终验收](../../qq-one-click-setup.md#0110-final-acceptance)。
+
+## 0.11.0 独立QQ账号操作与扩展维护
+
+受管启动在实际spawn前解析原创assets描述符并校验资产、固定bundle和QQ wrapper，预留独立回环端口，生成私有config／bootId；原创loader捕获官方流程的同一session。内部getter核marker、owned祖先链、启动代次、ABI、实际账号和认证inspect，原生不可用不阻断普通OneBot。onStopping先排空账号任务并releaseRoot，onStarted允许当前根恢复；不接管外部诊断进程，不以同进程名视为owned。
+
+persona_platform先按scope:account路由到qq-account，再考虑普通聊天binding。friend.query保存完整目标设置和不透明引用，friend.request先写人格档案prepared，原生journal再原子准入同一操作编号并持久prepare后提交一次；unknown不自动重发，status以同一操作核对，friend_list确认实际关系。来源保留为技术工具材料，不合成人类对话或自动记忆。入站friend.manage仍无执行链；一次许可不要求每次人工批准，不预选社交对象。CONTROL_GUIDANCE增的是API用法，没有人格频控。
+
+核心maintenance注入通用extensionValidator，适配层只认精确qq-account／qq-social文档、nested WAL和锁，所有validate／backup／restore／recover及完成分支共用。恢复在rename前核候选，技术原始档案不参与人格撤销walk改写；同root原人格恢复验收，跨root／instance迁移未实现。清除只删除预览内精确受管文件，活动锁／未知路径／容量不足先拒绝；库外共享native journal保留。原生journal以跨进程prepare锁严格守容量，残锁不按时间自动删，需确认旧writer已停后受控修复。
+
+字段见[第24节](persona-schema.md#24-独立qq账号工具与维护扩展0110)，用户和维护边界见[账号操作](../../qq-account-operations.md)。真人私聊／群聊各一次与三次操作者诊断已另存证据；正式DSH尚未加载新版账号工具时，不以源码和隔离测试宣称上线。

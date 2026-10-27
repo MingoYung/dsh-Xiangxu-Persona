@@ -373,7 +373,7 @@ test('opening channel settings reads status without starting authorization or en
 
 test('QR flow polls its original flow and releases its timer when leaving the page', async () => {
   const ui = await frontend({ 'connections.start': () => ({ connections: [{ id: 'qq', phase: 'waiting', flowId: 'flow-one', qrDataUrl: 'data:image/svg+xml;base64,PHN2Zy8+', expiresAt: Date.now() + 60000 }] }), 'connections.poll': args => ({ connections: [{ id: 'qq', phase: 'waiting', flowId: args.flowId, qrDataUrl: 'data:image/svg+xml;base64,PHN2Zy8+' }] }) });
-  const page = await ui.evaluate("state.page='chat';state.view='qq';chatPage()"); await ui.button(page, '连接QQ').emit('click');
+  const page = await ui.evaluate("state.page='chat';state.view='qq-official';chatPage()"); await ui.button(page, '连接QQ').emit('click');
   assert.equal(ui.calls.filter(call => call.action === 'connections.start').length, 1); assert.equal(ui.timers.size, 1);
   const [timerId, poll] = [...ui.timers.entries()][0]; ui.timers.delete(timerId); await poll.fn(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(ui.calls.find(call => call.action === 'connections.poll').args.flowId, 'flow-one');

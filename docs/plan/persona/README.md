@@ -1,8 +1,8 @@
 # 相续人格 · 完整方案入口
 
-当前实现0.10.1；先读用户说明，再核对字段／执行／验收。当前兼容扩展集中于persona-schema第22节，接入条件和最终状态统一见仓库本轮说明。
+当前实现0.11.0；先读用户说明，再核字段／执行／验收。受管QQ连接见第23节，新增独立账号工具与维护扩展见第24节，既有检索／可选平台沿第22节；接入不改变人格自主判断。
 
-> 0.10.1当前维护：字段沿用persona-memory/3；UI／真实模型／平台只读与上下文投影增量统一见[本轮说明](../../ui-retrieval-context-validation.md)，不把旧测试数字提升为本轮验收。
+> 0.11.0当前维护：受管连接见persona-schema第23节；独立QQ账号工具、完整档案和通用维护扩展见第24节及[QQ账号操作](../../qq-account-operations.md)。源码接线、正式宿主加载、真人收件与操作者诊断分层，以[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)为准；0.10.1及更早证据保留历史范围。
 
 0.8.1历史补丁增强透明主题下的操作提示：主导航和内容分类的选中项有常驻下划线，功能入口有“打开 →”轮廓标记，状态单独显示；悬停与键盘焦点可见。颜色继续取自DSH主题，0.8系列操作流程及后台契约不变。
 
@@ -141,3 +141,11 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 ## 0.9.0 人格生命周期的权威入口
 
 名称式新建、切换、归档保留、恢复与明确文本清除按[字段契约第21节](persona-schema.md#21-人格实例生命周期与文本清除090)和[执行链](architecture.md#090-人格生命周期执行链)实施；归档不是备份，清除只处理目标库受管文本，外部资料排除，旧会话归属哈希保留。此处不另定义状态、容量或人格规则。操作见[用户说明](../../user-guide.md#人格管理切换归档与清除)。0.9.0的统一状态与最终证据见[管理说明](../../management-ui.md#090-final-acceptance)。
+
+## 0.11.0 个人QQ的阅读顺序
+
+普通操作先读[个人QQ一键接入](../../qq-one-click-setup.md)，再按需要查看[渠道](../../channel-integration.md)和[管理界面](../../management-ui.md)。字段与授权技术边界以[第23节](persona-schema.md#23-个人qq一键准备与受管连接0110)为准，owner接口和执行链见api-surface／architecture。本轮实际通过范围仅由[最终验收](../../qq-one-click-setup.md#0110-final-acceptance)填写；五份研究与旧测试不改作登录和收发成功证据。
+
+## 0.11.0 当前QQ账号增量入口
+
+[字段第24节](persona-schema.md#24-独立qq账号工具与维护扩展0110)、[架构执行链](architecture.md#0110-独立qq账号操作与扩展维护)、[API](api-surface.md#0110-独立qq账号工具接口)和[通俗说明](../../qq-account-operations.md)保持同一套scope:account、friend.query／friend.request与原始档案契约。CONTROL_GUIDANCE增加工具用法，core只补通用维护端口；没有人格频率、朋友选择或记忆审批。当前正式宿主加载与真人证据见[验收](../../qq-one-click-setup.md#0110-final-acceptance)。

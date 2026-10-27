@@ -1,8 +1,8 @@
 # DSH 扩展点与 P0 接入验证
 
-当前0.10.1在既有八工具与owner桥补充检索、QQ丰富消息、B站及可选协议服务；当前字段以persona-schema第22节为准，平台支持／许可／送达分别报告。
+当前0.11.0在八工具与owner桥补个人QQ受管连接和persona_platform独立账号作用域；字段以persona-schema第23／24节为准，支持、许可、在线、提交、收件和好友关系分别报告。
 
-> 0.10.1当前维护：字段沿用persona-memory/3；UI／真实模型／平台只读与上下文投影增量统一见[本轮说明](../../ui-retrieval-context-validation.md)，不把旧测试数字提升为本轮验收。
+> 0.11.0当前维护：受管连接见persona-schema第23节；独立QQ账号工具、完整档案和通用维护扩展见第24节及[QQ账号操作](../../qq-account-operations.md)。源码接线、正式宿主加载、真人收件与操作者诊断分层，以[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)为准；0.10.1及更早证据保留历史范围。
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
@@ -273,3 +273,29 @@ UI先显示真实范围，再要求精确名称确认；关闭/取消预览不�
 persona_platform使用platform:bilibili的read/execute与operation，或QQ的feed.*／media.cover和job/cancel_job/assets；帐号权限由当前memoryRoot/平台/真实accountId核对，外发请求编号来自实际工具调用。QQ mention/message.read/forward读取沿真实binding与驱动支持执行，不开放泛化桌面控制。owner手动execute表示用户这次操作，不伪造人格自主选择；配置保存不启动生成。
 
 原生媒体输入需要实际DSH attachments／视觉模型或speechToText端口，安全来源和识别覆盖分开标注。无端口、无服务、无许可和失败分别报告，不构造假向量、图片理解或平台回执。当前接入条件／隐私／容量／最终证据集中见[本轮说明](../../integrations-and-retrieval.md)。
+
+## 0.11.0 个人QQ受管owner接口
+
+管理动作qqBridgeSetup.inspect/start/poll/connect/stop沿既有owner认证与实例选择，不新增人格工具。inspect只读不回显密钥；start负责明确的准备与启动，poll读取同一flow实际扫码／在线状态；connect在本人确认账号与人格后按默认自主社交接入，allowedPrivateIds／allowedGroupIds均为['*']；指定对象范围保留为可选隐私／测试设置，不要求逐个选社交对象，stop停止本应用连接并取消恢复意愿。WebUI凭据、OneBot访问token和事件HMAC secret留在适配层，不写入人格注入。
+
+channels.rotateIngress兼容authMode:bearer|onebot-hmac，后者仅OneBot11，返回本次secret供受管桥配置，status只返回ingressAuthMode等事实。HMAC覆盖原始JSON字节、保留64KiB事件帽和轮换复查；平台实际回执仍沿原prepared／unknown／delivered链。接口字段以[第23节](persona-schema.md#23-个人qq一键准备与受管连接0110)为准，不把安装或扫码当作通路送达。
+
+## 0.11.0 独立QQ账号工具接口
+
+persona_platform({scope:'account',platform:'qq',action,...})不传聊天target，不要求已有私聊／群binding；真实operationId由宿主工具调用提供，当前人格／memoryRoot由宿主上下文提供。CONTROL_GUIDANCE本轮增加此API说明，仍八工具，未新增人格审批。
+
+| action / accountOperation | 参数与职责 |
+|---|---|
+| inspect | 实际账号、接口状态和已保存档案摘要 |
+| read / friend.query | userId，另可核accountId；查询实际关系及验证要求，生成targetRef／optionsRef |
+| read / friend.options | accountId／optionsRef，回查同次查询及当前有效性，不隐式重新查询 |
+| execute / friend.request | accountId／optionsRef／targetRef与text；消费真实查询引用，宿主操作编号幂等 |
+| read / friend.status | accountId／receiptId；核对同一次原生操作，不重发 |
+| read / receipts | accountId／limit／pageCursor；revision绑定分页 |
+| read / receipt | accountId／receiptId／offset／maxChars；完整原文分页与SHA |
+
+owner仅暴露qqAccount.inspect与qqAccount.read，后者白名单read操作；没有qqAccount.execute管理RPC，不能把owner手工诊断写成人格自主动作。friend.query与friend.request分开许可，friend.manage入站处理仍未接线；getNativeRuntime／releaseRoot是内部生命周期端口，不向模型提供token或私有路径。
+
+外部会话初次沿DSH默认模型／思考、已有binding保留路由，后续在宿主composer／模型选择修改；本轮没有统一QQ思考设置。单管理器仍仅一个活动人格，不支持不同外部会话并行固定多个人格。
+
+core维护五入口兼容增加extensionValidator；createInstanceManager通过maintenanceOptions传入DSH校验器，保持核心无平台依赖。同人格原目录的扩展档案backup／restore、锁排除和明确清除按[字段第24节](persona-schema.md#24-独立qq账号工具与维护扩展0110)。原生提交、手机收件、friend_list与新版正式加载实测的证据区别见[账号操作](../../qq-account-operations.md)和[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)。

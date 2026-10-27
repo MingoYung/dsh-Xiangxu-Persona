@@ -1,6 +1,6 @@
 {
   "name": "dsh-xiangxu-persona",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "type": "module",
   "description": "Portable long-term persona and memory for DSH, with autonomous isolated tasks, complete task archives, QR chat channels and optional reference-based media",
   "engines": {
@@ -56,6 +56,7 @@
     "adapters/dsh/control.js",
     "adapters/dsh/instances.js",
     "adapters/dsh/instance-lifecycle.js",
+    "adapters/dsh/maintenance-extensions.js",
     "adapters/dsh/management.js",
     "adapters/dsh/ui-host.js",
     "adapters/dsh/normalize.js",

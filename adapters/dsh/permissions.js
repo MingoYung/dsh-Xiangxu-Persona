@@ -6,7 +6,7 @@ import { atomicReplaceWithRetry } from '../../core/store.js';
 export const CAPABILITY_CATALOG = Object.freeze([
   ['chat.text','发送文字消息'],['chat.image','发送图片'],['chat.video','发送视频文件'],['chat.file','发送普通文件'],['chat.voice','发送语音消息'],['chat.sticker','发送系统表情'],
   ['chat.mention','在群里提及成员'],['message.read','读取原始消息'],['message.forward.read','读取合并转发'],['media.cover','使用可选翻唱服务'],
-  ['message.reply','引用消息或回复评论'],['message.retract','撤回自己的消息'],['contacts.read','查询联系人'],['groups.read','查询群列表'],['friend.manage','处理好友请求'],['group.manage','群相关操作'],['profile.update','修改账号资料'],
+  ['message.reply','引用消息或回复评论'],['message.retract','撤回自己的消息'],['contacts.read','查询联系人'],['groups.read','查询群列表'],['friend.query','查询 QQ 联系人与加好友设置'],['friend.request','自主发起 QQ 好友申请'],['friend.manage','处理收到的好友请求'],['group.manage','群相关操作'],['profile.update','修改账号资料'],
   ['feed.read','查看朋友圈或动态'],['feed.publish','发布朋友圈或动态'],['feed.react','动态点赞或评论'],['call.voice','实时语音通话'],['call.video','实时视频通话'],
 ].map(([id,label])=>Object.freeze({id,label})));
 const IDS=new Set(CAPABILITY_CATALOG.map(x=>x.id)),LIMIT=262144,MAX_ENTRIES=128;

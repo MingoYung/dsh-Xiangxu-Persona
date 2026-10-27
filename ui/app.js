@@ -65,7 +65,7 @@ function destinations(...items) { return element('div', { class: 'destination-li
 function sectionTabs(items) { return element('nav', { class: 'module-tabs', 'aria-label': '当前页面内容' }, items.map(([view, label]) => button(label, () => openSection(view, false), 'module-tab', { class: 'module-tab' + ((state.view ?? '') === view ? ' active' : ''), 'aria-current': (state.view ?? '') === view ? 'page' : 'false' }))); }
 let pageScrollRequested = false;
 const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overview', maintenance: 'settings' };
-const viewTitles = { retrieval: '查找关联记忆', 'retrieval-settings': '可选语义服务', 'retrieval-diagnostics': '检索与参考记录', 'provider-feed': 'QQ 动态扩展', 'provider-cover': '可选翻唱服务', bilibili: '连接 B 站', 'bilibili-permissions': 'B 站能力与权限', 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
+const viewTitles = { retrieval: '查找关联记忆', 'retrieval-settings': '可选语义服务', 'retrieval-diagnostics': '检索与参考记录', 'provider-feed': 'QQ 动态扩展', 'provider-cover': '可选翻唱服务', bilibili: '连接 B 站', 'bilibili-permissions': 'B 站能力与权限', 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', 'qq-official': 'QQ 官方 Bot', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-account': 'QQ 账号操作记录', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
 async function openSection(view, remember = true) { pageScrollRequested = true; if (remember) state.trail.push({ page: state.page, view: state.view }); state.view = view || null; await renderPage(); }
 async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? null; await renderPage(); }
 
@@ -843,7 +843,7 @@ async function copyText(text, message = '内容已复制。') {
   catch { const input = element('textarea', { value: text, class: 'copy-content', readOnly: true }); const generation = startDetail('复制内容'); replace($('detail-content'), element('p', { class: 'small muted' }, '当前环境不能自动复制，请选中下方内容手动复制。'), input); input.focus(); input.select(); replace($('detail-footer'), button('关闭', () => $('detail-dialog').close())); }
 }
 function safeImageData(value) { return typeof value === 'string' && /^data:image\/(?:png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(value); }
-const capabilityNames = { 'chat.text': '发送文字', 'chat.image': '发送图片', 'chat.video': '发送视频', 'chat.file': '发送文件', 'chat.voice': '发送语音消息', 'chat.sticker': '使用表情与表情包', 'chat.mention': '提及聊天对象（@）', 'message.read': '读取所引用的消息', 'message.forward.read': '读取合并转发内容', 'media.cover': '通过已配置服务制作翻唱', 'message.reply': '引用消息', 'message.retract': '撤回自己的消息', 'contacts.read': '读取联系人', 'groups.read': '读取群列表', 'friend.manage': '处理好友请求', 'group.manage': '群管理', 'profile.update': '修改账号资料', 'feed.read': '查看动态／朋友圈', 'feed.publish': '发布动态／朋友圈', 'feed.react': '动态点赞与评论', 'call.voice': '实时语音通话', 'call.video': '实时视频通话' };
+const capabilityNames = { 'chat.text': '发送文字', 'chat.image': '发送图片', 'chat.video': '发送视频', 'chat.file': '发送文件', 'chat.voice': '发送语音消息', 'chat.sticker': '使用表情与表情包', 'chat.mention': '提及聊天对象（@）', 'message.read': '读取所引用的消息', 'message.forward.read': '读取合并转发内容', 'media.cover': '通过已配置服务制作翻唱', 'message.reply': '引用消息', 'message.retract': '撤回自己的消息', 'contacts.read': '读取联系人', 'groups.read': '读取群列表', 'friend.query': '查询联系人和加好友设置', 'friend.request': '自主发起好友申请', 'friend.manage': '处理收到的好友请求', 'group.manage': '群管理', 'profile.update': '修改账号资料', 'feed.read': '查看动态／朋友圈', 'feed.publish': '发布动态／朋友圈', 'feed.react': '动态点赞与评论', 'call.voice': '实时语音通话', 'call.video': '实时视频通话' };
 async function permissionsPanel(id) {
   const instanceId = state.instanceId, generation = state.generation, alive = () => state.instanceId === instanceId && state.page === 'chat' && state.generation === generation;
   const permissionRequest = (action, args = {}) => request(action, { ...args, instanceId });
@@ -1211,7 +1211,169 @@ async function socialProviderPage(kind = 'feed') {
   return page;
 }
 
+
+async function qqAccountPage() {
+  const generation = state.generation, instanceId = state.instanceId, life = pageLifetime(generation);
+  const alive = () => life.alive() && state.instanceId === instanceId && state.page === 'chat' && state.view === 'qq-account';
+  const call = (method, args = {}) => request('qqAccount.' + method, { ...args, instanceId });
+  const current = await call('inspect'), page = element('div'), listing = element('div'), statusArea = element('div');
+  let selected = current.accountId ?? current.knownAccounts?.[0]?.accountId ?? null, pages = [null], pageIndex = 0, listTicket = 0;
+  const statuses = { prepared: '正在提交，尚未取得确认', submitted: '平台已确认提交，等待对方处理', pending: '等待对方处理', accepted: '已确认是好友', failed: '本次申请失败', unsupported: '当前验证方式尚未支持', unknown: '结果未知，请核对原记录' };
+  const statusName = value => statuses[value] ?? value ?? '尚未核实';
+  const paintStatus = () => replace(statusArea, kv({ '实际在线账号': current.liveAccountId ?? '尚未核实', '原生账号接口': current.ready ? '已就绪' : '尚未就绪', '查看记录的账号': selected ?? '尚无记录' }),
+    element('p', { class: 'small muted' }, '接口就绪和用户许可分别核对。联系人选择、是否申请以及记住什么仍由相续决定。完整操作资料单独保留，不会当成人类对话自动写进记忆。'));
+  async function showReceipt(receipt, area, offset = 0, previousText = '', version = null, totalChars = null) {
+    if (!alive()) return;
+    const ticket = listTicket, value = await call('read', { accountOperation: 'receipt', accountId: selected, receiptId: receipt.receiptId, offset, maxChars: 4000 });
+    if (!alive() || ticket !== listTicket) return;
+    if (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256) || value.offset !== offset || !Number.isInteger(value.totalChars) || value.totalChars < 0 || typeof value.text !== 'string') throw new Error('完整资料未返回可核对的版本，请刷新记录。');
+    if (offset > 0 && (value.sha256 !== version || value.totalChars !== totalChars)) { toast('这条资料已更新，已重新从头读取，避免混合不同版本。'); return showReceipt(receipt, area); }
+    const text = previousText + value.text;
+    replace(area, element('p', { class: 'small muted' }, '已显示 ' + (value.nextOffset ?? value.totalChars ?? Array.from(text).length) + ' / ' + (value.totalChars ?? '—') + ' 字符'), element('pre', { class: 'data-preview' }, text),
+      value.complete === false && Number.isInteger(value.nextOffset) && value.nextOffset > offset ? button('继续读取完整资料', () => showReceipt(receipt, area, value.nextOffset, text, value.sha256, value.totalChars), 'secondary compact') : null);
+  }
+  async function load(index = pageIndex, cursor = pages[index]) {
+    if (!alive()) return;
+    const ticket = ++listTicket;
+    replace(listing, notice('正在读取当前账号的记录…'));
+    if (!selected) { replace(listing, empty('还没有账号操作记录', '人格发起申请后，会在这里保留真实状态和完整资料。')); return; }
+    let result;
+    try { result = await call('read', { accountOperation: 'receipts', accountId: selected, limit: 10, ...(cursor ? { pageCursor: cursor } : {}) }); }
+    catch (error) { if (!alive() || ticket !== listTicket) return; if (error.code === 'QQ_ACCOUNT_CURSOR') { pages = [null]; pageIndex = 0; toast('记录已有更新，已回到第一页。'); return load(0, null); } throw error; }
+    if (!alive() || ticket !== listTicket) return;
+    pageIndex = index; pages[index] = cursor ?? null;
+    if (result.pageCursor) pages[index + 1] = result.pageCursor; else pages.length = index + 1;
+    const rows = (result.items ?? []).map(receipt => {
+      const detail = element('div'), row = element('article', { class: 'record' }, element('h3', { class: 'record-title' }, '好友申请 · ' + (receipt.userId ?? '见完整资料')),
+        element('p', { class: 'record-meta' }, statusName(receipt.status) + ' · ' + date(receipt.updatedAt ?? receipt.createdAt)),
+        element('p', { class: 'small muted' }, '账号 ' + receipt.accountId + '；编号 ' + receipt.receiptId),
+        element('div', { class: 'row-actions' }, button('查看完整资料', () => showReceipt(receipt, detail), 'secondary compact'),
+          ['prepared','submitted','pending','unknown'].includes(receipt.status) ? button('核对这次申请的状态', async () => { if (!alive()) return; await call('read', { accountOperation: 'friend.status', accountId: selected, receiptId: receipt.receiptId }); if (alive() && ticket === listTicket) { toast('已取得这次申请的实际核对结果。'); pages = [null]; pageIndex = 0; await load(0, null); } }, 'secondary compact', { disabled: !current.ready || selected !== current.liveAccountId }) : null), detail);
+      return row;
+    });
+    replace(listing, rows.length ? element('div', { class: 'record-list' }, rows) : empty('当前账号还没有申请记录', '查询联系人和已经建立的好友关系不会伪装成新的申请。'),
+      element('div', { class: 'pagination' }, element('span', {}, '第 ' + (index + 1) + ' 页 · 本页 ' + rows.length + ' 条 / 共 ' + (result.total ?? rows.length) + ' 条'),
+        button('上一页', () => load(pageIndex - 1), 'secondary compact', { disabled: index === 0 }),
+        button('下一页', () => load(pageIndex + 1), 'secondary compact', { disabled: !result.pageCursor })));
+  }
+  const accounts = [...new Set([current.liveAccountId, ...(current.knownAccounts ?? []).map(item => item.accountId)].filter(Boolean))];
+  const selection = accounts.length > 1 ? field('qq-account-records-account', '查看哪个账号的记录', selected, { choices: accounts.map(id => [id, id]) }) : null;
+  if (selection) selection.input.addEventListener('change', async () => { if (!alive()) return; selected = selection.input.value; pages = [null]; pageIndex = 0; paintStatus(); try { await load(0); } catch (error) { if (alive()) showError(error); } });
+  page.append(card('QQ 账号操作', '先看真实状态，需要时再展开完整资料。', statusArea,
+      destinations(destination('能力与权限', '一次选择允许的工具；以后是否使用由相续判断。', () => openSection('qq-permissions')))),
+    card('好友申请记录', '“提交成功”表示接口确认提交；只有好友关系得到实际核实，才显示“已确认是好友”。结果未知不会自动重发。',
+      selection?.wrapper, selection ? element('p', { class: 'small muted' }, '这里只切换所查看的历史记录，不切换已登录的 QQ。') : null,
+      button('刷新记录', () => { pages = [null]; pageIndex = 0; return load(0, null); }, 'secondary compact'), listing),
+    disclosure({}, element('summary', {}, '资料容量与能力范围'), element('p', { class: 'small muted' }, '完整记录有存储上限，达到上限会明确提示，不静默裁掉旧资料。原生账号接口目前仅在已核实的 Windows QQ 版本提供；普通兼容桥聊天和原生好友工具分别显示支持情况。处理收到的好友申请、通话等能力仍以权限页的实际支持为准。')));
+  if (alive()) { paintStatus(); await load(0); }
+  return page;
+}
+
+async function qqBridgeSetupPage() {
+  const instanceId = state.instanceId, generation = state.generation, life = pageLifetime(generation);
+  const alive = () => life.alive() && state.instanceId === instanceId && state.page === 'chat' && state.view === 'qq';
+  const call = (action, args = {}) => request('qqBridgeSetup.' + action, { ...args, instanceId });
+  const page = element('div'), statusArea = element('div'), loginArea = element('div'), scopeArea = element('div'), actions = element('div', { class: 'row-actions' });
+  const scopeMode = field('qq-setup-mode', '社交范围', 'autonomous', { choices: [['autonomous', '由相续自主社交'], ['custom', '仅接入指定对象（隐私/测试范围）']] });
+  const privateInput = field('qq-setup-private', '接入哪些私聊', '', { multiline: true, placeholder: '每行一个 QQ 号', hint: '留空不接入私聊；填写 * 可接入全部私聊。' });
+  const groupInput = field('qq-setup-groups', '接入哪些群聊', '', { multiline: true, placeholder: '每行一个群号', hint: '留空不接入群聊；填写 * 可接入全部群聊。' });
+  const privateChoices = new Set(), groupChoices = new Set(); let scopeAccount = null, current = null, polling = false, connecting = false, editingScope = false, ticket = 0;
+  const phaseNames = { not_installed: '尚未准备本地 QQ 组件', installing: '正在准备本地 QQ 组件', starting: '正在启动个人 QQ 连接', waiting_login: '等待你用手机 QQ 扫码', authorized: '已登录，尚未接入聊天', configuring: '正在核对配置并接入', connected: '连接配置已完成', failed: '本次准备未完成', stopped: '个人 QQ 接入已停止' };
+  const phasesToPoll = new Set(['installing', 'starting', 'waiting_login', 'configuring']);
+  const selectedName = state.instances.find(item => item.id === instanceId)?.name ?? instanceId ?? '当前人格';
+  const shortcuts = () => destinations(destination('能力与权限', '核对连接器实际支持且你允许的账号操作。', () => openSection('qq-permissions')),
+    destination('账号操作记录', '查看好友申请的实际状态，翻页回查完整资料。', () => openSection('qq-account')),
+    destination('QQ 官方 Bot', '使用 QQ 官方 Bot 授权；这是独立的 Bot 身份，和个人 QQ 连接分开。', () => openSection('qq-official')),
+    destination('使用已有兼容桥', '已有 NapCat 或兼容 OneBot 11 服务时，保留手动接入和诊断入口。', () => openSection('qq-bridge')));
+  const parseIds = input => [...new Set(input.value.split(/[\s,，;；]+/u).map(value => value.trim()).filter(Boolean))];
+  const account = value => value?.loginAccount && typeof value.loginAccount.accountId === 'string' && /^\d+$/.test(value.loginAccount.accountId) ? value.loginAccount : null;
+  const validateIds = values => { if (values.length > 256 || values.some(value => value !== '*' && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1))) throw new Error('请填写有效的 QQ 号或群号，每行一个；全部接入请明确填写 *。'); return values.includes('*') ? ['*'] : values; };
+  async function useResult(value, ownTicket) {
+    if (!alive() || ownTicket !== ticket) return;
+    if (!value || typeof value !== 'object' || typeof value.phase !== 'string') throw new Error('未收到可核对的个人 QQ 准备状态。');
+    if (value.instanceId != null && value.instanceId !== instanceId) throw new Error('本次 QQ 准备流程属于其他人格，请回到原人格继续。');
+    current = value; paint();
+  }
+  async function run(action, args = {}) {
+    if (!alive()) return; const ownTicket = ++ticket;
+    try { const result = await call(action, args); await useResult(result, ownTicket); }
+    catch (error) { if (!alive() || ownTicket !== ticket) return; throw error; }
+  }
+  async function poll() {
+    if (!alive() || polling || !current?.flowId) return; polling = true;
+    try { await run('poll', { flowId: current.flowId }); }
+    finally { polling = false; }
+  }
+  function renderScope(logged, { editing = false } = {}) {
+    if (scopeAccount !== logged.accountId) { scopeAccount = logged.accountId; scopeMode.input.value = 'autonomous'; privateInput.input.value = ''; groupInput.input.value = ''; privateChoices.clear(); groupChoices.clear(); }
+    const flowId = current.flowId, custom = scopeMode.input.value === 'custom';
+    const choices = (title, values, selected) => Array.isArray(values) && values.length ? element('section', { class: 'reading-section' }, element('h3', {}, title), ...values.filter(value => value && /^\d+$/.test(String(value.id))).map(value => {
+      const id = String(value.id), input = element('input', { type: 'checkbox', checked: selected.has(id), 'aria-label': title + '：' + (value.name || id), onchange: event => { if (event.target.checked) selected.add(id); else selected.delete(id); } });
+      return element('label', { class: 'field-checkbox' }, input, (value.name || id) + ' · ' + id);
+    })) : null;
+    replace(scopeArea, card(editing ? '调整接入方式' : '2 · 接入这个 QQ 账号', editing ? '下面是待应用的选择；点击“应用接入方式”后才会改变当前范围。和谁交往、是否回应及主动联系仍由相续自己决定。' : '默认接入这个独立 QQ 可联系的私聊与群聊，和谁交往、是否回应及主动联系由相续自己决定。',
+      scopeMode.wrapper,
+      custom ? element('section', { class: 'reading-section' }, element('p', { class: 'subtle-note' }, '仅把以下对象的聊天接入此人格；适合保护其他聊天或做隔离测试。'), choices('私聊对象', current.contacts, privateChoices), privateInput.wrapper, choices('群聊', current.groups, groupChoices), groupInput.wrapper) : null,
+      element('p', { class: 'subtle-note' }, editing ? '不用重新扫码，也不用修改令牌。应用后使用文字回复，其他能力在权限页分别设置。' : '点击下方按钮授权接入账号。不会自动同意所有好友申请；首次接入使用文字回复，其他能力在权限页分别设置。'),
+      button(editing ? '应用接入方式' : '接入这个 QQ 账号', async () => {
+        if (!alive() || connecting || current?.phase !== (editing ? 'connected' : 'authorized') || editing && (!editingScope || current.connected !== true)) return;
+        if (!state.status?.available) throw new Error('请先加载要接入的人格实例。');
+        if (!flowId || current.flowId !== flowId || account(current)?.accountId !== logged.accountId) throw new Error('登录账号或本次准备流程已变化，请重新核实。');
+        const custom = scopeMode.input.value === 'custom';
+        const allowedPrivateIds = custom ? validateIds([...new Set([...privateChoices, ...parseIds(privateInput.input)])]) : ['*'], allowedGroupIds = custom ? validateIds([...new Set([...groupChoices, ...parseIds(groupInput.input)])]) : ['*'];
+        if (custom && !allowedPrivateIds.length && !allowedGroupIds.length) throw new Error('请选择或填写至少一个私聊对象或群；指定范围留空不会接入全部。');
+        connecting = true; try {
+          await run('connect', { flowId, allowedPrivateIds, allowedGroupIds, voiceMode: 'text' });
+          if (alive() && current?.flowId === flowId && ['configuring', 'connected'].includes(current.phase)) { editingScope = false; paint(); }
+        } finally { connecting = false; }
+      }, 'primary', { disabled: !state.status?.available }),
+      editing ? button('取消调整', () => { if (alive()) { editingScope = false; paint(); } }, 'secondary') : null));
+  }
+  scopeMode.input.addEventListener('change', () => { const logged = account(current), editing = editingScope && current?.phase === 'connected' && current.connected === true; if (alive() && logged && (current?.phase === 'authorized' || editing)) renderScope(logged, { editing }); });
+  function paint() {
+    if (!alive() || !current) return;
+    const logged = account(current), connected = current.connected === true;
+    replace(statusArea, kv({ '准备进度': connected ? '已取得当前连接确认' : phaseNames[current.phase] ?? current.phase, '接入的人格': selectedName,
+      ...((current.installVersion ?? current.version) ? { '本地组件版本': current.installVersion ?? current.version } : {}), ...(logged ? { '实际登录账号': (logged.displayName ? logged.displayName + ' · ' : '') + logged.accountId } : {}) }),
+      current.progressMessage ? element('p', { class: 'small muted' }, current.progressMessage) : null,
+      Number.isFinite(current.progress?.downloaded) && current.progress.downloaded >= 0 ? element('p', { class: 'small muted' }, '已下载 ' + number(current.progress.downloaded / 1048576) + (Number.isFinite(current.progress.total) && current.progress.total > 0 ? ' / ' + number(current.progress.total / 1048576) : '') + ' MiB') : null,
+      current.manualCloseRequired ? notice('本次准备需要你手动关闭正在使用的 QQ。请按准备提示处理后刷新状态。', 'warning') : null,
+      current.error ? notice(current.error.message ?? current.error.code ?? '请检查本次准备状态后重试。', 'warning') : null);
+    replace(loginArea); replace(scopeArea); replace(actions);
+    if (current.phase === 'waiting_login' && safeImageData(current.qrDataUrl)) loginArea.append(element('img', { class: 'connection-qr', src: current.qrDataUrl, alt: '个人 QQ 本次登录二维码' }), element('p', {}, '请用手机 QQ 扫码，并由你本人在手机上确认。扫码后还需点击接入账号。'));
+    else if (current.phase === 'waiting_login') loginArea.append(notice(current.hasQr ? '本次二维码尚未返回可显示的图片，请刷新扫码状态。' : '正在等待本机 QQ 组件提供登录二维码，可以刷新扫码状态。'));
+    if (current.phase === 'authorized' && logged) renderScope(logged);
+    else if (current.phase === 'connected' && connected && logged && editingScope) renderScope(logged, { editing: true });
+    else if (current.phase === 'authorized') scopeArea.append(notice('本机组件尚未返回可核实的登录账号，请刷新状态后再接入。', 'warning'));
+    if (['not_installed', 'stopped', 'failed'].includes(current.phase)) actions.append(button(current.phase !== 'not_installed' && current.installed === true ? '启动个人 QQ 连接' : '一键准备个人 QQ', () => run('start'), 'primary', { disabled: !state.status?.available }));
+    if (current.flowId) actions.append(button(current.phase === 'waiting_login' ? '刷新扫码状态' : '刷新准备状态', poll, 'secondary'));
+    if (current.phase === 'waiting_login' && (current.hasQr === true || safeImageData(current.qrDataUrl))) actions.append(button('重新生成二维码', async () => { if (alive() && current?.phase === 'waiting_login' && current.flowId) await run('poll', { flowId: current.flowId, refreshQr: true }); }, 'secondary'));
+    if (current.flowId && !['not_installed', 'stopped'].includes(current.phase)) actions.append(button(connected ? '停止个人 QQ 接入' : '停止本次准备', async () => { if (alive()) await run('stop', { flowId: current.flowId }); }, 'subtle'));
+    if (!state.status?.available) actions.append(notice('先加载一个人格，再把 QQ 连接接入它。'));
+    if (connected) {
+      scopeArea.append(notice('个人 QQ 已接入此人格。账号通过后台桥在线，通常不会出现普通 QQ 聊天窗口。可以通过这个账号的私聊或群聊核对实际收发；连接确认不等于已经完成聊天往返。添加好友、通话等能力请查看“能力与权限”中的实际支持状态。'));
+      if (current.phase === 'connected' && logged && current.flowId && !editingScope) scopeArea.append(button('调整接入方式', () => { if (alive() && current?.phase === 'connected' && current.connected === true && account(current)) { editingScope = true; scopeAccount = null; paint(); } }, 'secondary'));
+      scopeArea.append(destinations(destination('查看接入范围与已有桥设置', '查看已保存对象、连接状态与高级设置。', () => openSection('qq-bridge'))));
+    }
+    if (phasesToPoll.has(current.phase) && current.flowId) life.later(() => { if (phasesToPoll.has(current?.phase)) void poll().catch(error => { if (alive()) { statusArea.append(notice(errorText(error), 'warning')); } }); }, 2500);
+  }
+  page.append(element('ol', { class: 'flow-steps' }, ['准备本地 QQ 组件', '手机扫码授权', '接入 QQ 账号'].map(title => element('li', {}, title))),
+    card('1 · 一键准备个人 QQ', '插件准备本地 QQ 兼容桥并帮助配置连接。你只需完成手机扫码，再点击接入账号；账号密码、访问令牌和事件上报令牌不需要填写。', statusArea, loginArea, actions), scopeArea, shortcuts());
+  const initialTicket = ++ticket;
+  try {
+    const inspected = await call('inspect');
+    if (alive() && initialTicket === ticket) {
+      const refreshLive = inspected?.instanceId === instanceId && typeof inspected.flowId === 'string' && inspected.flowId && ['starting', 'waiting_login', 'authorized', 'connected'].includes(inspected.phase);
+      const value = refreshLive ? await call('poll', { flowId: inspected.flowId }) : inspected;
+      await useResult(value, initialTicket);
+    }
+  } catch (error) { if (alive() && initialTicket === ticket) { replace(statusArea, notice('本机尚未取得个人 QQ 一键准备服务。请确认已加载更新后的插件，也可以使用已有兼容桥。', 'warning'), notice(errorText(error), 'warning')); } }
+  return page;
+}
+
 async function chatPage() {
+  if (state.view === 'qq') return qqBridgeSetupPage();
+  if (state.view === 'qq-account') return qqAccountPage();
   if(state.view==='bilibili')return bilibiliPage();
   if(state.view==='bilibili-permissions'){const panel=await permissionsPanel('bilibili');panel.open=true;panel.disclosureButton.hidden=true;return panel;}
   if(state.view==='provider-feed')return socialProviderPage('feed');
@@ -1222,13 +1384,13 @@ async function chatPage() {
   const platformName = value => ({ qq: 'QQ', wechat: '微信' })[value] ?? value;
   const statusName = value => ({ connected: '已连接', ready: '已就绪', connecting: '正在连接', disconnected: '尚未连接', disabled: '已停用', unconfigured: '尚未配置', unavailable: '暂不可用', error: '连接异常' })[value] ?? value;
   if (!state.view) return destinations(
-    ...['qq', 'wechat'].map(id => { const item = connections.find(value => value.id === id), authorized = official.connections?.find(value => value.id === id); return destination(id === 'qq' ? 'QQ' : '微信', id === 'qq' ? '扫码连接独立 QQ Bot；个人账号可使用已有兼容桥。' : '官方扫码接入私聊；群聊需已有兼容桥支持。', () => openSection(item?.config?.mode === 'bridge' && item.configured ? id + '-bridge' : id), item?.connected ? '已连接' : authorized?.connected ? '已授权，待启用' : '未连接'); }),
+    ...['qq', 'wechat'].map(id => { const item = connections.find(value => value.id === id), authorized = official.connections?.find(value => value.id === id); return destination(id === 'qq' ? 'QQ' : '微信', id === 'qq' ? '一键准备个人 QQ 连接，扫码接入后由相续自主社交。' : '官方扫码接入私聊；群聊需已有兼容桥支持。', () => openSection(id === 'qq' ? 'qq' : item?.config?.mode === 'bridge' && item.configured ? id + '-bridge' : id), item?.connected ? '已连接' : authorized?.connected ? '已授权，待启用' : '未连接'); }),
     destination('B 站', '可选扫码连接，按授权浏览资料、发表评论或发送私信。', () => openSection('bilibili')),
     destination('QQ 动态扩展', '仅在自备兼容服务时开启，普通 OneBot 不保证空间接口。', () => openSection('provider-feed')),
     destination('声音', '选择音色、试听，以及由谁决定声音。', () => openSection('voice')),
     destination('社交身份', '登记人格的平台账号，核对连接与可用能力。', () => openSection('accounts')));
   if (state.view === 'accounts') return socialIdentitiesPanel({ generation, connections });
-  if (['qq', 'wechat', 'qq-permissions', 'wechat-permissions'].includes(state.view)) {
+  if (['qq-official', 'wechat', 'qq-permissions', 'wechat-permissions'].includes(state.view)) {
     const id = state.view.split('-')[0], connection = connections.find(value => value.id === id) ?? { id, enabled: false, connected: false, config: {} };
     if (state.view.endsWith('-permissions')) { const panel = await permissionsPanel(id); panel.open = true; panel.disclosureButton.hidden = true; return panel; }
     return element('div', {}, element('ol', { class: 'flow-steps' }, ['扫码授权', '选择私聊或群聊范围', '启用连接'].map(title => element('li', {}, title))),
@@ -1272,10 +1434,10 @@ async function chatPage() {
     const bridgeDetails = element('details', {}, element('summary', { class: 'small muted' }, '事件上报与鉴权'), element('div', { class: 'channel-details' }, callback.wrapper,
       element('div', { class: 'row-actions' }, button('复制上报地址', () => { if (!callback.input.value) throw new Error('当前没有可用的上报地址。'); return copyField(callback.input, '上报地址已复制。'); }, 'secondary compact'),
         button(connection.hasIngressToken ? '重新生成上报令牌' : '生成上报令牌', async () => {
-          const result = await request('channels.rotateIngress', { id });
+          const authMode = connection.ingressAuthMode ?? 'bearer', result = await request('channels.rotateIngress', { id, authMode });
           if (typeof result.ingressToken !== 'string' || !result.ingressToken) throw new Error('未获得新的上报令牌。');
           if (typeof result.callbackUrl === 'string') callback.input.value = result.callbackUrl;
-          const token = field('channel-' + id + '-ingress-once', '本次生成的上报令牌', result.ingressToken, { type: 'password', hint: '只在这里显示本次生成值。旧令牌已失效，请更新本地桥配置。' });
+          const token = field('channel-' + id + '-ingress-once', '本次生成的上报令牌', result.ingressToken, { type: 'password', hint: authMode === 'onebot-hmac' ? '旧令牌已失效。把本次值填入 NapCat HTTPClient 的 token 字段；这是事件正文签名密钥，不是 Authorization Bearer 请求头。' : '只显示本次值，旧令牌已失效。请在桥的事件上报请求头使用 Authorization: Bearer 加本次令牌。' });
           token.input.readOnly = true; token.input.autocomplete = 'off';
           const show = element('input', { type: 'checkbox', onchange: event => { token.input.type = event.target.checked ? 'text' : 'password'; } });
           replace(ingressArea, token.wrapper, element('label', { class: 'field-checkbox' }, show, '显示本次令牌'), button('复制本次令牌', () => copyField(token.input, '本次上报令牌已复制。'), 'secondary compact'));
