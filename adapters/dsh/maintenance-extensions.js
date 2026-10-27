@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { QQ_ACCOUNT_LIMITS as A } from './connections/qq-account.js';
 import { SOCIAL_PROVIDER_LIMITS as S } from './channels/social-provider.js';
+import { QQ_ACCOUNT_ACTIONS, validateQQAccountActionRequest } from './connections/qq-account-actions.js';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = () => { throw Object.assign(new Error('扩展档案的路径、结构或校验信息无效'), { code: 'INVALID_EXTENSION' }); };
@@ -9,7 +10,7 @@ const id = value => typeof value === 'string' && /^[1-9]\d{0,19}$/.test(value) &
 const text = (value, max = 256) => typeof value === 'string' && value.length > 0 && value.length <= max;
 const ref = (value, kind) => typeof value === 'string' && new RegExp('^qq' + kind + '_[a-f0-9]{32}$').test(value);
 const receiptId = value => typeof value === 'string' && /^qqop-[a-f0-9]{32}$/.test(value);
-const statuses = ['prepared','unknown','submitted','accepted','failed','unsupported'];
+const statuses = ['prepared','unknown','submitted','accepted','failed','unsupported','completed'];
 const bounded = (value, max) => { if (Buffer.byteLength(JSON.stringify(value) + '\n') > max) fail(); };
 function source(value) {
   if (!object(value) || value.sourceKind !== 'qq-account-operation' || value.humanDialogue !== false || value.bindingCreated !== false || value.sourceSessionId !== null && !text(value.sourceSessionId) || !Array.isArray(value.sourceRefs) || value.sourceRefs.length > 64 || !Array.isArray(value.sourceRecordIds) || value.sourceRecordIds.length > 128 || value.sourceRecordIds.some(item => !text(item))) fail();
@@ -23,7 +24,7 @@ function accountDocument(relative, value) {
   if (relative === 'index.json') {
     if (!text(value.instanceId) || !integer(value.revision) || !Array.isArray(value.receipts) || value.receipts.length > A.receipts || !Array.isArray(value.queries) || value.queries.length > A.queries) fail();
     const ids = new Set();
-    for (const row of value.receipts) { if (!object(row) || !receiptId(row.receiptId) || ids.has(row.receiptId) || !id(row.accountId) || !id(row.userId) || !statuses.includes(row.status) || !integer(row.revisions) || row.revisions > A.revisionsPerReceipt || !integer(row.createdAt) || !integer(row.updatedAt)) fail(); ids.add(row.receiptId); }
+    for (const row of value.receipts) { if (!object(row) || !receiptId(row.receiptId) || ids.has(row.receiptId) || !id(row.accountId) || (row.operation ? !Object.hasOwn(QQ_ACCOUNT_ACTIONS,row.operation) || row.userId !== null : !id(row.userId) || row.status === 'completed') || !statuses.includes(row.status) || !integer(row.revisions) || row.revisions > A.revisionsPerReceipt || !integer(row.createdAt) || !integer(row.updatedAt)) fail(); ids.add(row.receiptId); }
     for (const row of value.queries) { if (!object(row) || !/^qqquery-[a-f0-9]{32}$/.test(row.queryId) || ids.has(row.queryId) || !id(row.accountId) || !id(row.userId) || !ref(row.optionsRef,'opts') || !ref(row.targetRef,'target') || !text(row.bootId,160) || !integer(row.expiresAt) || !integer(row.createdAt)) fail(); ids.add(row.queryId); }
     return;
   }
@@ -33,6 +34,10 @@ function accountDocument(relative, value) {
   const match = /^receipts\/(qqop-[a-f0-9]{32})\/(\d{6})\.json$/.exec(relative);
   if (!match || Number(match[2]) > A.revisionsPerReceipt || value.receiptId !== match[1]) fail();
   if (match[2] === '000000') {
+    if (Object.hasOwn(value,'operation')) {
+      if (!Object.hasOwn(QQ_ACCOUNT_ACTIONS,value.operation) || !text(value.instanceId) || !id(value.accountId) || !text(value.operationId,160) || !object(value.request) || value.request.accountId !== value.accountId || !object(value.runtime) || value.runtime.protocol !== 'onebot11' || value.runtime.provider !== 'napcat-onebot-account' || !/^[a-f0-9]{64}$/.test(value.runtime.connectionId) || !integer(value.createdAt) || value.status !== 'prepared' || value.transportCalls !== null || value.transportCallUpperBound !== 1) fail();
+      try { validateQQAccountActionRequest(value.operation,value.request); } catch { fail(); } source(value.source); return;
+    }
     if (!text(value.instanceId) || !id(value.accountId) || !text(value.operationId,160) || !object(value.request) || value.request.accountId !== value.accountId || !id(value.request.userId) || !ref(value.request.optionsRef,'opts') || !ref(value.request.targetRef,'target') || typeof value.request.text !== 'string' || [...value.request.text].length > 512 || !object(value.runtime) || value.runtime.protocol !== 'xiangxu-qq-native/1' || !text(value.runtime.bootId,160) || !text(value.runtime.abiVersion,128) || !integer(value.createdAt) || value.status !== 'prepared' || value.nativeCalls !== null || value.nativeCallUpperBound !== 1) fail(); source(value.source); queryResponse(value.query); return;
   }
   if (value.revision !== Number(match[2]) || !text(value.event,160) || !statuses.includes(value.status) || !integer(value.at)) fail();

@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
+import { randomUUID } from 'node:crypto';
 import { createInstanceManager } from '../adapters/dsh/instances.js';
 import { JsonStore } from '../core/store.js';
 import { createChannelService } from '../adapters/dsh/channels/service.js';
@@ -226,8 +227,8 @@ test('the ownership store serializes its own callers, recovers after a rejected 
   assert.equal(Object.keys(JSON.parse(await fs.readFile(ownerFile, 'utf8')).owners).length, 12);
   await assert.rejects(store.capture({ ...item, instanceId: 'other' }, ['owned-0']), { code: 'INSTANCE_SESSION_CONFLICT' });
   await store.capture(item, ['after-rejection']);
-  const external = JSON.stringify({ pid: process.pid, token: 'external-owner' }); await fs.writeFile(ownerFile + '.lock', external);
-  await assert.rejects(store.capture(item, ['blocked']), { code: 'INSTANCE_OWNERSHIP_BUSY' }); assert.equal(await fs.readFile(ownerFile + '.lock', 'utf8'), external);
+  const external = JSON.stringify({ pid: process.pid, token: randomUUID() }); await fs.writeFile(ownerFile + '.lock', external);
+  await assert.rejects(store.capture(item, ['blocked']), error => error.code === 'INSTANCE_OWNERSHIP_BUSY' && error.ownerPid === process.pid && error.ownerState === 'alive' && error.message.includes(String(process.pid))); assert.equal(await fs.readFile(ownerFile + '.lock', 'utf8'), external);
   await fs.unlink(ownerFile + '.lock'); await store.capture(item, ['after-external-release']);
 });
 

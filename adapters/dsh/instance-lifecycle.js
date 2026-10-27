@@ -149,6 +149,71 @@ export async function deleteManagedPlan(plan, { unlink = fs.unlink } = {}) {
   }
   return { deletedFiles, errors };
 }
+const OWNERSHIP_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const sameOwnershipIdentity = (a, b) => a && b && a.dev === b.dev && a.ino === b.ino && a.birthtimeNs === b.birthtimeNs;
+const sameOwnershipVersion = (a, b) => sameOwnershipIdentity(a, b) && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+function ownershipBusy(reason, ownerPid = null, ownerState = 'unknown') {
+  throw Object.assign(new Error('会话归属暂时无法保存：' + reason + '；未清除或改写人格资料。'), { code: 'INSTANCE_OWNERSHIP_BUSY', ownerPid, ownerState });
+}
+function ownershipPidState(pid) {
+  try { process.kill(pid, 0); return 'alive'; } catch (error) { return error.code === 'ESRCH' ? 'dead' : 'unknown'; }
+}
+function ownershipLockOwner(bytes) {
+  let value; try { value = JSON.parse(bytes.toString('utf8')); } catch { ownershipBusy('归属锁格式无法核实'); }
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 2 || !Object.hasOwn(value, 'pid') || !Object.hasOwn(value, 'token') || !Number.isSafeInteger(value.pid) || value.pid < 1 || value.pid > 2147483647 || typeof value.token !== 'string' || !OWNERSHIP_UUID.test(value.token)) ownershipBusy('归属锁的持有者信息无法核实');
+  return value;
+}
+async function ownershipLockSnapshot(file) {
+  await safeInstanceRoot(path.dirname(file)); const before = await fs.lstat(file, { bigint: true });
+  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n || before.size < 1n || before.size > 4096n) ownershipBusy('归属锁不是可核实的独立普通文件');
+  const handle = await fs.open(file, 'r');
+  try {
+    const opened = await handle.stat({ bigint: true }); if (!sameOwnershipVersion(before, opened)) ownershipBusy('归属锁在读取前已发生变化');
+    const buffer = Buffer.alloc(4097), result = await handle.read(buffer, 0, buffer.length, 0), bytes = buffer.subarray(0, result.bytesRead);
+    if (result.bytesRead > 4096 || BigInt(result.bytesRead) !== opened.size) ownershipBusy('归属锁读取不完整或超过技术容量');
+    const after = await handle.stat({ bigint: true }); await safeInstanceRoot(path.dirname(file)); const current = await fs.lstat(file, { bigint: true });
+    if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1n || !sameOwnershipVersion(opened, after) || !sameOwnershipVersion(after, current)) ownershipBusy('归属锁在核对期间已发生变化');
+    return { bytes, identity: current, owner: ownershipLockOwner(bytes) };
+  } finally { await handle.close(); }
+}
+async function createOwnershipLock(file, token) {
+  let handle; try { handle = await fs.open(file, 'wx', 0o600); } catch (error) { if (error.code === 'EEXIST') return null; throw error; }
+  const created = await handle.stat();
+  try {
+    await handle.writeFile(JSON.stringify({ pid: process.pid, token })); await handle.sync(); const identity = await handle.stat({ bigint: true }); await handle.close(); handle = null;
+    return { async release() {
+      try { const current = await ownershipLockSnapshot(file); if (sameOwnershipIdentity(current.identity, identity) && current.owner.token === token && current.owner.pid === process.pid) await fs.unlink(file); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    } };
+  } catch (error) { await handle?.close().catch(() => {}); await removeUninitializedLock(file, created).catch(() => {}); throw error; }
+}
+/** Recover only a stable record whose process is confirmed gone, never by age. */
+async function acquireOwnershipLock(file) {
+  const recoveryFile = file + '.recovery';
+  try { await fs.lstat(recoveryFile); ownershipBusy('已有归属锁恢复记录，需要先核实该操作是否完成'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const direct = await createOwnershipLock(file, randomUUID()); if (direct) return direct;
+  const guard = await createOwnershipLock(recoveryFile, randomUUID()); if (!guard) ownershipBusy('另一归属锁恢复操作正在执行');
+  let recovered;
+  try {
+    let first; try { first = await ownershipLockSnapshot(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (first) {
+      const state = ownershipPidState(first.owner.pid);
+      if (state !== 'dead') ownershipBusy('归属锁持有进程PID ' + first.owner.pid + (state === 'alive' ? '仍在运行' : '的状态无法确认'), first.owner.pid, state);
+      const second = await ownershipLockSnapshot(file);
+      if (!sameOwnershipVersion(first.identity, second.identity) || !first.bytes.equals(second.bytes) || first.owner.token !== second.owner.token || first.owner.pid !== second.owner.pid) ownershipBusy('待恢复的归属锁已经被替换，保留当前锁');
+      const secondState = ownershipPidState(second.owner.pid);
+      if (secondState !== 'dead') ownershipBusy('归属锁持有进程PID ' + second.owner.pid + '已不再能确认退出', second.owner.pid, secondState);
+      await fs.unlink(file);
+    }
+    // A normal wx acquirer may have won the now-empty path. Never reap again.
+    recovered = await createOwnershipLock(file, randomUUID());
+    if (!recovered) ownershipBusy('另一写者已取得新的归属锁，保留该锁');
+    return recovered;
+  } finally {
+    try { await guard.release(); } catch (error) { await recovered?.release().catch(() => {}); throw error; }
+  }
+}
+
 export function createSessionOwnershipStore(file, getItems) {
   let state = { schemaVersion: 'xiangxu-session-owners/1', version: 0, owners: {} };
   let captureTail = Promise.resolve();
@@ -165,10 +230,8 @@ export function createSessionOwnershipStore(file, getItems) {
   }
   async function capture(item, extraIds = []) {
       await safeInstanceRoot(path.dirname(file)); await fs.mkdir(path.dirname(file), { recursive: true });
-      const lock = file + '.lock', token = randomUUID(); let handle, identity, initialized = false;
-      try { handle = await fs.open(lock, 'wx'); } catch (error) { if (error.code === 'EEXIST') fail('INSTANCE_OWNERSHIP_BUSY', '另一操作正在保存会话归属，未清除资料'); throw error; }
+      const lease = await acquireOwnershipLock(file + '.lock');
       try {
-        identity = await handle.stat(); await handle.writeFile(JSON.stringify({ pid: process.pid, token })); await handle.sync(); await handle.close(); handle = null; initialized = true;
         await load(); const ids = [...extraIds];
         try { const checkpoint = JSON.parse(await readInstanceMetadata(path.join(item.memoryRoot, 'host-checkpoints.json'), 8388608));
           if (checkpoint.sessions && (typeof checkpoint.sessions !== 'object' || Array.isArray(checkpoint.sessions))) fail('INSTANCE_OWNERSHIP_SCHEMA', '宿主检查点的会话索引无效');
@@ -183,8 +246,7 @@ export function createSessionOwnershipStore(file, getItems) {
         }
         if (changed) { next.version++; await writeInstanceMetadata(file, next, INSTANCE_LIMITS.ownershipBytes); state = next; }
         return Object.values(state.owners).filter(owner => owner === item.instanceId).length;
-      } finally { await handle?.close(); if (!initialized) await removeUninitializedLock(lock, identity);
-        else try { const owner = JSON.parse(await readInstanceMetadata(lock, 65536)); if (owner.token === token) await fs.unlink(lock); } catch (error) { if (error.code !== 'ENOENT') throw error; } }
+      } finally { await lease.release(); }
   }
   return { file, load,
     async ownerOf(sessionId) { await load(); return state.owners[sessionOwnershipKey(sessionId)] ?? null; },

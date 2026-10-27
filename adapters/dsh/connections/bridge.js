@@ -1,23 +1,26 @@
 import { createOneBotClient } from '../channels/onebot.js';
 import { capabilities, fail, identifier, mediaBytes, requestJson, targetRoute } from './common.js';
+import { mediaInfo } from '../media/io.js';
+import { QQ_ACCOUNT_ACTION_LIMITS as AL } from './qq-account-actions.js';
 
 /** Additional OneBot actions are advertised only after the driver identifies
  * itself as NapCat, or explicitly enumerates the corresponding action. */
 export function createBridgeClient(profile, { fetchImpl = fetch, clock = Date.now } = {}) {
   const base = createOneBotClient(profile, { fetchImpl, clock }), v11 = profile.protocol === 'onebot11', url = new URL(profile.apiUrl);
   let supported = capabilities(['chat.text']);
-  async function action(name, params = {}, deliveryId) {
+  let accountOperations = { 'profile.avatar': false, 'profile.update': false, 'feed.publish': false }, accountVersion = null;
+  async function action(name, params = {}, deliveryId, { signal } = {}) {
     const destination = v11 ? new URL(name, url.href.replace(/\/?$/, '/')) : url;
     const payload = v11 ? params : { action: name, params, self: { platform: profile.platform, user_id: profile.accountId }, ...(deliveryId ? { echo: deliveryId } : {}) };
-    const result = await requestJson(fetchImpl, destination, { body: payload, headers: profile.accessToken ? { authorization: 'Bearer ' + profile.accessToken } : {} });
+    const result = await requestJson(fetchImpl, destination, { body: payload, headers: profile.accessToken ? { authorization: 'Bearer ' + profile.accessToken } : {}, signal });
     if (result.status === 'failed' && Number.isSafeInteger(result.retcode) && result.retcode !== 0) fail('ONEBOT_ACTION_REJECTED');
     if (result.status !== 'ok' || result.retcode !== 0 || !v11 && deliveryId !== undefined && result.echo !== undefined && result.echo !== deliveryId) fail('ONEBOT_ACTION_UNCONFIRMED'); return result.data;
   }
   async function inspectCapabilities() {
     const list = ['chat.text', ...(base.capabilities.voice ? ['chat.voice'] : [])];
-    let actions = [], napcat = false;
+    let actions = [], napcat = false, version = null;
     try { const data = await action('get_supported_actions'); if (Array.isArray(data)) actions = data.filter(value => typeof value === 'string'); } catch {}
-    if (v11) try { const version = await action('get_version_info'); napcat = /napcat/i.test(String(version?.app_name ?? '')); } catch {}
+    if (v11) try { const found = await action('get_version_info'); napcat = /napcat/i.test(String(found?.app_name ?? '')); version = typeof found?.app_version === 'string' ? found.app_version : null; } catch {}
     if (v11 && napcat) {
       list.push('chat.sticker', 'chat.mention', 'message.read', 'message.forward.read', 'message.reply', 'message.retract', 'contacts.read', 'groups.read', 'chat.video');
       try { const image = await action('can_send_image'); if (image?.yes === true) list.push('chat.image'); } catch {}
@@ -28,7 +31,41 @@ export function createBridgeClient(profile, { fetchImpl = fetch, clock = Date.no
     if(v11&&actions.includes('send_group_msg'))list.push('chat.mention');
     if(v11&&actions.includes('get_msg'))list.push('message.read');
     if(v11&&actions.includes('get_forward_msg'))list.push('message.forward.read');
+    const pinned = v11 && napcat && /^v?4\.18\.41$/.test(version ?? '');
+    accountVersion = version;
+    accountOperations = Object.fromEntries([['profile.avatar','set_qq_avatar'],['profile.update','set_qq_profile'],['feed.publish','send_qzone_msg']].map(([operation,name]) => [operation, Boolean(v11 && profile.platform === 'qq' && (pinned || actions.includes(name)))]));
+    if (accountOperations['profile.avatar'] || accountOperations['profile.update']) list.push('profile.update');
+    if (accountOperations['feed.publish']) list.push('feed.publish');
     supported = {...capabilities(list),...Object.fromEntries(['chat.mention','message.read','message.forward.read'].map(id=>[id,{supported:list.includes(id),reason:list.includes(id)?null:'桥未确认此操作'}]))}; return supported;
+  }
+  function inspectAccountCapabilities() { return { accountId: profile.accountId, provider: 'napcat-onebot', version: accountVersion, operations: { ...accountOperations } }; }
+  async function executeAccount(operation, payload, { operationId, signal, assertCurrent } = {}) {
+    identifier(operationId, '账号操作编号', 160);
+    if (!v11 || profile.platform !== 'qq' || accountOperations[operation] !== true) return { status: 'unsupported', operation, accountId: profile.accountId, code: 'ONEBOT_ACCOUNT_UNSUPPORTED' };
+    const plain = (value, max, empty = false) => { if (typeof value !== 'string' || !empty && !value || [...value].length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) fail('ONEBOT_ACCOUNT_ARGUMENT'); return value; };
+    const image = value => { const bytes = mediaBytes(value); if (bytes.length > AL.imageBytes || mediaInfo(bytes, 'image').mime !== value.mime) fail('ONEBOT_ACCOUNT_IMAGE'); return { bytes: bytes.length, file: 'base64://' + bytes.toString('base64') }; };
+    let name, params;
+    if (operation === 'profile.avatar') { name = 'set_qq_avatar'; params = { file: image(payload).file }; }
+    if (operation === 'profile.update') { name = 'set_qq_profile'; params = { nickname: plain(payload.nickname, AL.nicknameChars) }; if (Object.hasOwn(payload,'signature')) params.personal_note = plain(payload.signature, AL.signatureChars, true); if (Object.hasOwn(payload,'sex')) { if (!['unknown','male','female'].includes(payload.sex)) fail('ONEBOT_ACCOUNT_ARGUMENT'); params.sex = { unknown:0,male:1,female:2 }[payload.sex]; } }
+    if (operation === 'feed.publish') {
+      name = 'send_qzone_msg'; const images = payload.images ?? [], targets = payload.targetUserIds ?? [];
+      if (!Array.isArray(images) || images.length > AL.images || !Array.isArray(targets) || targets.length > AL.targets || targets.some(id => typeof id !== 'string' || !/^[1-9]\d{0,15}$/.test(id) || !Number.isSafeInteger(Number(id))) || new Set(targets).size !== targets.length || ![1,4,16,64,128].includes(payload.visibility) || [16,128].includes(payload.visibility) !== Boolean(targets.length)) fail('ONEBOT_ACCOUNT_ARGUMENT');
+      const prepared = images.map(image); if (prepared.reduce((sum,v) => sum + v.bytes,0) > AL.totalImageBytes) fail('ONEBOT_ACCOUNT_IMAGE'); const content = plain(payload.text, AL.textChars, true); if (!content && !images.length) fail('ONEBOT_ACCOUNT_ARGUMENT');
+      params = { content, ugc_right: payload.visibility, ...(prepared.length ? { images: prepared.map(v => v.file) } : {}), ...(targets.length ? { target_uins: [...targets] } : {}) };
+    }
+    signal?.throwIfAborted();
+    const verified = await base.probe(); signal?.throwIfAborted();
+    if (!verified.connected || verified.accountId !== profile.accountId) fail('ONEBOT_ACCOUNT_UNAVAILABLE', '当前QQ账号尚未核实在线');
+    if (assertCurrent !== undefined && typeof assertCurrent !== 'function') fail('ONEBOT_ACCOUNT_FENCE', '账号派发检查必须是同步函数');
+    const fence = assertCurrent?.();
+    if (fence === false || fence && typeof fence.then === 'function') { if (fence?.then) Promise.resolve(fence).catch(() => {}); fail('ONEBOT_ACCOUNT_FENCE', '账号派发检查尚未同步确认'); }
+    try {
+      const data = await action(name, params, operationId, { signal });
+      if (operation === 'profile.avatar' && data !== null) fail('ONEBOT_ACCOUNT_RESULT_UNKNOWN');
+      if (operation === 'profile.update' && data?.result !== 0) fail(Number.isSafeInteger(data?.result) ? 'ONEBOT_ACCOUNT_PROFILE_REJECTED' : 'ONEBOT_ACCOUNT_RESULT_UNKNOWN');
+      let tid; if (operation === 'feed.publish') tid = identifier(data?.tid, 'QQ空间发布编号', 256);
+      return { status: 'completed', operation, accountId: profile.accountId, receiptId: 'onebot-account:' + operationId, confirmedBy: 'onebot-api-success', ...(tid ? { tid } : {}) };
+    } catch (error) { return { status: ['CONNECTION_AUTH_REJECTED','ONEBOT_ACTION_REJECTED','ONEBOT_ACCOUNT_PROFILE_REJECTED'].includes(error.code) ? 'failed' : 'unknown', operation, accountId: profile.accountId, code: error.code ?? 'ONEBOT_ACCOUNT_RESULT_UNKNOWN' }; }
   }
   const route = target => targetRoute(target, profile.platform, profile.accountId);
   async function send(target, segments, deliveryId) {
@@ -59,5 +96,5 @@ export function createBridgeClient(profile, { fetchImpl = fetch, clock = Date.no
       return { status: 'unsupported', code: 'CAPABILITY_UNSUPPORTED' };
     } catch (error) { return { status: ['CONNECTION_AUTH_REJECTED', 'ONEBOT_ACTION_REJECTED'].includes(error.code) ? 'failed' : 'unknown', deliveryId, code: error.code ?? 'ONEBOT_OPERATION_UNKNOWN' }; }
   }
-  return { ...base, inspectCapabilities, execute, get capabilities() { return base.capabilities; } };
+  return { ...base, inspectCapabilities, inspectAccountCapabilities, executeAccount, execute, get capabilities() { return base.capabilities; } };
 }

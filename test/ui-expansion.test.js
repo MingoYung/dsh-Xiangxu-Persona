@@ -394,7 +394,7 @@ test('authorized WeChat private scope is explicit and does not grant unsupported
 
 test('permissions distinguish unsupported capabilities and save only selected real permissions', async () => {
   const ui = await frontend(), panel = await ui.evaluate("state.page='chat';permissionsPanel('qq')"); ui.confirm(true);
-  const unsupported = ui.walk(panel).find(node => node.attributes['aria-label'] === '允许发布朋友圈'); assert.equal(unsupported.disabled, true); assert.equal(unsupported.checked, false);
+  const unsupported = ui.walk(panel).find(node => node.attributes['aria-label'] === '允许发表 QQ 空间说说'); assert.equal(unsupported.disabled, true); assert.equal(unsupported.checked, false);
   const image = ui.walk(panel).find(node => node.attributes['aria-label'] === '允许发送图片'); image.checked = true;
   await ui.button(panel, '保存这些权限').emit('click');
   assert.deepEqual(ui.calls.find(call => call.action === 'permissions.configure').args.allowed, ['chat.text', 'chat.image']);

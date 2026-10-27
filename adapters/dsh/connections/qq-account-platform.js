@@ -23,12 +23,12 @@ export function mergeQQAccountCapabilities(facts, native) {
   if (!native) return facts;
   const identityMatches = Boolean(facts.accountId && facts.accountId === native.accountId);
   const items = [...(facts.items ?? [])];
-  for (const id of ['friend.query', 'friend.request']) {
+  for (const id of ['friend.query', 'friend.request','profile.update','feed.publish']) {
     const capability = native.items?.find(item => item.id === id);
     const supported = identityMatches && capability?.supported === true;
     const driverAvailable = supported && native.connected === true && capability?.driverAvailable === true;
     const item = { id, supported, available: driverAvailable, driverAvailable,
-      provider: 'xiangxu-native-account',
+      provider: capability?.provider ?? 'xiangxu-native-account', ...(Array.isArray(capability?.operations) ? {operations:[...capability.operations]} : {}),
       reason: !identityMatches ? '原生账号操作与当前 QQ 账号不一致或尚未登录' : capability?.reason ?? (driverAvailable ? null : '原生账号操作尚未就绪'),
     };
     const index = items.findIndex(item => item.id === id);

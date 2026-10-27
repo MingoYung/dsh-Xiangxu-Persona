@@ -403,6 +403,34 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     return found ? resultFor(found, true) : { status: 'unknown', code: 'CHANNEL_RECEIPT_UNAVAILABLE' };
   }
   async function receive({ id, event } = {}) { return queue(async () => { await ready; return ingest(id, event, true); }); }
+  async function getAccountBridge() {
+    await ready;
+    const selected = profile('qq');
+    if (closed || suspended || !selected.enabled || selected.config.mode === 'official' || !selected.config.accountId || !selected.config.apiUrl) return null;
+    const sourceCoordinator=getCoordinator();if(!sourceCoordinator)return null;
+    const entry = client(selected), connectionId = hash([entry.fingerprint, selected.generation ?? 0]);
+    const unchanged = () => { const current=profile('qq'); return !closed && !suspended && getCoordinator()===sourceCoordinator && current.enabled && current.config.mode !== 'official' && current.config.accountId === selected.config.accountId && client(current) === entry && hash([entry.fingerprint,current.generation??0]) === connectionId; };
+    const result = await runProbe(selected);
+    if (!unchanged()) fail('CHANNEL_ACCOUNT_MISMATCH', 'QQ连接已切换');
+    const connected=result?.connected===true, identityVerified=connected&&result.accountId===selected.config.accountId;
+    await entry.value.inspectCapabilities?.();
+    if (!unchanged()) fail('CHANNEL_ACCOUNT_MISMATCH', 'QQ连接已切换');
+    const accountCapabilities=await entry.value.inspectAccountCapabilities?.(), operations=accountCapabilities?.operations ?? {};
+    if (!unchanged()) fail('CHANNEL_ACCOUNT_MISMATCH', 'QQ连接已切换');
+    return { accountId:selected.config.accountId, enabled:true, connected, identityVerified, connectionId, operations,
+      async executeAccount(operation,payload,context) {
+        if (!unchanged()) fail('CHANNEL_ACCOUNT_MISMATCH','QQ连接已切换');
+        if(typeof entry.value.executeAccount!=='function')fail('CAPABILITY_UNSUPPORTED','QQ桥未提供此账号操作');
+        const checked=await runProbe(profile('qq'));
+        if(!unchanged()||checked?.connected!==true||checked.accountId!==selected.config.accountId)fail('CHANNEL_ACCOUNT_MISMATCH','QQ账号未在线或已切换');
+        return entry.value.executeAccount(operation,payload,{...context,assertCurrent:()=>{
+          context?.signal?.throwIfAborted();
+          if(!unchanged())fail('CHANNEL_ACCOUNT_MISMATCH','QQ连接或人格已停止或切换');
+          context?.assertCurrent?.();
+        }});
+      }
+    };
+  }
   async function capabilities({ id, sessionId } = {}) {
     await ready;
     const binding = sessionId ? registry.bindings.find(value => value.sessionId === sessionId) : null;
@@ -458,5 +486,5 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     return { invalidated: true, profiles: [...affected], stopped: affectsActive };
   }); }
   async function close() { if (closed) return; await tail; closed = true; suspended = true; await connectionPort?.stop(); await closeListener(); await channelPort.close(); }
-  return { ready, status, configure, start, stop, probe, rotateIngress, suspend, resume, invalidateForRoot, close, output, reconcile, handles, receive, capabilities, execute };
+  return { ready, status, configure, start, stop, probe, rotateIngress, suspend, resume, invalidateForRoot, close, output, reconcile, handles, receive, capabilities, execute, getAccountBridge };
 }

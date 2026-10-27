@@ -1,0 +1,448 @@
+{
+  "schemaVersion": "xiangxu-release-evidence/1",
+  "version": "0.12.0",
+  "generatedAt": "2026-10-27T16:45:26.970Z",
+  "acceptance": "partial: final QQ and Bilibili account login and live platform acceptance require the user; no all-features-live claim",
+  "tests": {
+    "kind": "isolated repository tests",
+    "startedAt": "2026-10-27T16:34:20.446Z",
+    "finishedAt": "2026-10-27T16:37:38.184Z",
+    "durationMs": 197737,
+    "counts": {
+      "tests": 1289,
+      "pass": 1289,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "exitCode": 0,
+    "logSha256": "2556f032f3b4f249f4ca3debba43c4dc86c48049a20bf62ce31a8edd43672b7f",
+    "testedSourceCount": 207,
+    "changedDuringRun": [],
+    "sourceDigestsVerified": true
+  },
+  "staticChecks": {
+    "command": "node scripts/check.mjs",
+    "status": "passed",
+    "syntaxFiles": 206,
+    "portableCoreImports": "passed",
+    "packageTargets": "passed"
+  },
+  "testedReleaseFiles": {
+    "adapters/dsh/index.js": "d4d1e77bce7790accefff0bfb59e83ab29c3e9dd7b5eeb611da8f5fb1f67f6e0",
+    "adapters/dsh/tool-schema.js": "517632b64cef82ff35bea99598fd9846418291423e99dfe2517a0e575a0acd3b",
+    "adapters/dsh/instance-lifecycle.js": "c55ce21693880f33c61e39bc314ea15e3114777276947404da6bac064aebb090",
+    "adapters/dsh/connections/napcat-managed.js": "2ba0ee11136221d845e20688008ba06b26813cfbca33ea07909f97cf073ced17",
+    "adapters/dsh/connections/napcat-process.js": "d579294e951d921c66ae6a9a1109888ddd2226d06602ea2cde3457548cb00003",
+    "adapters/dsh/connections/qq-account-actions.js": "eb09db46bddfa8534ef2c1f8683601052daf26c60a6072ce1ffa67b85d3b4b13",
+    "ui/app.js": "b733acd5403abb05124ff005acc2dbdbed83536304a83785b0c8b50c699182ce",
+    "ui/client.js": "502d31bc6b612c7d8c485371418b16d3fdc0fcc39072302d8d309a2bd9426fda"
+  },
+  "realModel": {
+    "host": "actual DSH desktop, same selected formal personality; no second SDK writer",
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "reasoningEffort": "high",
+    "requestCount": 17,
+    "observedUsageTotals": {
+      "inputTokens": 222103,
+      "outputTokens": 8483,
+      "cacheReadTokens": 81920,
+      "cacheWriteTokens": 0,
+      "totalTokens": 312506
+    },
+    "usageAccounting": "Reported host fields only; input and cached-input semantics are host-specific; no monetary cost inferred",
+    "beforeFix": {
+      "rawLogBytes": 351468,
+      "rawLogSha256": "7b4894240dc62d662ea5fab220bc024fcff3cd23da539e37af2733bde6937dfc",
+      "completedTurns": 2,
+      "calls": [
+        {
+          "eventSequence": 21,
+          "tool": "memory_search",
+          "action": null,
+          "scope": "all",
+          "platform": null,
+          "capability": null,
+          "operation": null,
+          "resultStatus": null,
+          "errorCode": null
+        },
+        {
+          "eventSequence": 23,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "account",
+          "platform": "qq",
+          "capability": null,
+          "operation": null,
+          "resultStatus": null,
+          "errorCode": null
+        },
+        {
+          "eventSequence": 31,
+          "tool": "memory_search",
+          "action": null,
+          "scope": "all",
+          "platform": null,
+          "capability": null,
+          "operation": null,
+          "resultStatus": null,
+          "errorCode": null
+        },
+        {
+          "eventSequence": 33,
+          "tool": "persona_platform",
+          "action": "read",
+          "scope": "account",
+          "platform": "qq",
+          "capability": null,
+          "operation": "friend.query",
+          "resultStatus": null,
+          "errorCode": null
+        },
+        {
+          "eventSequence": 52,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": null,
+          "platform": "bilibili",
+          "capability": null,
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 54,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": null,
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 62,
+          "tool": "persona_platform",
+          "action": "read",
+          "scope": null,
+          "platform": "bilibili",
+          "capability": null,
+          "operation": "search",
+          "resultStatus": "memory_error",
+          "errorCode": "BILI_ARGUMENT"
+        },
+        {
+          "eventSequence": 64,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": null,
+          "operation": null,
+          "resultStatus": "memory_error",
+          "errorCode": "INVALID_TOOL_CURSOR"
+        },
+        {
+          "eventSequence": 72,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": null,
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 80,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": null,
+          "operation": null,
+          "resultStatus": "memory_error",
+          "errorCode": "INVALID_TOOL_CURSOR"
+        },
+        {
+          "eventSequence": 88,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": "message.read",
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 90,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": "groups.read",
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 98,
+          "tool": "persona_platform",
+          "action": "read",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": "groups.read",
+          "operation": null,
+          "resultStatus": "memory_error",
+          "errorCode": "CHANNEL_OPERATION_ID_REQUIRED"
+        },
+        {
+          "eventSequence": 106,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": "groups.read",
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 114,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": "groups.read",
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 122,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": "groups.read",
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 130,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": "conversation",
+          "platform": "qq",
+          "capability": "groups.read",
+          "operation": null,
+          "resultStatus": "bounded_preview",
+          "errorCode": null
+        },
+        {
+          "eventSequence": 138,
+          "tool": "persona_platform",
+          "action": "read",
+          "scope": null,
+          "platform": "bilibili",
+          "capability": null,
+          "operation": "recommend",
+          "resultStatus": "memory_error",
+          "errorCode": "BILI_ARGUMENT"
+        }
+      ]
+    },
+    "postReload": {
+      "rawLogBytes": 49288,
+      "rawLogSha256": "2a9ae7dd0e73023286e0b5e29c92d786ee9b6df2ad527c74c0c580e0803c782b",
+      "turnEnds": [
+        {
+          "eventSequence": 8,
+          "kind": "error",
+          "code": "UNKNOWN"
+        },
+        {
+          "eventSequence": 38,
+          "kind": "completed",
+          "code": null
+        }
+      ],
+      "calls": [
+        {
+          "eventSequence": 25,
+          "tool": "persona_platform",
+          "action": "inspect",
+          "scope": null,
+          "platform": "qq",
+          "capability": "chat.text",
+          "operation": null,
+          "resultStatus": null,
+          "errorCode": null
+        },
+        {
+          "eventSequence": 27,
+          "tool": "persona_platform",
+          "action": "read",
+          "scope": null,
+          "platform": "qq",
+          "capability": "groups.read",
+          "operation": null,
+          "resultStatus": "memory_error",
+          "errorCode": "CAPABILITY_UNSUPPORTED"
+        },
+        {
+          "eventSequence": 29,
+          "tool": "persona_platform",
+          "action": "read",
+          "scope": null,
+          "platform": "bilibili",
+          "capability": null,
+          "operation": "recommend",
+          "resultStatus": "memory_error",
+          "errorCode": "BILI_DISABLED"
+        }
+      ]
+    }
+  },
+  "observed": {
+    "memory": {
+      "queries": 2,
+      "hitCounts": [
+        0,
+        1
+      ],
+      "resultType": "chat/staging",
+      "role": "assistant",
+      "origin": "ai_reply",
+      "sourceReferencesResolvable": true,
+      "retrievalMode": "lexical+association",
+      "semanticEnabled": false,
+      "doesNotEstablish": [
+        "semantic embeddings",
+        "long-term personality quality",
+        "human identity recognition"
+      ]
+    },
+    "qq": {
+      "beforeFinalRestart": {
+        "accountInspectionReady": true,
+        "accountInspectionConnected": true,
+        "existingFriendConfirmed": true,
+        "groupInspectionConnected": true,
+        "groupTextCapabilityAvailable": true
+      },
+      "current": {
+        "connected": false,
+        "personalityTextGrantRetained": true,
+        "loginScanRequired": true,
+        "onebotApiAvailable": false,
+        "groupReadResult": "CAPABILITY_UNSUPPORTED while current bridge is not ready; not proof that the online driver permanently lacks group reads"
+      },
+      "newFriendRequests": 0,
+      "profileAndSpaceGrantsSaved": true,
+      "profileAndSpaceDecision": "personality chose not to change or post in this turn",
+      "liveProfileWrites": 0,
+      "liveSpacePosts": 0,
+      "newGroupRoundTrips": 0,
+      "previousRoundTrips": "0.11.0 historical evidence only",
+      "incomingEventsIndependentOfActiveReadPermissions": true
+    },
+    "reload": {
+      "earlierStage": {
+        "sameSurvivingOwnedQqProcessRestored": true,
+        "duplicateQqSpawn": false,
+        "newQqScanNeeded": false
+      },
+      "laterStage": {
+        "oldControlledProcessStopped": true,
+        "newControlledProcessProofVerified": true,
+        "newQqScanNeeded": true,
+        "onebotApiAvailable": false
+      },
+      "humanQqProcessUnaffected": true,
+      "doesNotEstablish": "all shutdown and login recovery paths have been accepted"
+    },
+    "ownershipRecovery": {
+      "observedAt": "2026-10-27T16:17:39.367Z",
+      "method": "normal DSH restart with fixed lifecycle source; no manual production lock deletion",
+      "sourceSha256": "c55ce21693880f33c61e39bc314ea15e3114777276947404da6bac064aebb090",
+      "before": {
+        "version": 4,
+        "ownerCount": 5,
+        "sha256": "ab6855d460af64cf40e1941e59c96845c3ab1c4f764ce6ea165a03215f5c6646"
+      },
+      "after": {
+        "version": 5,
+        "ownerCount": 6,
+        "sha256": "1d6a0bed366b42df38b9ab240f531e8b997723e3c78979b2d5e73e6c3811f854"
+      },
+      "lostOrChangedOldOwners": 0,
+      "lockPresent": false,
+      "recoveryGuardPresent": false
+    },
+    "qrRefreshObservation": {
+      "observedAt": "2026-10-27T16:45:26.871Z",
+      "host": "actual final DSH desktop and managed NapCat 4.18.41",
+      "method": "QR expired naturally during independent release checks, then CUA clicked the explicit regenerate button once",
+      "before": {
+        "expiredLoginError": true,
+        "regenerateButtonAvailable": true,
+        "qrImageVisible": false,
+        "axSha256": "a459c0284a7c412d2e7bffa15e9c62cd334487a3cadb9bd34b231ce6279150f6",
+        "screenshotSha256": "77bb92f8206bcdfdd0d7b89d0fcb188f5c70e33f9a241faf28860ddb286d78b2"
+      },
+      "after": {
+        "expiredLoginError": false,
+        "waitingForUserScan": true,
+        "qrImageVisible": true,
+        "axSha256": "7cdb9cd7dc3699e0d2ffa8f1ca43cdc9b44535a66c13be797dc1df54c169a3d7",
+        "screenshotSha256": "b2eca10dfbdac4ee7b13e8ebab99047a61f7668c9d4a2a31f51d3a6f347440d7"
+      },
+      "loginConfirmed": false,
+      "platformRoundTripAccepted": false,
+      "rawQrContentsPublished": false
+    },
+    "bilibili": {
+      "credentialsPresent": false,
+      "enabled": false,
+      "liveVideoMaterialsRead": 0,
+      "scanRequired": true,
+      "publicWrites": 0
+    },
+    "userReturnNotification": {
+      "channel": "QQ private message",
+      "sender": "Codex technical notice, not a persona completion notification",
+      "status": "delivered",
+      "confirmedMessageIdPresent": true,
+      "readByUser": "unknown",
+      "automaticRetry": false
+    },
+    "fallbackUserReturnNotification": {
+      "channel": "WeChat File Transfer Assistant",
+      "sender": "Codex technical notice",
+      "status": "sent_in_ui",
+      "serverReceipt": "not_exposed",
+      "phoneDelivery": "unknown",
+      "readByUser": "unknown",
+      "automaticRetry": false
+    },
+    "completionNotification": {
+      "status": "pending until the requested acceptance work and Git push are complete",
+      "mustBeComposedByPersonality": true
+    }
+  },
+  "autonomy": {
+    "coreChanged": false,
+    "noForcedProfileValues": true,
+    "noChangeScheduleOrMandatoryProfileWrite": true,
+    "platformResultsNotHumanDialogue": true,
+    "technicalLimitsAreNotPersonalityJudgments": true
+  },
+  "privacy": "Local tokens, cookies, QR contents, actual QQ identities, private messages, source memories and raw model logs are excluded from this public receipt."
+}

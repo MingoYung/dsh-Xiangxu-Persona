@@ -1,6 +1,6 @@
 # 十四模块实现映射
 
-本表说明代码落点；当前0.11.0的个人QQ受管向导见[操作与验收](qq-one-click-setup.md)，0.10.0检索／平台与0.10.1界面／上下文验收保留各自历史范围。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
+本表说明代码落点；当前0.12.0的QQ账号操作与真实支持边界见[账号能力与验收](account-capabilities.md)，个人QQ受管向导见[操作说明](qq-one-click-setup.md)。下文0.10.0检索／平台、0.10.1界面／上下文与0.11.0个人QQ验收保留各自历史范围。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |
 |---|---|---|
@@ -145,4 +145,14 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 
 ## 0.11.0 个人QQ接入消费者
 
-受管NapCat准备与扫码留在DSH connections适配层；channels沿用户确认的默认自主社交或可选指定对象范围、真实账号与原生binding收发，支持NapCat原生HMAC事件验签。管理桥提供qqBridgeSetup.inspect/start/poll/connect/stop，权限仍由permissions按实例／平台／账号核对。它不增加第十五个人格模块或第二套记忆，不增加关注、回复、主动和成长规则。当前实际通过范围见[最终验收](qq-one-click-setup.md#0110-final-acceptance)。
+受管NapCat准备与扫码留在DSH connections适配层；channels沿用户确认的默认自主社交或可选指定对象范围、真实账号与原生binding收发，支持NapCat原生HMAC事件验签。该版本管理桥提供qqBridgeSetup.inspect/start/poll/connect/stop，权限仍由permissions按实例／平台／账号核对。它不增加第十五个人格模块或第二套记忆，不增加关注、回复、主动和成长规则。0.11.0当时实际通过范围见[历史最终验收](qq-one-click-setup.md#0110-final-acceptance)。
+
+## 0.12.0 QQ账号自身操作与连接恢复
+
+| 能力 | 实现与消费点 | 当前边界 |
+| --- | --- | --- |
+| 修改QQ头像／资料、发表QQ空间说说 | connections/qq-account-actions.js、qq-account.js、qq-account-platform.js与persona_platform | 独立account作用域，无聊天target或伪造binding；已核NapCat或明确报告动作的驱动直连，不把所有OneBot视为支持 |
+| 账号档案与许可 | QQ账号收据、permissions与管理页面 | profile.avatar沿profile.update许可；资料必须result:0、说说必须真实tid才确认完成，未知不重放，原资料保留可回查 |
+| 管理口与QQ恢复 | connections/napcat-managed.js、napcat-process.js与qqBridgeSetup.recover | 管理认证／限流、真实QQ状态、owned进程归属分别核对；未核实launching阻止重复启动，不能据它停止进程 |
+
+空间浏览、点赞、评论、好友请求处理、群管理及实时通话不因这几个账号写入接口而自动接通。当前操作参数、资产上限与静态／隔离／真实验收边界统一见[0.12.0账号能力](account-capabilities.md#0120-current-acceptance)；旧版本测试数不替代本版证据。记忆取舍和平台使用仍由人格自主判断。

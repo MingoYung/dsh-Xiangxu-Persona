@@ -1,8 +1,8 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.11.0兼容扩展在第23／24节：受管QQ准备／扫码／授权与独立账号工具、完整档案和通用维护端口。第20／21节自我档案和生命周期、第22节检索与可选平台继续有效；历史证据不自动提升为本轮验收。
+当前0.12.0兼容增量以第25节为权威：QQ账号自身操作、management／lastVerifiedQQ／recovery与一键重新连接。第20–24节既有自我档案、生命周期、检索、受管连接与原生好友工具按兼容范围继续有效；历史证据不提升为本轮验收。
 
-> 0.11.0当前维护：受管连接见persona-schema第23节；独立QQ账号工具、完整档案和通用维护扩展见第24节及[QQ账号操作](../../qq-account-operations.md)。源码接线、正式宿主加载、真人收件与操作者诊断分层，以[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)为准；0.10.1及更早证据保留历史范围。
+> 0.12.0当前维护：QQ账号自身操作、管理认证／限流与owned恢复以[persona-schema第25节](persona-schema.md#0120-account-and-recovery-contract)为字段权威，操作见[QQ账号工具](../../qq-account-operations.md)，平台实际边界与待验收见[当前能力及验收](../../account-capabilities.md#0120-current-acceptance)。persona-memory/3与人格自主判断保持兼容；0.11.0及更早结果保留历史范围，不能自动当作本版新增功能已实测。
 
 本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.11.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
@@ -1011,9 +1011,11 @@ clearPreview只扫描、计算指纹并签发本进程内临时token，不删除
 
 会话归属文件schema为xiangxu-session-owners/1，持久保存SHA256(sessionId)→instanceId，无聊天正文。清除时capture在排他锁内重读并合并最新归属；合法外部新增可保留，归属冲突、锁忙或容量失败则在删除前拒绝，不覆盖已持久记录。归属冲突不覆盖；停用/切换/归档/清除前后采集实际接入和检查点中的会话。清除目标文本后此记录仍保留，用来拒绝把属于旧实例的DSH会话自动接入新实例；宿主旧日志本身没有被删除。它是技术隔离记录，不决定同一人格怎样认人或跨对象回忆。
 
+0.12.0补充归属capture异常退出后的技术锁恢复：`.ownership.json.lock`须为1–4096字节、独立普通单链接文件，正文只含有效PID与UUIDv4 token。恢复在独占`.lock.recovery`保护下取得两份稳定快照，逐项核dev／ino／birth身份、size／mtime／ctime版本、完整字节、PID和token，两次PID检查都明确为ESRCH才删除同一旧锁。随后只尝试一次`wx`新锁；若另一写者已先取得锁，保留它，不回头再次回收。活进程、状态未知、格式／链接异常、快照变化或已有recovery guard均拒绝接管；不按时间删锁，不改原owner正文。guard异常残留不自动恢复，释放guard失败会尝试释放本次新主锁。错误仍为`INSTANCE_OWNERSHIP_BUSY`，消息说明具体原因，并在可核实时附owner PID。专项验证与正式重启证据按[本轮阶段记录](../../account-capabilities.md#0120-stage-observations)分列。
+
 技术容量为最多16个未清除实例（归档与partial仍占用）、256个已清除墓碑；登记文件256KiB，归属文件2MiB，容量满明确拒绝而不淘汰归属/墓碑。list返回全部未清除记录与登记顺序尾部最多20条已清除记录，counts报告总量，clearedListComplete说明已清除列表是否完整。清除扫描最多20000个受管文件、累计256MiB；这些是管理操作技术帽，不扩大原有核心库容量或人格上下文预算。
 
-本节是0.9.0生命周期增量的结构与执行契约，其历史验收见[0.9.0最终验收](../../management-ui.md#090-final-acceptance)；当前0.10.0增量以[本轮验收记录](../../integrations-and-retrieval.md#本轮验收记录)为准。
+本节是0.9.0生命周期增量的结构与执行契约，其历史验收见[0.9.0最终验收](../../management-ui.md#090-final-acceptance)；0.10.0当时增量见[历史验收记录](../../integrations-and-retrieval.md#本轮验收记录)，0.12.0的归属残锁修复与实际恢复范围见[当前验收](../../account-capabilities.md#0120-current-acceptance)。
 
 ## 22. 混合候选检索与可选平台扩展（0.10.0）
 
@@ -1103,3 +1105,88 @@ inspect核真实账号与原生能力；read分别执行friend.query／friend.op
 core维护可选extensionValidator({path,value,kind:'content'|'writerLock'})，仅返回true才接纳扩展；validateMemoryRoot／validateBackup／createBackup／restoreBackup／recoverRestore及恢复完成链均传递同端口，缺省严格拒未知扩展。DSH只认精确qq-account与既有qq-social路径／结构，nested WAL核文件名、digest及每条entry，active nested writer拒维护；停止排空并releaseRoot后才允许校验、备份、恢复或明确清除。精确清除仍有20000文件／256MiB扫描帽；库外共享native journal、凭据、作品和备份排除。
 
 本轮验收仅同人格原目录backup／restore；receipt标识含原root与instance，跨人格／换根迁移未实现，不盲改不可变原件。库外native journal另有跨进程prepare锁和严格2048项容量；崩溃残锁不按时间自动回收，确认旧writer已停后才可受控技术修复。CONTROL_GUIDANCE本轮增加API用法与事实回执说明，核心新增通用维护端口，未加人格频率或价值裁决。源码接线、操作者诊断、真人聊天收件与正式工具实测分层见[当前验收](../../qq-one-click-setup.md#0110-final-acceptance)。
+
+
+<a id="0120-account-and-recovery-contract"></a>
+
+## 25. QQ 账号自身操作与受管恢复（0.12.0）
+
+本节是 0.12.0 新增字段与状态的权威，兼容第23／24节；核心 `persona-memory/3`、八工具和人格判断保持不变。第24节的原生好友 DTO、固定 ABI 与 `friend.query/request/status` 仍有效；下列 OneBot 账号自身动作不冒充原生好友调用，不要求聊天 target，也不伪造人类来信或人物归属。跨平台实际范围与待验收见[账号能力](../../account-capabilities.md#0120-current-acceptance)。
+
+### 25.1 人格工具参数与成功条件
+
+`persona_platform` 使用 `scope:account/platform:qq/action:execute`，新增以下 `accountOperation`；实际账号、实例、资料根和可信工具调用 operationId 取宿主上下文。模型不填写 operationId／路径／令牌，不把 account 操作挂到聊天 binding。
+
+在已授予当前人格、当前QQ账号的工具能力范围内，是否修改自己的头像、昵称、签名、性别资料，具体使用什么内容以及何时修改，均由人格自主决定。程序不设固定更换周期、次数或触发条件。
+
+| accountOperation | 参数 | 既有许可 | 确认完成条件 |
+|---|---|---|---|
+| `profile.avatar` | `accountId`、当前人格图片 `assetId` | `profile.update` | 已核实 OneBot `retcode:0`、`status:ok` 与头像动作的实际响应结构；本桥当前确认 `data:null` 路径，不泛化 void 为所有操作成功。 |
+| `profile.update` | `accountId`、`nickname` 必填1–64字符、`signature?` 最多512字符且可空、`sex?:unknown/male/female` | `profile.update` | `data.result===0`；明确非零 failed，缺少该结果 unknown。sex 向桥映射为0／1／2，不据此推导人格性格。 |
+| `feed.publish` | `accountId`、`text` 最多16000字符（有图可空）、`imageAssetIds?` 最多9个唯一资产、必填 `visibility`、`targetUserIds?` | `feed.publish` | 实际返回非空 `tid` 才 completed，缺失／响应未确认 unknown。 |
+
+`visibility` 只接受 `1/4/16/64/128`，分别为公开／好友／部分好友可见／仅自己／部分好友不可见。`targetUserIds` 最多100个唯一真实QQ号；16／128必须非空，其他范围不可给非空列表。参数限制是平台和资源契约，不选择人格应当发布什么、联系谁或采用哪种范围。
+
+图片资产 ID 为当前人格已保存的 `asset-<32hex>`。每件8MiB、总16MiB、最多9件，复核容器／MIME／SHA与实际字节；准备记录 `request.assets=[{assetId,sha256,bytes,mime}]` 不保留图片 Base64、路径或密钥。临时发送字节不进入人格上下文或普通聊天 delivered 账本。
+
+适配器来源 `napcat-onebot-account`；只有实际已认证的当前账号／桥连接、精确 NapCat 4.18.41 或 `get_supported_actions` 明示相应 action 时提供对应能力。`profile.avatar/profile.update` 共享 `profile.update` 许可，`feed.publish` 使用自己的既有许可；换账号、换实例或连接身份改变重新核对。原生已支持能力优先，optional 扩展不能把它覆盖为另一来源。
+
+### 25.2 保持 v1 的账号技术档案扩展
+
+`schemaVersion:xiangxu-qq-account/1`、index／query／receipt路径与原始不可变修订保留兼容。旧好友记录仍有实际 `userId`，旧记录缺 `operation` 时按既有好友申请解释。账号自身操作在准备原件、索引摘要与状态修订中携带 `operation:profile.avatar|profile.update|feed.publish`、`userId:null`，增加 `completed` 状态；不能写成联系人 null 或新增好友关系。
+
+本分支先 durable prepared，再单次 dispatch；收据记录 `transportCalls/transportCallUpperBound`（中断可为null／1），原生好友分支继续 `nativeCalls/nativeCallUpperBound`。同一宿主可信编号、相同参数／来源仅回旧记录，不重放；更换参数／来源为冲突。prepared 冷恢复保留 unknown，未确认回执、写入失败或重启不能生成第二次副作用。完成结果含 `status/operation/accountId/receiptId/confirmedBy:onebot-api-success`，空间成功另有实际 `tid`；没有结果不能把 HTTP200 当完成。
+
+`friend.status` 仅用于原好友记录；账号自身动作没有已实现的远端通用 status API，unknown 不通过重发来核对。`read/receipts` 分页列出真实 operation，`read/receipt` 继续按 offset／maxChars／sha256 完整读取。UI 中 null 目标为“账号自身”，completed为“已完成”，仅好友记录显示好友状态核对按钮。
+
+原有2048收据／2048查询、2MiB索引、256KiB单记录、64MiB档案、每收据64修订、50条列表／页和8000 Unicode字符／次正文读取继续有效；超限拒绝新操作并保留原件。通用维护扩展校验器接受新 operation／null userId／completed 分支，仍拒未知路径／结构；同人格原目录 backup→restore 的不可变准备及修订字节已隔离验证，不代表跨根迁移或正式 QQ 写操作实测。
+
+### 25.3 管理认证和QQ登录的公开状态
+
+~~~ts
+interface ManagedQQStatus0120 {
+  management: {
+    status: "unknown" | "ready" | "unavailable" | "rate_limited";
+    lastVerifiedAt: number | null;
+    retryAt: number | null;
+    retryAfterMs: number;
+    errorCode: string | null;
+  };
+  lastVerifiedQQ: {
+    at: number;
+    online: boolean;
+    coreReady: boolean;
+    loginPhase: string | null;
+    accountId: string | null;
+  } | null;
+  recovery: {required: boolean; canRecover: boolean; reason: "offline_without_qr" | null};
+}
+~~~
+
+原 phase／flowId／instanceId／loginAccount／qrContent（仅owner端转QR）继续保留。management 是本机 WebUI 管理通路状态，lastVerifiedQQ 是最近实际读取的 QQ 登录事实，不能互相替代。HTTP200 内 Unauthorized 与HTTP401均按认证失败处理，管理认证共享 single-flight；只读登录查询最多恢复一次凭据，不重放 SetConfig 或其他 mutation。明确 login rate limit 使用60000ms本机技术冷却及 retryAt，不按失败轮询延长；这不是人格聊天频率规则。合法业务拒绝保留 management.ready，不把“无QRCode”等业务错误误称管理鉴权失败。
+
+UI 出错停止2.5秒自动读取，仅本地倒数，到期由本人点“重新检查连接”；同页各动作共享in-flight状态。离开或hidden取消UI定时器，回可见只对有效活动flow做一次只读核对且不越过冷却；不会自动RefreshQR、QuickLogin或recover。仅本次有效QR才指导扫码；缓存在线／旧二维码不得冒充当前确认。
+
+手动换码入口与当前QR是否可显示分开判断：仅`phase:waiting_login`、`management.status:ready`，且无错误或只有明确`NAPCAT_LOGIN_ERROR`时可提供“重新生成二维码”；即使错误使QR隐藏，仍可由本人点击。认证／限流／未知管理状态、需重连、手机已确认、初始化或在线状态不允许换码。handler核alive／visible／in-flight及捕获的flowId，普通poll／recheck绝不自动传refreshQr。后台仅实际Refresh成功后重新CheckLoginStatus，以新状态报告错误，不复用Refresh前的旧loginError盖住新码。专项通过不代替真实过期码手动刷新验收。
+
+### 25.4 本人一键重新连接与启动恢复
+
+新增owner动作 `qqBridgeSetup.recover({instanceId,flowId})`。required仅在新鲜管理查询确认 `management.ready`、实际QQ `online:false/loginPhase:offline` 且无QR时成立；canRecover还要求本应用native启动代次及可证归属的停止端口。执行前再次只读核实状态与实例／根／账号／flow，核marker、boot、ABI、PID及进程树归属；先确认对应owned树和监听端口已退出，再创建新flow启动。无法证明停止时如实保留错误／manualCloseRequired，不spawn第二套、不按QQ.exe名称结束进程。
+
+本人一次点击“重新连接QQ”不新增逐次审批弹窗；恢复保持已保存账号／接入范围／许可／记忆，不自动拓宽范围、不自动QuickLogin或刷新二维码，新的平台扫码仍由本人完成。stop取消恢复意愿；旧flow、账号变化、人格生命周期和迟到结果继续封闭原作用域。冷启动owner receipt恢复按第25.5节另行保存与核验；生产结果以最终回执补充，不能把热运行成功扩写成所有冷启动已通过。
+
+仅当前service实际spawn的新flow在starting阶段有90秒传输就绪宽限：明确的本机连接未就绪保持starting与management.status:unknown，继续有界poll，不造在线事实或二维码；认证、限流、业务拒绝、HTTP错误和未分类异常不因宽限而隐藏。私有spawnedHereAt仅用于本次启动计时，不进入公开状态或模型。已有可达进程与冷恢复不应用此宽限；90秒后传输仍未就绪则failed／management.unavailable并报`NAPCAT_STARTUP_TIMEOUT`，不执行第二次spawn，最终实际恢复结果另行验收。
+
+第23／24节的0.11.0历史验收保留原范围。本节定义不替代本版[当前验收表](../../account-capabilities.md#0120-current-acceptance)，也不增加人格频率、关系或记忆裁决规则。
+
+### 25.5 私有启动归属收据与冷恢复
+
+本机受管目录的`owned-launch.json`为私有技术记录，schema为`xiangxu-napcat-owned-launch/1`，state为`launching|verified|stopped`。它记录version、instanceId、memoryRoot、qqPath、versionRoot、launcherPath、launcherPid、startedAt、bootId、configPath及configSha256、markerPath、loaderPath、port、abiVersion与processProof。令牌仍只在原私有配置中，不再抄一份到receipt；UI和人格工具不读取processProof或秘密配置。
+
+启动时先记launching；只有OS进程归属证明和使用原令牌／boot／ABI的本机原生握手都通过后才附processProof并记verified。QQ尚未登录时原生`ready:false/accountId:null`也可证明这次进程归属，但不能因此宣布QQ在线或账号工具可用。processProof为`xiangxu-owned-qq-process/1`，含bootId、pid、launcherPid、path、createdAt和startedAt。
+
+冷恢复只接受同一owner实例与记忆根、相同固定版本和精确路径布局的verified记录，重新核配置SHA、loader／资产摘要、端口／ABI、marker／PID及OS出生事实，再以原token作原生握手；不能凭磁盘PID或QQ.exe名称收养外部进程。缺失旧receipt、launching未证、stopped、配置／资产变化或身份不匹配均不能变成已恢复归属；若OS归属已证但握手未确认，明确阻止再启动另一套并保留未确认状态。实际QQ登录、原渠道恢复和模型聊天仍需各自核验。此结构实现与正式冷启动验收分别记录在本版验收表。
+
+前阶段正式宿主加载后曾恢复同一个仍存活的在线受控QQ，无需新扫码；之后一次重启停止了旧受控进程，本次最终运行已启动新的受控QQ并取得verified归属证明，目前等待本人重新扫码，OneBot API尚不可用，主QQ保持运行。不能用前阶段在线事实代替当前登录，也不据此宣布优雅关闭通过。实际ownership残锁自动恢复、1289项完整回归及修后真实模型3次只读调用已有各自证据；登录后平台材料与未执行的写操作仍待验证，详见[阶段观测](../../account-capabilities.md#0120-stage-observations)，不改变上述字段契约。
+
+`launching`记录同时是未核实启动屏障：即使旧WebUI没有监听，也不能据此认定原QQ已经退出并spawn第二套。后台返回`NAPCAT_OWNED_LAUNCH_UNVERIFIED`与`manualCloseRequired`，请本人确认并关闭旧受管QQ后处理；不会按记录年龄自动回收，也不能用launching记录作为收养或授权stop进程的依据。此边界不代表新版真实recover或平台写入已经验收。

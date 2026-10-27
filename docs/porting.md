@@ -42,3 +42,9 @@ The package is dsh-xiangxu-persona; its core export is dsh-xiangxu-persona/core.
 普通文字和已存关联检索不要求外部服务。其它宿主可通过repository.setSemanticPort提供纯embed端口，显式调用prepareRetrievalIndex建立所选批次，再使用search；关闭或更换服务会清缓存，凭据、网络和用户启用界面由宿主负责。方法与真实向量要求见[Repository API](repository-api.md#0100-hybrid-candidate-retrieval-and-volatile-semantic-port)，数值以[retrieval-config.js](../core/retrieval-config.js)为准。
 
 QQ、B站、宿主附件／语音识别与可选动态／翻唱都是DSH适配层，不是核心默认依赖。移植不能把附件已接收当作媒体理解、把状态submitted当作送达，或把参考曝光当作回忆。不得用旧DSH/模型证据替代新宿主验收，详见[0.10.0 接入与检索说明](integrations-and-retrieval.md)。
+
+## 0.12.0 独立账号作用域与平台实际能力
+
+当前DSH适配器的QQ头像profile.avatar、资料profile.update及QQ空间说说feed.publish可通过已核NapCat账号接口直连；它们是独立account作用域，不需要私聊binding或聊天target，不能伪造一条人类来信来获得执行路由。移植时分别实现当前人格／账号／生命周期核验、实际平台能力、用户技术许可、资产字节与SHA复核、持久准备与结果收据；未知或重启中的同一操作不盲重放。工具结果和账号资料作为独立原件保留，不自动写成人类对话或人格记忆。
+
+资料更新必须取得明确result:0、QQ空间发布必须取得真实tid才能确认完成；普通OneBot名称、方法存在或submitted状态均不等于完整能力或成功。空间浏览／点赞／评论、翻唱及其它平台操作仍需对应真实驱动，不能从这三个接口推断已支持。参数、容量、支持来源和当前证据见[账号能力说明](account-capabilities.md)及[QQ账号操作](qq-account-operations.md)。0.10／0.11历史回执保留原宿主和版本边界，不能代替新移植或本版真实写入验收。

@@ -1,12 +1,12 @@
 # 相续人格（dsh-Xiangxu-Persona）实施计划
 
-当前实现0.11.0增加个人QQ受管NapCat准备、扫码、自主社交接入，以及独立账号作用域的联系人查询／主动申请和完整档案。字段保持persona-memory/3兼容，第22节检索、第23节受管连接和第24节账号工具分别为权威；正式宿主加载和真实验收分层报告。
+当前实现0.12.0增加QQ头像／资料／空间说说的独立账号操作、管理认证／限流与离线无QR的一键owned恢复。第25节定义新增字段，第22–24节继续按兼容范围生效；静态、隔离、正式加载与真实平台写入分别验收，不改变人格自主判断。
 
-> 0.11.0当前维护：受管连接见persona-schema第23节；独立QQ账号工具、完整档案和通用维护扩展见第24节及[QQ账号操作](../qq-account-operations.md)。源码接线、正式宿主加载、真人收件与操作者诊断分层，以[当前验收](../qq-one-click-setup.md#0110-final-acceptance)为准；0.10.1及更早证据保留历史范围。
+> 0.12.0当前维护：QQ账号自身操作、管理认证／限流与owned恢复以[persona-schema第25节](persona/persona-schema.md#0120-account-and-recovery-contract)为字段权威，操作见[QQ账号工具](../qq-account-operations.md)，平台实际边界与待验收见[当前能力及验收](../account-capabilities.md#0120-current-acceptance)。persona-memory/3与人格自主判断保持兼容；0.11.0及更早结果保留历史范围，不能自动当作本版新增功能已实测。
 
 0.8.1历史补丁增强透明主题下的操作提示：主导航和内容分类的选中项有常驻下划线，功能入口有“打开 →”轮廓标记，状态单独显示；悬停与键盘焦点可见。颜色继续取自DSH主题，0.8系列操作流程及后台契约不变。
 
-修订日期：2026-10-27。当前设计版本：`persona-memory/3`。状态：独立核心＋DSH适配层实现更新为 `dsh-Xiangxu-Persona` 0.11.0，采用五个主入口和任务式子页，保留八工具、独立工作预设、自主委派与任务资料隔离；保留官方QQBot／微信iLink扫码、实际能力授权、形象档案及可选图片／视频服务。当前入口和分级证据见[管理说明](../management-ui.md)；旧运行记录不冒充本版验收。
+修订日期：2026-10-27。当前设计版本：`persona-memory/3`。状态：独立核心＋DSH适配层实现更新为 `dsh-Xiangxu-Persona` 0.12.0，采用五个主入口和任务式子页，保留八工具、独立工作预设、自主委派与任务资料隔离；保留官方QQBot／微信iLink扫码、实际能力授权、形象档案及可选图片／视频服务。当前入口和分级证据见[管理说明](../management-ui.md)；旧运行记录不冒充本版验收。
 
 完整入口：`persona/README.md`。字段、配置和工具参数以 `persona/persona-schema.md` 为唯一权威；执行流程见 `persona/architecture.md`。四份调研与一份历史测量只提供证据，不覆盖本方案。
 
@@ -274,3 +274,14 @@ DSH层增加QQ丰富消息／媒体输入、B站本人扫码及有限操作、�
 原创loader校验固定bundle／wrapper和自有资产，绑定本次boot、owned进程与真实账号；不修改官方bundle或QQ文件。core只增加通用extensionValidator维护端口，DSH负责精确扩展schema、nested WAL和写锁；同人格原目录的账号档案进入backup／restore和明确文本清除，外部共享native journal保留，跨人格／换根迁移未实现。本轮CONTROL_GUIDANCE增加API说明，未加人格频率或价值规则。
 
 字段唯一见[第24节](persona/persona-schema.md#24-独立qq账号工具与维护扩展0110)，工具与恢复说明见[账号操作](../qq-account-operations.md)。原生诊断三次调用中仅最后一次提交成功，用户收到并通过；聊天链各一轮私聊／群聊已有用户收件，但新版账号工具仍待正式宿主加载后验收。完整证据统一见[验收表](../qq-one-click-setup.md#0110-final-acceptance)，不以阶段测试数量或文档一致性冒充上线。
+
+
+## 0.12.0 当前适配增量与验收边界
+
+在已授予当前人格、当前QQ账号的工具能力范围内，是否修改自己的头像、昵称、签名、性别资料，具体使用什么内容以及何时修改，均由人格自主决定。程序不设固定更换周期、次数或触发条件。
+
+本版新增QQ账号自己的头像／资料和空间说说工具，字段统一读取[第25节](persona/persona-schema.md#0120-account-and-recovery-contract)，平台能力／权限来源与连接恢复操作见[当前能力说明](../account-capabilities.md#0120-current-acceptance)。独立账号没有聊天target，操作原件带真实工具来源，不当作人类对话，也不自动进入人格记忆。旧好友记录、persona-memory/3兼容链与原有自主性边界继续保留。
+
+管理认证失败、60秒本机管理限流、QQ确实离线无QR与有有效二维码是不同状态；只有明确offline且可证owned退出时提供本人一次“重新连接QQ”，不按进程名清理其他账号。源码／隔离测试与正式宿主、真实资料或空间写入分层报告；同根账号档案备份恢复已有隔离文件链验证，冷启动owner receipt仍按本轮最终证据单列。本节不重跑、扩写或替换本文件内既有历史研究／测量结果。
+
+前阶段已观察真实Flash的lexical／association检索、QQ账号只读查询及同一在线受控QQ冷恢复，模型自主选择不改资料、不发空间，本轮没有新群消息。stage3模型前的ownership锁失败保留；修复后正常GUI重载自动恢复实际旧锁、原5项owner映射保留，专项33／33，冻结源码完整回归1289／1289、207份源码指纹稳定。累计17次真实模型请求，修后3次工具调用各一次并完成，当前QQ未就绪与B站未登录如实报告，没有发消息、改资料、发布或重试。QQ／B站目前仍待本人扫码，OneBot API不可用；优雅关闭、登录后材料和实际写入不作通过结论。事实、实际ISO时间和证据范围统一见[阶段记录](../account-capabilities.md#0120-stage-observations)及[公开收据](../verification/0.12.0-account-recovery.json)。

@@ -20,7 +20,7 @@ export function createPersonaSurfaces({ management, channels, connections, permi
       if (action.startsWith('qqBridgeSetup.')) {
         if (!qqBridgeSetup) fail('QQ_SETUP_UNAVAILABLE', '个人QQ一键连接组件尚未就绪');
         const method = action.slice(14);
-        if (!['inspect', 'start', 'poll', 'connect', 'stop'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown QQ setup action');
+        if (!['inspect', 'start', 'poll', 'connect', 'recover', 'stop'].includes(method)) fail('BAD_MANAGEMENT_REQUEST', 'Unknown QQ setup action');
         const result = await qqBridgeSetup[method](args);
         if (result?.qrContent) { try { return { ...result, qrDataUrl: createLoginQr(result.qrContent) }; } catch { return { ...result, qrDataUrl: null, qrUnavailable: true }; } }
         return result;

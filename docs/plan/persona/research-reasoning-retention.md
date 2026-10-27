@@ -2,7 +2,7 @@
 
 0.10.0继续使用有界过程／任务原件与真实来源；向量缓存和参考诊断不是额外永久reasoning全文库，也不证明人格发生回忆。
 
-> 0.11.0当前维护：个人QQ受管准备、本人扫码与范围接入见[操作和最终验收](../../qq-one-click-setup.md)，字段沿用persona-memory/3。0.10.1的[历史验收](../../ui-retrieval-context-validation.md)保留，不把旧数字提升为本轮结果。
+> 0.12.0当前维护：QQ账号自身操作、管理认证／限流与owned恢复以[persona-schema第25节](persona-schema.md#0120-account-and-recovery-contract)为字段权威，操作见[QQ账号工具](../../qq-account-operations.md)，平台实际边界与待验收见[当前能力及验收](../../account-capabilities.md#0120-current-acceptance)。persona-memory/3与人格自主判断保持兼容；0.11.0及更早结果保留历史范围，不能自动当作本版新增功能已实测。
 
 > 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
@@ -299,3 +299,10 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 ## 0.9.0 人格生命周期的权威入口
 
 名称式新建、切换、归档保留、恢复与明确文本清除按[字段契约第21节](persona-schema.md#21-人格实例生命周期与文本清除090)和[执行链](architecture.md#090-人格生命周期执行链)实施；归档不是备份，清除只处理目标库受管文本，外部资料排除，旧会话归属哈希保留。此处不另定义状态、容量或人格规则。0.9.0的统一状态与最终证据见[管理说明](../../management-ui.md#090-final-acceptance)。
+
+
+## 0.12.0 当前适配增量与验收边界
+
+本版新增QQ账号自己的头像／资料和空间说说工具，字段统一读取[第25节](persona-schema.md#0120-account-and-recovery-contract)，平台能力／权限来源与连接恢复操作见[当前能力说明](../../account-capabilities.md#0120-current-acceptance)。独立账号没有聊天target，操作原件带真实工具来源，不当作人类对话，也不自动进入人格记忆。旧好友记录、persona-memory/3兼容链与原有自主性边界继续保留。
+
+管理认证失败、60秒本机管理限流、QQ确实离线无QR与有有效二维码是不同状态；只有明确offline且可证owned退出时提供本人一次“重新连接QQ”，不按进程名清理其他账号。源码／隔离测试与正式宿主、真实资料或空间写入分层报告；同根账号档案备份恢复已有隔离文件链验证，冷启动owner receipt仍按本轮最终证据单列。本节不重跑、扩写或替换本文件内既有历史研究／测量结果。
