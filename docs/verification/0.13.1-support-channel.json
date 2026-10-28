@@ -1,0 +1,68 @@
+{
+  "schema": "xiangxu-verification/1",
+  "version": "0.13.1",
+  "generatedAt": "2026-10-28T04:27:59.095Z",
+  "scope": "Support reporting and market-submission preparation; isolated source tests only",
+  "fullRegression": {
+    "platform": "Windows",
+    "node": "v24.16.0",
+    "startedAt": "2026-10-28T04:24:21.789Z",
+    "finishedAt": "2026-10-28T04:27:32.325Z",
+    "durationMs": 190535,
+    "exitCode": 0,
+    "counts": {
+      "tests": 1357,
+      "pass": 1357,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "changedDuringRun": [],
+    "logSha256": "c30031c3baf3aa904e72763c66e786d04bb3592c522026a96035d7bbb462f779",
+    "sourceFilesHashed": 218
+  },
+  "supportRegression": {
+    "passed": 49,
+    "newTests": 14,
+    "scope": "support-summary, ui-pagination, management, ui-reveal, dsh-ui-host, ui-support-host"
+  },
+  "verified": [
+    "Allowlisted summary with unknown error codes mapped to OTHER",
+    "No memory-body or capacity scan; getCapacity calls fail the support tests",
+    "Real isolated memory repository has identical before/after file hashes",
+    "Unloaded, failed initialization and repository-read failures retain reporting access",
+    "Fixed parent GitHub anchor and scripts-only iframe",
+    "Local JSON download rejects arbitrary URL, text and path arguments",
+    "Clipboard fallback, empty instance and stale response handling",
+    "Issue forms parse and assign bug reports to MingoYung",
+    "Plan mirrors and local documentation links checked",
+    "Package dry run contains the support module, support instructions and generated client"
+  ],
+  "maintainerRouting": {
+    "issuesEnabled": true,
+    "assignee": "MingoYung",
+    "githubRepositorySubscription": true,
+    "emailAndMobileDelivery": "Use the maintainer account notification settings; delivery not tested"
+  },
+  "notTested": [
+    "Native DSH window external-link click",
+    "Real model calls",
+    "Live social-platform operations",
+    "Automatic background issue monitoring"
+  ],
+  "autonomy": "Core, personality rules and the DSH preset were not changed by this support patch",
+  "sourceSha256": {
+    "package.json": "e660b67865148fc19639f64a60e73b475f4748521ae1621423ef18da6b9dd25b",
+    "adapters/dsh/support.js": "50a625c0cff21f5c5173e8ed6048cdf6f350c4086eeed0ac2508705fd26d4427",
+    "adapters/dsh/management.js": "3985fff9b2d2715c5f5e31c188aad2a69d9d0ba81b51f9ce67c4873b9c53df2b",
+    "ui/app.js": "731bdb3825b0cfa9a108f2da2630f75508c71704c613f39f40687209ae42198d",
+    "ui/client.js": "146a9d11f1ac1c111d7057a5dcd8cce4bfc9d69c173d7a14a6e37128dc709d51",
+    "scripts/build-ui.mjs": "bd39af88a1639b1bc1d56d2cafa7ef8b2ece90a4d2f7241dad2f6bcbebcfd105",
+    ".github/ISSUE_TEMPLATE/bug_report.yml": "e1d58b7072747fe051fca789ad75b294ee9deec95576575527a9fd2667a5c661",
+    ".github/ISSUE_TEMPLATE/config.yml": "36c10d4b5b42f1edb48a0c3ad658e1e96ec1ada4265a1b021a15db87b29a19d4",
+    ".github/ISSUE_TEMPLATE/feature_request.yml": "83460ef4077715193ff2641bd82f7e28d7d8e455989f76a3c4d43ee331bf8e68",
+    "SUPPORT.md": "9316dc839fe4f05bf98443cb2ffbb8bc1086caceae7185c1fc44294afc094563",
+    "docs/support.md": "c03065d1cafb8ad06ee8c2d270523aa1bc5272b35db790409c39f86e2006a082"
+  }
+}

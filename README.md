@@ -1,12 +1,20 @@
 # dsh-Xiangxu-Persona · 相续人格
 
-当前0.13.0统一短期、长期与归档记忆：同一格式按时间线转层，长期活动正文默认100万字符，最旧内容超额时完整转入可回查归档；每轮人格请求必须取得当前人格及必要近况，加载故障明确报错。说明见[时间线记忆与上下文](docs/memory-timeline-and-context.md)，唯一字段见[第26节](docs/plan/persona/persona-schema.md#0130-memory-timeline-contract)。本轮完成代码与隔离验证，不运行真实模型或平台验收；QQ按用户安排自行验证，其他社交连接显示未测试。此前账号功能与0.12.0实测保留其[历史范围](docs/account-capabilities.md#0120-current-acceptance)。
+当前版本0.13.1增加“设置 → 报告问题”，可在本机生成最小诊断，由用户检查后提交公开GitHub Issue并指派维护者。反馈说明见[问题申报](docs/support.md)，市场申请状态见[收录记录](docs/market-submission.md)。
+
+0.13.0引入的统一短期、长期与归档记忆继续兼容：同一格式按时间线转层，长期活动正文默认100万字符，最旧内容超额时完整转入可回查归档；每轮人格请求必须取得当前人格及必要近况，加载故障明确报错。说明见[时间线记忆与上下文](docs/memory-timeline-and-context.md)，唯一字段见[第26节](docs/plan/persona/persona-schema.md#0130-memory-timeline-contract)。本轮完成代码与隔离验证，不运行真实模型或平台验收；QQ按用户安排自行验证，其他社交连接显示未测试。此前账号功能与0.12.0实测保留其[历史范围](docs/account-capabilities.md#0120-current-acceptance)。
 
 0.8.1历史补丁增强透明主题下的操作提示：主导航和内容分类的选中项有常驻下划线，功能入口有“打开 →”轮廓标记，状态单独显示；悬停与键盘焦点可见。颜色继续取自DSH主题，0.8系列操作流程及后台契约不变。 相关55项回归与三种主题检查已通过，范围见[本补丁回执](docs/verification/0.8.1-affordance.json)。
 
-相续人格是面向DSH的长期人格与记忆插件，版本 **0.13.0**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供五个主入口和任务式子页，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
+相续人格是面向DSH的长期人格与记忆插件，版本 **0.13.1**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供五个主入口和任务式子页，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
 
 这是同一个跨关系成长的人格。它自己判断认出谁、注意谁、记什么、回不回复、何时主动、是否有必要整理、何时睡和怎样醒。软件保存来源与归属、执行选择、控制资源并恢复故障，没有每日主动额度、最短交流间隔、沉默惩罚、印象证据门槛、强制睡眠、话题硬拦截或承诺履约器。
+
+## 问题反馈
+
+遇到报错、记忆或连接异常，或某项操作看不懂，可从 **设置 → 报告问题** 复制／保存最小诊断摘要，再打开[中文问题申报表单](https://github.com/MingoYung/dsh-Xiangxu-Persona/issues/new?template=bug_report.yml)。报告会分派给维护者MingoYung，在[仓库Issues](https://github.com/MingoYung/dsh-Xiangxu-Persona/issues)跟进。没有GitHub账号时可先保存摘要和复现步骤，经已有人工渠道转交。
+
+摘要只在本机生成，用户主动提交才会发往GitHub；Issue是公开的。不要上传记忆库、完整聊天、密钥、Cookie或二维码，截图请遮个人信息。说明、摘要范围与通知边界见[SUPPORT.md](SUPPORT.md)和[问题反馈指引](docs/support.md)。
 
 ## 安装与打开
 
@@ -44,7 +52,7 @@ node scripts/install-dsh.mjs --profile desktop
 | 记忆 | 阅读已保留内容，查找关联记忆与过去／现在的理解；语义服务可选，参考记录可核对；明确遗忘仍有确认 |
 | 连接 | 个人QQ先一键准备并扫码，默认自主社交接入当前人格；指定对象范围可选；微信、B站、能力权限、已有桥与可选QQ动态分别配置 |
 | 创作 | 分别进入形象档案、图片服务、视频服务、可选翻唱、开始创作和作品任务；保存配置与实际生成分开 |
-| 设置 | 分别管理人格与记忆库、启动时加载、使用其他记忆库、交流时间、资料助手、分类容量及维护，也可回看使用说明；切换容量类别保留当前实例草稿，一次保存已改字段 |
+| 设置 | 分别管理人格与记忆库、加载方式、交流时间、资料助手、容量及维护，也可回看说明或报告问题；容量草稿一次保存，问题摘要检查后再提交 |
 
 子页有明确返回入口。资料以正文和人能理解的标题为先，来源、记录编号和原始字段由命名按钮展开；管理页沿用DSH主题，不再把九个分类和长表单同时铺开。助手与社交资料编辑后点一次保存，保存本身不启动整理或登录。
 
@@ -136,7 +144,7 @@ node scripts/persona-cli.mjs recover
 
 ## 文档与验证
 
-当前0.13.0的时间线与必要上下文验证见[本版机器回执](docs/verification/0.13.0-memory-timeline.json)，使用方式见[时间线说明](docs/memory-timeline-and-context.md)。本轮不调用真实模型或社交平台，QQ交由用户自行验证，其他社交入口标未测试；0.12.0的[账号能力与当时待验收表](docs/account-capabilities.md#0120-current-acceptance)、0.11.0的[好友／聊天历史结果](docs/qq-one-click-setup.md#0110-final-acceptance)保留原范围。Market收录申请尚未提交，不能由本地测试推断已申请或已收录。
+0.13.0的时间线与必要上下文历史验证见[本版机器回执](docs/verification/0.13.0-memory-timeline.json)，使用方式见[时间线说明](docs/memory-timeline-and-context.md)。本轮不调用真实模型或社交平台，QQ交由用户自行验证，其他社交入口标未测试；0.12.0的[账号能力与当时待验收表](docs/account-capabilities.md#0120-current-acceptance)、0.11.0的[好友／聊天历史结果](docs/qq-one-click-setup.md#0110-final-acceptance)保留原范围。本轮按用户决定推进Market申请，实际PR与审核状态见[收录记录](docs/market-submission.md)，不能由本地测试推断已获收录。
 
 本轮真实Flash早期阶段已完成lexical／association记忆检索、QQ账号只读检查与已有好友查询，模型自主选择不改资料、不发空间，真实写入未验收。冻结源码完整回归1289／1289与实际ownership残锁自动恢复已通过；累计17次真实模型请求，修后3次工具调用已核当前QQ／B站未登录的能力状态与明确错误。本次新受控QQ和B站仍等待本人扫码，OneBot API尚不可用，登录后材料、平台写入和新群消息往返待验；前阶段在线不代表当前已登录。结果见[本轮观测](docs/account-capabilities.md#0120-stage-observations)与[公开收据](docs/verification/0.12.0-account-recovery.json)。
 

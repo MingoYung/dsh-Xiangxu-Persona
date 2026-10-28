@@ -259,3 +259,57 @@ test('failed or superseded memory page reads never request host reveal or move k
 test('an older host without local reveal keeps successful results without a direct scroll fallback',async()=>{
  const ui=await memoryUi({'ui.reveal':()=>{throw Object.assign(new Error('unsupported local UI action'),{code:'LOCAL_UI_UNAVAILABLE'});}});await ui.evaluate("navigate('memory')");await move(ui,'下一页 →');await tick();assert.equal(top(ui).getAttribute('data-reveal-state'),'error');assert.equal(top(ui).getAttribute('data-reveal-code'),'LOCAL_UI_UNAVAILABLE');assert.match(top(ui).getAttribute('data-reveal-message'),/unsupported local UI action/);assert.match(summary(ui),/第 2 页.*13–24/);assert.equal(ui.ids.get('global-error').hidden,true);assert.equal(ui.scrollEvents.some(event=>event.target.classList.contains('pagination-top')),false);
 });
+
+const supportSample = { schemaVersion: 'xiangxu-support/1', plugin: { name: 'dsh-xiangxu-persona', version: '0.13.1' }, environment: { os: 'win32' }, errors: { counts: [{ code: 'ECONNREFUSED', count: 1 }] } };
+test('settings exposes report-problem flow and generating a report never starts upload, model or platform operations', async () => {
+  const ui = await frontend({ 'support.summary': () => supportSample, 'ui.support.showLink': () => ({ status: 'link_focused' }), 'ui.support.download': () => ({ status: 'download_started' }) });
+  const copied = []; ui.context.navigator.clipboard.writeText = async value => copied.push(value);
+  await ui.evaluate("navigate('settings')");
+  const entry = ui.walk(content(ui)).find(node => node.getAttribute('aria-label') === '报告问题'); assert.ok(entry);
+  const before = ui.calls.length; await entry.emit('click');
+  assert.match(content(ui).textContent, /GitHub 问题是公开的.*不会自动上传资料/);
+  assert.match(content(ui).textContent, /点击本页上方的“去 GitHub 报告问题”/);
+  assert.deepEqual(ui.calls.slice(before).map(call => call.action), ['support.summary']);
+  assert.equal(ui.ids.get('support-summary').readOnly, true);
+  await ui.button(content(ui), '复制诊断摘要').emit('click'); assert.deepEqual(JSON.parse(copied[0]), supportSample);
+  await ui.button(content(ui), '复制申报链接').emit('click'); assert.equal(copied[1], 'https://github.com/MingoYung/dsh-Xiangxu-Persona/issues/new?template=bug_report.yml');
+  await ui.button(content(ui), '前往申报入口').emit('click'); assert.match(ui.ids.get('toast').textContent, /请点击页面上方/);
+  await ui.button(content(ui), '保存最新摘要文件').emit('click');
+  assert.deepEqual(ui.calls.slice(before).map(call => call.action), ['support.summary', 'ui.support.showLink', 'ui.support.download']);
+});
+
+test('report remains accessible when status fails and failed summaries retain the fixed link without leaking raw error text', async () => {
+  const secret = 'SECRET_ACCOUNT_0000000000_C:\\Users\\private\\token';
+  const ui = await frontend({ 'support.summary': () => { throw new Error(secret); } });
+  ui.context.window.personaBridge.request = async (action, args) => { ui.calls.push({ action, args }); if (action === 'status') throw new Error(secret); if (action === 'support.summary') throw new Error(secret); throw new Error('unexpected ' + action); };
+  await ui.evaluate("navigate('settings')"); await ui.button(content(ui), '报告问题').emit('click');
+  assert.match(content(ui).textContent, /暂时无法生成摘要.*仍可复制申报链接/);
+  assert.equal(ui.button(content(ui), '复制诊断摘要').disabled, true);
+  assert.doesNotMatch(content(ui).textContent, /SECRET_ACCOUNT|C:\\Users/);
+  assert.equal(ui.ids.get('global-error').hidden, true);
+});
+
+test('support clipboard denial provides selectable text and no automatic external navigation', async () => {
+  const ui = await frontend({ 'support.summary': () => supportSample });
+  ui.context.navigator.clipboard.writeText = async () => { throw new Error('clipboard denied'); };
+  await ui.evaluate("navigate('settings','support')"); await ui.button(content(ui), '复制申报链接').emit('click');
+  assert.equal(ui.ids.get('detail-dialog').open, true);
+  const input = ui.walk(ui.ids.get('detail-content')).find(node => node.tagName === 'textarea');
+  assert.equal(input.readOnly, true); assert.match(input.value, /github\.com\/MingoYung\/dsh-Xiangxu-Persona\/issues\/new\?template=bug_report\.yml$/);
+  assert.equal(ui.calls.filter(call => /^ui\.support/.test(call.action)).length, 0);
+});
+
+test('late support summaries cannot overwrite another page or persona selection', async () => {
+  let release, entered; const started = new Promise(resolve => { entered = resolve; });
+  const ui = await frontend({ 'support.summary': () => { entered(); return new Promise(resolve => { release = resolve; }); } });
+  const old = ui.evaluate("navigate('settings','support')"); await started;
+  await ui.evaluate("navigate('settings')"); release(supportSample); await old;
+  assert.match(content(ui).textContent, /人格管理/); assert.doesNotMatch(content(ui).textContent, /本次最小诊断摘要/);
+});
+
+test('report works before any persona has been created and does not pass a null selector to strict support actions', async () => {
+  const selected = [], ui = await frontend({ 'instances.list': () => ({ items: [], activeInstanceId: null }), 'status': () => ({ available: false, unloaded: true }),
+    'support.summary': args => { selected.push(args); return supportSample; }, 'ui.support.download': args => { selected.push(args); return { status: 'download_started' }; } });
+  await ui.evaluate("navigate('settings','support')"); await ui.button(content(ui), '保存最新摘要文件').emit('click');
+  assert.equal(selected.length, 2); assert.ok(selected.every(args => args.instanceId === undefined)); assert.equal(ui.button(content(ui), '复制诊断摘要').disabled, false);
+});

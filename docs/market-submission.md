@@ -1,4 +1,27 @@
-# DSH Market 收录准备
+# DSH Market 收录申请
+
+当前发布补丁：**0.13.1**。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28用户决定直接申请；本轮准备并提交目录条目，**实际申请PR待创建后登记，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
+
+## 本轮材料与反馈入口
+
+- 插件包保留独立核心＋DSH适配层、预构建管理界面与五个主入口，dsh.bundle和dsh.client由根package.json声明。0.13.1只增加报错入口及交付材料，persona-memory/3和0.13.0统一时间线、必要上下文继续兼容；不增加人格自主判断规则。
+- 报错入口：[中文Issue表单](https://github.com/MingoYung/dsh-Xiangxu-Persona/issues/new?template=bug_report.yml)，新报错默认带bug标签并指派MingoYung；GitHub Issues已启用。设置里的最小诊断摘要在本机生成，用户检查后主动提交公开Issue。说明见[问题反馈](support.md)和[SUPPORT.md](../SUPPORT.md)。
+- 目录条目为[market/MingoYung__dsh-Xiangxu-Persona.yml](../market/MingoYung__dsh-Xiangxu-Persona.yml)，使用memory分类。申请只在收录仓库data/plugins/增加同名文件，不修改自动生成的README。描述须区分已实现、可选服务与真实账号未测范围。
+- 2026-10-28核对仓库管理权限、启用Issues、dsh-plugin topic与至少一天仓库年龄均符合当时要求。贡献指南仍以[上游当前指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)为准，最终收录由上游维护者审查。
+
+## 验证与未测边界
+
+0.13.0统一时间线的证据见[历史机器回执](verification/0.13.0-memory-timeline.json)。该版可移植性修复后GitHub Actions运行40624830474在Windows通过1343项，在Linux通过1342项并保留1项Windows专用跳过；结果属于原提交4013d009164c10848f50e903eedd7f2f409b8b8a，不是0.13.1新增报错功能的验收。0.13.1在Windows、Node.js 24.16.0下完成本机全量1357/1357，失败、取消和跳过均为0；源文件哈希在测试前后不变。定向49/49包含本轮新增14项，与全量不叠加计算，详见[0.13.1报错通道回执](verification/0.13.1-support-channel.json)。本轮远程CI等待推送后运行，不能以本机结果替代。
+
+本轮报错通道、文档与收录材料不运行真实模型或社交账号测试，不因申请收录宣称QQ、B站或其他社交平台已全部验证。QQ按用户安排自行验证；其他社交连接继续显示未测试，旧版真实验收仍保留原范围。问题反馈不会自动上传记忆库，也不承诺持续调用付费模型来监控工单。
+
+## 申请进度
+
+本轮申请PR：待实际创建后登记。CI通过不表示已获收录；提交后以PR检查、维护者意见与最终合并状态为准。
+
+## 历史材料与当时状态
+
+以下保留0.8.0–0.11.0材料、数字和当时未提交的状态，仅供回查，不代表0.13.1当前发布结论。
 
 目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。本目录提供收录材料，不表示已向收录仓库发起申请或已获收录。
 

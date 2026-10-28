@@ -1,0 +1,22 @@
+name: 功能建议 / Feature request
+description: 提出使用上的改进建议，或说明某项操作为什么不容易理解。
+title: "[建议] "
+assignees:
+  - MingoYung
+body:
+  - type: markdown
+    attributes:
+      value: 此表单会创建公开 Issue。请不要附上密钥、账号、私聊或记忆库；报错请使用“问题申报”表单。
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 你想完成什么？目前哪里不方便？
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 你希望怎样改进？
+      description: 没有具体方案也可以，只需描述希望得到的效果。
+    validations:
+      required: true

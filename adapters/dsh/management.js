@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { defaultConfig, mergeConfig, validateConfig } from '../../core/schema.js';
+import { createSupportSummary } from './support.js';
 
 const MAX_RESPONSE = 131072, DETAIL_CHARS = 16000, OPS_PATH = 'ops/management.json', OPS_BYTES = 262144;
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
@@ -161,6 +162,10 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
     return receipt.value;
   }
   async function perform(action, args) {
+    if (action === 'support.summary') {
+      if (Object.keys(args).some(key => key !== 'instanceId') || args.instanceId !== undefined && (typeof args.instanceId !== 'string' || !args.instanceId || args.instanceId.length > 128)) throw error('BAD_MANAGEMENT_REQUEST', 'Only an optional instance selection is accepted for a support summary');
+      return createSupportSummary({ getCoordinator, instanceId: args.instanceId, clock });
+    }
     if (action === 'instances.list') return instanceList();
     if (action.startsWith('instances.') && ['load', 'unload', 'select', 'create', 'archive', 'restore', 'clearPreview', 'clear'].includes(action.slice(10))) {
       const method = lifecycle[action.slice(10)]; if (!method) throw error('MANAGEMENT_LIFECYCLE_UNAVAILABLE', 'Instance lifecycle port unavailable'); return method(args);

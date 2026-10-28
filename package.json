@@ -1,6 +1,6 @@
 {
   "name": "dsh-xiangxu-persona",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "type": "module",
   "description": "Portable long-term persona and memory for DSH, with autonomous isolated tasks, complete task archives, QR chat channels and optional reference-based media",
   "engines": {
@@ -58,6 +58,7 @@
     "adapters/dsh/instance-lifecycle.js",
     "adapters/dsh/maintenance-extensions.js",
     "adapters/dsh/management.js",
+    "adapters/dsh/support.js",
     "adapters/dsh/ui-host.js",
     "adapters/dsh/normalize.js",
     "adapters/dsh/model.js",
@@ -84,6 +85,10 @@
     "docs",
     "cordis.patch.yml",
     "README.md",
+    "SUPPORT.md",
     "market"
-  ]
+  ],
+  "bugs": {
+    "url": "https://github.com/MingoYung/dsh-Xiangxu-Persona/issues"
+  }
 }

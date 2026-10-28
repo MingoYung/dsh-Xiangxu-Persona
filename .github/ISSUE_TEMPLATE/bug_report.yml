@@ -1,0 +1,95 @@
+name: 问题申报 / Bug report
+description: 报告报错、连接异常、记忆问题或不容易理解的操作。
+title: "[问题] "
+labels:
+  - bug
+assignees:
+  - MingoYung
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢帮助改进相续人格。此表单会创建公开 GitHub Issue，并指派给维护者。
+        不需要上传记忆库或完整聊天记录。请先删除 API 密钥、访问令牌、Cookie、二维码、账号标识、文件路径和私聊内容；截图也请遮挡个人信息。
+        如果设置页还能打开，可使用“报告问题”里的最小诊断摘要。不知道某项时写“不确定”即可。
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 相续人格版本
+      description: 可从设置里的最小诊断摘要查看；打不开时填“不确定”。
+      placeholder: 例如 0.13.1
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH 版本
+      placeholder: 例如 0.2.1-rc.2；不知道可留空。
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: 操作系统
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 不确定
+  - type: input
+    id: model-route
+    attributes:
+      label: 使用的模型、服务渠道和思考强度（可选）
+      description: 只写名称，不填写 API 地址、密钥、账户或令牌。与模型无关的问题可留空。
+      placeholder: 例如 DeepSeek Flash／官方渠道／高
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: 遇到了什么问题？
+      description: 写下具体操作和实际结果；有错误提示时可填写错误码或经过检查的提示文字。
+      placeholder: 例如：进入“记忆”，点击下一页后一直显示加载，页面没有更新。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 怎样再次遇到这个问题？
+      description: 按顺序写操作。暂时无法复现时，写“无法稳定复现”和当时做了什么即可。
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: 你原本希望发生什么？
+      placeholder: 例如：切换到下一页，并显示剩余记忆。
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: 出现频率
+      options:
+        - 每次都会出现
+        - 偶尔出现
+        - 只出现过一次
+        - 不确定
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 最小诊断摘要（可选）
+      description: 仅粘贴插件“报告问题”生成并由你检查过的摘要。不要粘贴完整日志、记忆文件或聊天记录。
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图或其他补充（可选）
+      description: 可粘贴截图。请先遮挡昵称、账号、头像、私聊、二维码、密钥、路径和其他个人信息。
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我知道 Issue 是公开的，已检查文字和附件，没有上传记忆库、完整私聊、密钥、令牌、Cookie 或二维码。
+          required: true

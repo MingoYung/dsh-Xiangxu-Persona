@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用说明与问题反馈指引
+    url: https://github.com/MingoYung/dsh-Xiangxu-Persona/blob/main/docs/support.md
+    about: 查看报错步骤、诊断摘要范围和维护者接收方式。

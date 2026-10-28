@@ -68,6 +68,8 @@ const timelineTierNames = { recent: '短期记忆', long_term: '长期记忆', a
 const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overview', maintenance: 'settings' };
 const viewTitles = { retrieval: '查找关联记忆', 'retrieval-settings': '可选语义服务', 'retrieval-diagnostics': '检索与参考记录', 'provider-feed': 'QQ 动态扩展', 'provider-cover': '可选翻唱服务', bilibili: '连接 B 站', 'bilibili-permissions': 'B 站能力与权限', 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', 'qq-official': 'QQ 官方 Bot', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-account': 'QQ 账号操作记录', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
 viewTitles.timeline = '记忆时间线';
+viewTitles.support = '报告问题';
+const supportIssueUrl = 'https://github.com/MingoYung/dsh-Xiangxu-Persona/issues/new?template=bug_report.yml';
 async function openSection(view, remember = true) { pageScrollRequested = true; if (remember) state.trail.push({ page: state.page, view: state.view }); state.view = view || null; await renderPage(); }
 async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? null; await renderPage(); }
 
@@ -201,6 +203,7 @@ async function connect() {
   } catch (error) {
     state.connected = false; $('connection-state').textContent = '未连接'; $('connection-state').className = 'status-pill error'; $('refresh-button').disabled = false;
     const detail = $('connection-detail'); if (detail) detail.textContent = errorText(error); showError(error);
+    replace($('page-content'), card('管理页面连接异常', '可以重新连接，或打开报告问题查看本机可生成的最小诊断。', button('重新连接', connect), button('报告问题', () => navigate('settings', 'support'))));
   } finally { connecting = false; }
 }
 function updateInstanceBar() {
@@ -224,17 +227,21 @@ async function renderPage() {
   const back = $('page-back'); back.hidden = !state.view && !routeParents[state.page]; back.textContent = '返回' + (viewTitles[state.trail.at(-1)?.view] ?? pages[state.trail.at(-1)?.page ?? routeParents[state.page] ?? state.page]?.[0] ?? '上一页');
   document.querySelectorAll('[data-page]').forEach(node => { node.classList.toggle('active', node.dataset.page === (routeParents[state.page] ?? state.page)); if (node.dataset.page === (routeParents[state.page] ?? state.page)) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current'); });
   replace($('page-actions'));
-  if (!state.connected) return;
+  const supporting = state.page === 'settings' && state.view === 'support';
+  if (!state.connected && !supporting) return;
   clearError(); const generation = ++state.generation; $('page-content').classList.add('loading');
   try {
-    state.status = await request('status'); updateInstanceBar();
     let content;
-    if (state.view === 'user-guide') content = userGuidePage();
-    else if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('启用或选择人格', () => navigate('settings', 'instances'), 'primary'));
-    else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage, tasks: tasksPage })[state.page]();
+    if (supporting) content = await supportPage();
+    else {
+      state.status = await request('status'); updateInstanceBar();
+      if (state.view === 'user-guide') content = userGuidePage();
+      else if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('启用或选择人格', () => navigate('settings', 'instances'), 'primary'));
+      else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage, tasks: tasksPage })[state.page]();
+    }
     if (generation !== state.generation) return;
     replace($('page-content'), content); if (pageScrollRequested) { document.querySelector?.('.app-shell')?.scrollIntoView?.({ block: 'start', behavior: 'instant' }); pageScrollRequested = false; } $('last-updated').textContent = '上次读取 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
-  } catch (error) { if (generation === state.generation) { showError(error); replace($('page-content'), card('暂时无法读取', '', notice(errorText(error), 'error'), button('重新读取', renderPage, 'secondary'))); } }
+  } catch (error) { if (generation === state.generation) { showError(error); replace($('page-content'), card('暂时无法读取', '', notice(errorText(error), 'error'), button('重新读取', renderPage, 'secondary'), button('报告问题', () => navigate('settings', 'support')))); } }
   finally { if (generation === state.generation) $('page-content').classList.remove('loading'); }
 }
 async function mutate(action, args = {}, options = {}) {
@@ -805,6 +812,45 @@ function instanceLifecyclePanel(instances, { alive }) {
   panel.refreshLifecycle = refresh; return panel;
 }
 
+async function supportPage() {
+  const instanceId = state.instanceId, generation = state.generation;
+  const selection = { instanceId: instanceId ?? undefined };
+  const alive = () => state.instanceId === instanceId && state.page === 'settings' && state.view === 'support' && state.generation === generation;
+  const preview = field('support-summary', '本次最小诊断摘要（可先检查再复制）', '', { multiline: true });
+  preview.input.readOnly = true; preview.input.rows = 14;
+  const status = element('p', { class: 'small muted', role: 'status' }, '正在本机生成摘要……');
+  let text = '';
+  const copy = button('复制诊断摘要', () => copyText(text, '最小诊断摘要已复制，请检查后粘贴到 GitHub 表单。'), 'primary', { disabled: true });
+  const refresh = async () => {
+    if (!alive()) return;
+    text = ''; preview.input.value = ''; copy.disabled = true; status.textContent = '正在本机生成摘要……';
+    try {
+      const summary = await request('support.summary', selection);
+      if (!alive()) return;
+      if (summary?.schemaVersion !== 'xiangxu-support/1') throw new Error('Unsupported support summary');
+      text = pretty(summary); preview.input.value = text; copy.disabled = false;
+      status.textContent = '摘要已在本机生成，没有上传。只含版本、系统、技术状态和有限的错误码计数；不扫描记忆正文，也不采集容量。';
+    } catch {
+      if (alive()) status.textContent = '暂时无法生成摘要。仍可复制申报链接，按现象提交问题；无需上传原始日志或记忆库。';
+    }
+  };
+  const container = element('div', {},
+    card('把问题告诉我们', '在 GitHub 描述操作步骤、预期结果和实际现象，后续可在同一条问题中跟进。',
+      notice('GitHub 问题是公开的。此页不会自动上传资料；请检查摘要和截图，移除个人内容后，再由你在 GitHub 确认提交。', 'info'),
+      element('p', {}, '先复制下方摘要，再点击本页上方的“去 GitHub 报告问题”。需要 GitHub 账号；无法跳转时可以复制链接到浏览器。'),
+      element('div', { class: 'toolbar' },
+        button('前往申报入口', async () => { await request('ui.support.showLink', selection); if (alive()) toast('请点击页面上方“去 GitHub 报告问题”，检查内容后提交。'); }),
+        button('复制申报链接', () => copyText(supportIssueUrl, 'GitHub 申报链接已复制。'))),
+      element('p', { class: 'small muted' }, supportIssueUrl)),
+    card('附上最小诊断', '不含聊天、人格描述、记忆、账号标识、本机路径或访问凭据。摘要只反映当前可读取的技术状态。',
+      status, preview.wrapper,
+      element('div', { class: 'toolbar' }, copy,
+        button('保存最新摘要文件', async () => { await request('ui.support.download', selection); if (alive()) toast('已向系统请求保存最小诊断文件，请查看下载位置。'); }),
+        button('重新生成摘要', refresh)),
+      element('p', { class: 'small muted' }, '没有自动错误回传。请勿提交原始私聊、记忆库、账号配置或登录二维码；截图只保留复现问题所需的部分。')));
+  await refresh(); return container;
+}
+
 async function settingsPage() {
   const instanceId = state.instanceId, generation = state.generation, alive = () => state.instanceId === instanceId && state.page === 'settings' && state.generation === generation;
   const container = element('div'), current = state.status.available ? await request('config.get') : null;
@@ -814,6 +860,7 @@ async function settingsPage() {
     destination('整理资料助手', '可选的资料保真建议，由人格决定是否采纳。', () => openSection('assistant'), current ? current.reviewAssistant?.enabled ? '已开启' : '已关闭' : '加载后查看'),
     destination('容量与模型预算', '按需要调整资源上限，通常保持默认即可。', () => openSection('budgets')),
     destination('数据维护与诊断', '备份、恢复、校验以及运行诊断。', () => navigate('maintenance')),
+    destination('报告问题', '复制最小诊断，在 GitHub 提交问题并跟进处理结果。', () => openSection('support')),
     destination('使用说明', '查看日常操作、记忆方式与可选功能的说明。', () => openSection('user-guide'))));
   if (state.view === 'assistant') return current ? reviewAssistantSettings(current) : empty('先启用当前人格', '启用后即可保存这套人格的助手设置。');
   const instances = await request('instances.list', { instanceId: undefined }); state.instances = instanceItems(instances); updateInstanceBar();
