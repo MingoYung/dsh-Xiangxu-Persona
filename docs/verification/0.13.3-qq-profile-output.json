@@ -78,11 +78,23 @@
     "status": "passed"
   },
   "runtime": {
-    "desktopReloadedForThisPatch": false,
-    "newRealModelCalls": 0,
+    "desktopReloadedForThisPatch": true,
     "newQqProfileMutations": 0,
     "newLiveQqRoundTrips": 0,
-    "scope": "This patch is verified with isolated tests; the incident model calls are historical pre-fix evidence, not new acceptance"
+    "scope": "Fresh normal desktop Host uses the verified linked source. No new model or QQ profile mutation acceptance is claimed.",
+    "loadedDesktop": {
+      "checkedAt": "2026-10-28T11:31:23.894Z",
+      "version": "0.13.3",
+      "normalHostRestartCompleted": true,
+      "bootStartedAt": "2026-10-28T11:28:31.575Z",
+      "bootCompletedAt": "2026-10-28T11:28:39.128Z",
+      "bootAfterSourceWrite": true,
+      "linkedSourceMatches": true,
+      "sourceFilesChecked": 5
+    },
+    "qqConnectionAfterReload": "awaiting_phone_confirmation",
+    "qqConnectionCheckedAt": "2026-10-28T11:37:07.269Z",
+    "newRealModelAcceptanceCalls": 0
   },
   "presentationLimits": [
     "Unknown, damaged or graphical-only components use an explicit display limitation; complete graphical rendering is not claimed",
@@ -100,5 +112,27 @@
     "test/self-profile-source-capacity.test.js": "8a1052f45bf5648cc7a11d63c1e6ee8829c5d25e138bbefdff6c92058916cd78",
     "test/dsh-projection-and-gap-regressions.test.js": "bffd3999a6e5791e2fe0409020435a34696b445f733c581d204018f5b848fbe1",
     "test/external-output.test.js": "c38df8763965fc34430a50742c0f822d46a7860e92be9b41230d11d6b84fff59"
+  },
+  "remoteSourceCi": {
+    "sourceCommit": "4874b15baeeb0782bfcff91e7153f9359ae879e9",
+    "status": "passed",
+    "url": "https://github.com/MingoYung/dsh-Xiangxu-Persona/actions/runs/40680035468",
+    "platforms": {
+      "validate (windows-latest)": {
+        "tests": 1400,
+        "pass": 1400,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      },
+      "validate (ubuntu-latest)": {
+        "tests": 1400,
+        "pass": 1399,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1
+      }
+    },
+    "scope": "The 0.13.3 source commit. Subsequent loading-status and documentation updates do not change tested source."
   }
 }
