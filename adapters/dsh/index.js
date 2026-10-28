@@ -458,6 +458,11 @@ export function createDshCoordinator(ctx, config = {}) {
   // prompt may replace sections after the assembly waterfall; never pay for a
   // personality turn whose required data disappeared at that final boundary.
   const mandatoryStreamDisposer = typeof ctx.on === 'function' ? ctx.on('llm/stream', (options, next) => {
+    // DSH marks its auxiliary compactor with this purpose. It replays a
+    // historical system prefix and does not produce a personality reply;
+    // applying the current turn's projection would block host compaction.
+    // Other purposes, including an absent purpose on native replies, stay strict.
+    if (options.purpose === 'compaction') return next();
     const state = [...agents.values()].find(item => item.agent?.session?.id === options.sessionId);
     if (!state) return next();
     const prepared = options.signal ? state.projectionsBySignal?.get(options.signal)

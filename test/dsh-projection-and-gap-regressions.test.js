@@ -53,6 +53,27 @@ test('the outer companion assembly retains the exact request signal for its fina
   assert.equal(calls, 3);
 });
 
+test('only the host compaction purpose can reuse a historical prefix without the native reply projection', async t => {
+  const f = await fixture(t), signal = new AbortController().signal;
+  const assembly = await f.assemble('projection-first', signal);
+  const guard = f.handlers.get('llm/stream'); let calls = 0;
+  const historical = { sessionId: 'projection-first', signal,
+    messages: [{ role: 'system', content: 'Historical system prefix retained by the host compactor' }] };
+  const next = () => ++calls;
+  assert.equal(guard({ ...historical, purpose: 'compaction' }, next), 1);
+  // Manual compaction has its own cancellation signal and no prompt assembly.
+  assert.equal(guard({ ...historical, signal: new AbortController().signal, purpose: 'compaction' }, next), 2);
+  assert.throws(() => guard(historical, next), { code: 'PERSONA_CONTEXT_UNAVAILABLE', projectionFailure: 'protocol_missing' });
+  for (const purpose of ['native_turn', 'reply', 'consolidation', 'Compaction', '', null]) {
+    assert.throws(() => guard({ ...historical, purpose }, next), { code: 'PERSONA_CONTEXT_UNAVAILABLE', projectionFailure: 'protocol_missing' });
+  }
+  assert.throws(() => guard({ ...historical, signal: new AbortController().signal }, next),
+    { code: 'PERSONA_CONTEXT_UNAVAILABLE', projectionFailure: 'projection_lookup_missing' });
+  assert.equal(guard({ sessionId: 'projection-first', signal,
+    messages: [{ role: 'system', content: assembly.sections.map(row => row.text).join('\n') }] }, next), 3);
+  assert.equal(calls, 3, 'failed native and unknown purposes never reach the provider');
+});
+
 test('a fully recovered native tool-result event resolves its prior memory gap by stable event cursor', async t => {
   const f = await fixture(t), agent = f.agents.get('projection-first'), repository = f.coordinator.repository;
   const event = { type: 'tool/result', seq: 7, time: Date.now(), data: { turn: 1, message: { id: 'native-tool-envelope-id', role: 'tool', source: { kind: 'tool' }, content: [{ type: 'text', text: '{"status":"fixture-ok"}' }] } } };
