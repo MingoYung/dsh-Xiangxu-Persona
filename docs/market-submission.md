@@ -1,6 +1,6 @@
 # DSH Market 收录申请
 
-当前发布补丁：**0.13.1**。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28已按用户决定提交[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，**当前开放且未合并，待维护者审核，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
+当前发布补丁：**0.13.1**。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28已按用户决定提交[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，**自动检查已通过，当前开放且未合并，待维护者审核，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
 
 ## 本轮材料与反馈入口
 
@@ -17,7 +17,7 @@
 
 ## 申请进度
 
-本轮申请为[awesome-dsh-plugin/awesome-dsh-plugin#10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，创建于2026-10-28T04:28:39Z，状态为开放、未合并，待维护者审核；2026-10-28登记时[上游PR check](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/actions/runs/40632538658)返回action_required，尚无检查通过结论，需上游维护者处理。申请目标为main，提交头为d6e56096044211a0db9e8b791efe54b5c2514b65；插件0.13.1源码已推送至主仓库86f0677。CI通过不表示已获收录；后续以PR检查、维护者意见与最终合并状态为准。
+本轮申请为[awesome-dsh-plugin/awesome-dsh-plugin#10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，创建于2026-10-28T04:28:39Z。2026-10-28（北京时间）复核时，[上游PR check](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/actions/runs/40632538658)与[Submission gate](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/runs/122677392329)均已通过，之前的action_required已解除。PR仍为开放、非草稿、未合并，未发现合并冲突；只新增一条目录记录，等待上游维护者审核与合并。当前MingoYung账号对上游只有读取权限，不能代替上游维护者批准或合并。申请目标为main，提交头为d6e56096044211a0db9e8b791efe54b5c2514b65；插件0.13.1源码提交为86f0677，后续申请材料已同步。CI通过不表示已获收录；后续以PR检查、维护者意见与最终合并状态为准。
 
 ## 历史材料与当时状态
 
