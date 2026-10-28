@@ -4,6 +4,19 @@ import { createSupportSummary } from './support.js';
 
 const MAX_RESPONSE = 131072, DETAIL_CHARS = 16000, OPS_PATH = 'ops/management.json', OPS_BYTES = 262144;
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
+function memoryGapSummary(gaps = []) {
+  const unresolved = gaps.filter(row => row?.resolvedAt == null);
+  const sourceCount = rows => new Set(rows.map((row, index) => JSON.stringify([row?.sourceSessionId ?? null,
+    row?.sourceEventId ?? row?.fromCursor ?? row?.toCursor ?? row?.id ?? index]))).size;
+  const processDependencies = unresolved.filter(row => row?.reason === 'hot_dependency_scan_incomplete');
+  const dialogueCopies = unresolved.filter(row => typeof row?.reason === 'string' && row.reason.startsWith('memory_copy_paused_at_'));
+  const other = unresolved.filter(row => !processDependencies.includes(row) && !dialogueCopies.includes(row));
+  const group = rows => ({ records: rows.length, sources: sourceCount(rows) });
+  const allowedReasons = new Set(['hot_dependency_scan_incomplete', 'memory_copy_paused_at_capacity', 'hot_copy_paused_at_disk_reserve', 'hot_pointer_metadata_capacity']);
+  const byReason = {};
+  for (const row of unresolved) { const key = allowedReasons.has(row?.reason) ? row.reason : 'OTHER'; byReason[key] = (byReason[key] ?? 0) + 1; }
+  return { total: gaps.length, unresolved: unresolved.length, unresolvedSources: sourceCount(unresolved), processDependencies: group(processDependencies), dialogueCopies: group(dialogueCopies), other: group(other), byReason };
+}
 const points = value => Array.from(String(value ?? ''));
 const short = (value, size = 240) => points(value).slice(0, size).join('');
 const error = (code, message) => Object.assign(new Error(message), { code });
@@ -184,7 +197,7 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
       return { available: true, ...(self ? { selfProfile: { mode: self.mode, version: self.version, onboardingAcknowledged: self.onboardingAcknowledged } } : {}), instances, instanceId: args.instanceId ?? instances.activeInstanceId ?? null, memoryRoot: c.memoryRoot,
         runtime: { version: state.version, updatedAt: state.updatedAt, globalMuted: state.globalMuted, sleep: state.sleep, schedule: state.schedule,
           activeRunId: state.activeRunId ?? null, currentDecision: decisionSummary(state.currentDecision), pendingControl: Boolean(state.execution?.pendingControl), pendingWake: Boolean(state.execution?.pendingWake),
-          jobCounts: counts, memoryGapCounts: { total: state.memoryGaps?.length ?? 0, unresolved: state.memoryGaps?.filter(row => !row.resolvedAt).length ?? 0 } },
+          jobCounts: counts, memoryGapCounts: memoryGapSummary(state.memoryGaps ?? []) },
         capacity, config: safeConfig(c.repository.config), agents: [...(c.agents?.values() ?? [])].slice(0, 100).map(item => {
           const agent = item.agent ?? item, context = c.contextFor?.(agent) ?? {}; return { sessionId: agent.session?.id ?? agent.id, personId: context.personId ?? null, channelId: context.channelId ?? null };
         }), errors: (c.errors ?? []).slice(-20).map(row => ({ at: row.at, code: row.code, message: short(row.message, 600) })) };

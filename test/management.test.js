@@ -22,6 +22,25 @@ async function fixture(t) {
 }
 const chat = (id, text) => ({ personId: null, sourceSessionId: 's', sourceEventId: id, sourceKind: 'assistant', contentClass: 'participant_dialogue', channelId: 'c', role: 'assistant', text, sourceAt: 1000, observedAt: 1000 });
 
+test('status separates process provenance gaps from dialogue copying failures using only safe aggregate counts', async t => {
+  const { service, repository, calls } = await fixture(t), runtime = await repository.getRuntime();
+  const secret = 'PRIVATE_GAP_ACCOUNT_0000000000_PATH_TOKEN';
+  const gaps = [
+    { id: 'process-a', sourceSessionId: secret, sourceEventId: 'same-event', reason: 'hot_dependency_scan_incomplete', createdAt: 1000 },
+    { id: 'process-b', sourceSessionId: secret, sourceEventId: 'same-event', reason: 'hot_dependency_scan_incomplete', createdAt: 1001 },
+    { id: 'dialogue', sourceSessionId: secret, sourceEventId: 'dialogue-event', reason: 'memory_copy_paused_at_capacity', createdAt: 1002 },
+    { id: 'other', sourceSessionId: secret, sourceEventId: 'other-event', reason: secret, createdAt: 1003 },
+    { id: 'resolved', sourceSessionId: secret, sourceEventId: 'resolved-event', reason: 'hot_dependency_scan_incomplete', createdAt: 1004, resolvedAt: 0 },
+  ], before = structuredClone(gaps);
+  repository.getRuntime = async () => ({ ...runtime, memoryGaps: gaps });
+  const value = await service.dispatch('status');
+  assert.deepEqual(value.runtime.memoryGapCounts, { total: 5, unresolved: 4, unresolvedSources: 3,
+    processDependencies: { records: 2, sources: 1 }, dialogueCopies: { records: 1, sources: 1 }, other: { records: 1, sources: 1 },
+    byReason: { hot_dependency_scan_incomplete: 2, memory_copy_paused_at_capacity: 1, OTHER: 1 } });
+  assert.doesNotMatch(JSON.stringify(value.runtime), /PRIVATE_GAP|same-event|dialogue-event|other-event/);
+  assert.deepEqual(gaps, before); assert.equal(calls.length, 0);
+});
+
 test('management preserves complete Unicode through bounded detail pages and invalidates stale memory cursors', async t => {
   const { repository, service } = await fixture(t), text = '真实原话😀'.repeat(5000), record = (await repository.ingest(chat('long', text))).record;
   const list = await service.dispatch('memory.list', { scope: 'unknown' }); assert.equal(list.total, 1); assert.notEqual(list.items[0].textPreview, text);

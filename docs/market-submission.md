@@ -1,6 +1,6 @@
 # DSH Market 收录申请
 
-当前发布补丁：**0.13.1**。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28已按用户决定提交[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，**自动检查已通过，当前开放且未合并，待维护者审核，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
+当前发布补丁：**0.13.2**。本补丁修复QQ请求的人格上下文组装失配及缺口分类提示，范围见[QQ无回复修复](qq-reply-recovery.md)；0.13.1的申请与验收记录保留原范围。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28已按用户决定提交[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，**自动检查已通过，当前开放且未合并，待维护者审核，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
 
 ## 本轮材料与反馈入口
 

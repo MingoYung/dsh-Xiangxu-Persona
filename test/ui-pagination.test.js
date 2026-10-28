@@ -313,3 +313,41 @@ test('report works before any persona has been created and does not pass a null 
   await ui.evaluate("navigate('settings','support')"); await ui.button(content(ui), '保存最新摘要文件').emit('click');
   assert.equal(selected.length, 2); assert.ok(selected.every(args => args.instanceId === undefined)); assert.equal(ui.button(content(ui), '复制诊断摘要').disabled, false);
 });
+
+test('process-only gaps explain the source counts and open source diagnostics without starting backfill', async () => {
+  const counts = { total: 44, unresolved: 44, unresolvedSources: 29, processDependencies: { records: 44, sources: 29 }, dialogueCopies: { records: 0, sources: 0 }, other: { records: 0, sources: 0 } };
+  const ui = await frontend({ status: () => ({ available: true, runtime: { sleep: { state: 'awake' }, globalMuted: false, memoryGapCounts: counts }, capacity: {}, agents: [] }),
+    'diagnostics.list': () => ({ items: [], total: 0 }) });
+  await ui.evaluate("navigate('overview')");
+  assert.match(content(ui).textContent, /29 个过程来源待核查（44 条记录）/);
+  assert.match(content(ui).textContent, /不等同于原始聊天丢失/);
+  assert.doesNotMatch(content(ui).textContent, /44 处记忆保存缺口|原始交流来源尚未完整保存|请检查容量及来源回补/);
+  await ui.button(content(ui), '查看来源状态').emit('click');
+  assert.match(content(ui).textContent, /过程资料待核查29 个来源 \/ 44 条记录/);
+  assert.match(content(ui).textContent, /原始交流待回补0 个来源 \/ 0 条记录/);
+  await ui.button(content(ui), '查看来源诊断').emit('click');
+  assert.equal(ui.ids.get('diagnostic-kind').value, 'gaps');
+  assert.equal(ui.calls.findLast(call => call.action === 'diagnostics.list').args.kind, 'gaps');
+  assert.equal(ui.calls.some(call => /^control\.|^operations\./.test(call.action)), false);
+});
+
+test('mixed gap categories show actual dialogue-copy problems separately from process provenance', async () => {
+  const ui = await frontend({ status: () => ({ available: true, runtime: { sleep: { state: 'awake' }, memoryGapCounts: { total: 4, unresolved: 4,
+    processDependencies: { records: 2, sources: 1 }, dialogueCopies: { records: 1, sources: 1 }, other: { records: 1, sources: 1 } } }, capacity: {}, agents: [] }) });
+  await ui.evaluate("navigate('overview')");
+  assert.match(content(ui).textContent, /1 个过程来源待核查（2 条记录）/);
+  assert.match(content(ui).textContent, /1 个原始交流来源尚未完整保存（1 条记录）/);
+  assert.match(content(ui).textContent, /另有 1 个来源待核查（1 条记录）/);
+});
+
+test('legacy gap counts stay understandable and a resolved state has no gap warning', async () => {
+  let unresolved = 3;
+  const ui = await frontend({ status: () => ({ available: true, runtime: { sleep: { state: 'awake' }, memoryGapCounts: { total: 3, unresolved } }, capacity: {}, agents: [] }) });
+  await ui.evaluate("navigate('overview')");
+  assert.match(content(ui).textContent, /3 条来源核查记录尚未解决/);
+  assert.match(content(ui).textContent, /记录条数不等于丢失的聊天条数/);
+  assert.doesNotMatch(content(ui).textContent, /记忆保存缺口/);
+  unresolved = 0; await ui.evaluate("navigate('overview')");
+  assert.doesNotMatch(content(ui).textContent, /来源核查记录尚未解决/);
+  assert.equal(ui.walk(content(ui)).some(node => node.tagName === 'button' && node.textContent === '查看来源状态'), false);
+});

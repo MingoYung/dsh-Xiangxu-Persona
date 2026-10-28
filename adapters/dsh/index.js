@@ -465,9 +465,16 @@ export function createDshCoordinator(ctx, config = {}) {
     const expected = prepared?.texts;
     const systemText = (options.messages ?? []).filter(message => message.role === 'system').map(message =>
       typeof message.content === 'string' ? message.content : (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n')).join('\n');
-    if (closed || state.disposed || !prepared?.snapshot?.mandatoryContext?.complete ||
-      !expected || !['protocolText', 'conversationText', 'liveText'].every(key => expected[key] && systemText.includes(expected[key].trim()))) {
+    const projectionFailure = closed ? 'coordinator_closed' : state.disposed ? 'agent_disposed'
+      : !prepared ? 'projection_lookup_missing' : !prepared.snapshot?.mandatoryContext?.complete ? 'snapshot_incomplete'
+      : !expected || !['protocolText', 'conversationText', 'liveText'].every(key => typeof expected[key] === 'string' && expected[key]) ? 'projection_text_unavailable'
+      : !systemText.includes(expected.protocolText.trim()) ? 'protocol_missing'
+      : !systemText.includes(expected.conversationText.trim()) ? 'conversation_missing'
+      : !systemText.includes(expected.liveText.trim()) ? 'live_missing' : null;
+    if (projectionFailure) {
       const failure = personaContextFailure(Object.assign(new Error('The actual native request is missing the current mandatory personality projection'), { code: 'PERSONA_CONTEXT_PROJECTION_MISSING' }));
+      failure.projectionFailure = projectionFailure;
+      failure.message += '（技术诊断：' + projectionFailure + '）';
       report(failure); throw failure;
     }
     return next();
@@ -594,7 +601,7 @@ export function createDshCoordinator(ctx, config = {}) {
     event = projected.event;
     const state = agents.get(session.id); if (!state || initializationError) return;
     if (event.type === 'turn/start' || event.type === 'step/start') state.eventTurn = event.data?.turn ?? state.eventTurn;
-    const context = contextFor(state.agent); let gap = false;
+    const context = contextFor(state.agent); let gap = false, toolResultCaptured = false;
     if (event.type === 'agent/inbox/spliced') for (const message of event.data?.inserted ?? []) {
       const result = await acceptMessage(state.agent, message, event.seq); gap ||= Boolean(result?.gap);
     }
@@ -610,6 +617,7 @@ export function createDshCoordinator(ctx, config = {}) {
       const active = state.activeByTurn.get(event.data?.turn);
       const proactiveId = active?.proactive ? active.proactiveId ?? active.controlId : null;
       const normalized = normalizeDshEvent(session, event, { ...context, proactiveId, now: Date.now(), timezone: coreConfig.timezone });
+      toolResultCaptured = event.type === 'tool/result' && normalized.hot.length > 0;
       const external = Boolean(externalChannels.sessions[session.id]);
       const visibleFinal = event.type === 'assistant/message' && normalized.dialogue?.text && !event.data.message.content.some(block => block.type === 'tool-call');
       let receipt = null;
@@ -629,7 +637,9 @@ export function createDshCoordinator(ctx, config = {}) {
           const data = { sessionId: session.id, seq: event.seq, blockIndex: record.blockIndex ?? 0, kind: record.kind };
           record.content = { mode: 'host_trace', locator: `dsh-trace:${encodeURIComponent(JSON.stringify(data))}`, available: true, chars: record.content.chars };
         }
-        gap = Boolean((await repository.captureHot(withSourceAccess(record, session.id, event.seq))).gap) || gap;
+        const captured = await repository.captureHot(withSourceAccess(record, session.id, event.seq));
+        gap = Boolean(captured.gap) || gap;
+        if (event.type === 'tool/result' && !(captured.record || captured.duplicate && !captured.revoked && captured.eventId)) toolResultCaptured = false;
       }
       if (event.type === 'assistant/message' && normalized.dialogue?.text && !event.data.message.content.some(x => x.type === 'tool-call')) {
         if (active?.deliveryId) await runtime.acknowledgeDelivery(active.deliveryId, { ...(external ? receipt : { status: 'delivered', receiptId: `dsh-output:${session.id}:${event.seq}` }),
@@ -644,6 +654,10 @@ export function createDshCoordinator(ctx, config = {}) {
     if (!gap && Number.isSafeInteger(event.seq)) {
       const sourceIds = event.type === 'agent/inbox/spliced' ? (event.data?.inserted ?? []).map(message => message.id)
         : [event.type === 'assistant/message' ? event.data?.message?.id : event.data?.id].filter(Boolean);
+      // Native tool results use the stable event sequence, not data.id. A
+      // complete replay of that event can resolve its gap even without a
+      // participant-message ID; any failed hot block keeps gap true above.
+      if (toolResultCaptured && !sourceIds.length) await repository.resolveMemoryGaps({ sourceSessionId: session.id, sourceCursor: event.seq });
       for (const id of sourceIds) await repository.resolveMemoryGaps({ sourceSessionId: session.id, sourceCursor: event.seq, sourceEventId: id });
     }
     if (event.type === 'turn/end') {

@@ -69,6 +69,7 @@ const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overvie
 const viewTitles = { retrieval: '查找关联记忆', 'retrieval-settings': '可选语义服务', 'retrieval-diagnostics': '检索与参考记录', 'provider-feed': 'QQ 动态扩展', 'provider-cover': '可选翻唱服务', bilibili: '连接 B 站', 'bilibili-permissions': 'B 站能力与权限', 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', 'qq-official': 'QQ 官方 Bot', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-account': 'QQ 账号操作记录', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
 viewTitles.timeline = '记忆时间线';
 viewTitles.support = '报告问题';
+viewTitles['source-diagnostics'] = '来源诊断';
 const supportIssueUrl = 'https://github.com/MingoYung/dsh-Xiangxu-Persona/issues/new?template=bug_report.yml';
 async function openSection(view, remember = true) { pageScrollRequested = true; if (remember) state.trail.push({ page: state.page, view: state.view }); state.view = view || null; await renderPage(); }
 async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? null; await renderPage(); }
@@ -301,7 +302,14 @@ async function overviewPage() {
   });
   const persistent = capacity.persistentChars ?? capacity.longTermChars?.used, persistentLimit = capacity.longTermTargetChars ?? capacity.longTermChars?.limit;
   const hot = capacity.hotChars ?? capacity.tempChars?.used, hotLimit = capacity.tempTargetChars ?? capacity.tempChars?.limit;
-  const gaps = runtime.memoryGapCounts?.unresolved ?? runtime.memoryGaps?.filter(item => !item.resolvedAt).length;
+  const gapCounts = runtime.memoryGapCounts;
+  const gaps = gapCounts?.unresolved ?? runtime.memoryGaps?.filter(item => item.resolvedAt == null).length ?? 0;
+  const classifiedGaps = gapCounts?.processDependencies && gapCounts?.dialogueCopies && gapCounts?.other;
+  const processGaps = gapCounts?.processDependencies, dialogueGaps = gapCounts?.dialogueCopies, otherGaps = gapCounts?.other;
+  const gapText = !classifiedGaps ? '有 ' + number(gaps) + ' 条来源核查记录尚未解决。记录可能涉及过程资料或原始交流，请查看来源状态；记录条数不等于丢失的聊天条数。'
+    : [processGaps.records > 0 ? '有 ' + number(processGaps.sources) + ' 个过程来源待核查（' + number(processGaps.records) + ' 条记录）。资料分页或依赖不完整时，相关过程暂不加入记忆整理；这不等同于原始聊天丢失。' : '',
+      dialogueGaps.records > 0 ? '有 ' + number(dialogueGaps.sources) + ' 个原始交流来源尚未完整保存（' + number(dialogueGaps.records) + ' 条记录），请检查容量及来源回补。' : '',
+      otherGaps.records > 0 ? '另有 ' + number(otherGaps.sources) + ' 个来源待核查（' + number(otherGaps.records) + ' 条记录），请查看详细原因。' : ''].filter(Boolean).join(' ');
   const sleeping = runtime.sleep?.state === 'sleeping';
   const proactive = element('input', { id: 'proactive-allowed', type: 'checkbox', role: 'switch', 'aria-label': '允许主动找我聊天', checked: !runtime.globalMuted, onchange: async event => {
     const input = event.currentTarget, requested = input.checked; input.checked = !runtime.globalMuted; input.disabled = true;
@@ -320,10 +328,11 @@ async function overviewPage() {
   replace($('page-actions'));
   const controls = element('div', { class: 'row-actions' }, button('查看完整运行态', () => inspectDocument('state.get', {}, '完整运行状态'), 'secondary compact'), button('整理一批', () => control('consolidate'), 'secondary compact'));
   if (state.view === 'runtime') return element('div', {}, element('div', { class: 'stats-grid' }, stat('短期记忆', number(capacity.recentChars), '超出天数或容量转入长期'), stat('长期记忆', number(persistent), '上限 ' + number(persistentLimit) + ' 字符'), stat('归档记忆', number(capacity.archivedChars), '可回查，不自动删除'), stat('临时资料', number(hot), '上限 ' + number(hotLimit) + ' 字符')),
-    kv({ '当前状态': labels[runtime.sleep?.state] ?? '未知', '唤醒方式': ({ at_time: '相续选择的时间', consolidation_complete: '所选整理完成后', explicit_wake: '等你叫醒' })[runtime.sleep?.wakeCondition] ?? '尚未选择', '计划唤醒': date(runtime.sleep?.wakeAt), '下次判断': date(runtime.schedule?.nextCheckAt), '来源缺口': number(gaps), '接入会话': number(status.agents?.length), '排队整理': number(jobs.queued ?? 0), '物理占用': number(capacity.physicalBytes) + ' bytes' }), controls,
+    kv({ '当前状态': labels[runtime.sleep?.state] ?? '未知', '唤醒方式': ({ at_time: '相续选择的时间', consolidation_complete: '所选整理完成后', explicit_wake: '等你叫醒' })[runtime.sleep?.wakeCondition] ?? '尚未选择', '计划唤醒': date(runtime.sleep?.wakeAt), '下次判断': date(runtime.schedule?.nextCheckAt), '未解决来源记录': number(gaps), ...(classifiedGaps ? { '过程资料待核查': number(processGaps.sources) + ' 个来源 / ' + number(processGaps.records) + ' 条记录', '原始交流待回补': number(dialogueGaps.sources) + ' 个来源 / ' + number(dialogueGaps.records) + ' 条记录', '其他待核查': number(otherGaps.sources) + ' 个来源 / ' + number(otherGaps.records) + ' 条记录' } : {}), '接入会话': number(status.agents?.length), '排队整理': number(jobs.queued ?? 0), '物理占用': number(capacity.physicalBytes) + ' bytes' }),
+    gaps > 0 ? card('来源状态说明', gapText, element('p', { class: 'small muted' }, '同一来源可能对应多个过程片段或重复记录。已有原件和历史缺口会保留；回补仅处理实际可用的来源。'), button('查看来源诊断', () => navigate('maintenance', 'source-diagnostics'), 'secondary compact')) : null, controls,
     status.agents?.length ? card('已接入的会话', '', status.agents.map(agent => kv({ '会话': agent.sessionId, '关系': personName(agent.personId), '渠道': agent.channelId }))) : empty('还没有接入人格会话', '回到 DSH 对话，选择“相续人格”预设即可开始。'));
   return element('div', {}, onboardingHint(), daily,
-    gaps > 0 ? notice('有 ' + number(gaps) + ' 处记忆保存缺口尚未解决。请查看运行与用量、磁盘容量及来源回补；归档不会被自动删除以腾空间。', 'warning') : null,
+    gaps > 0 ? notice(element('div', {}, element('p', {}, gapText), button('查看来源状态', () => openSection('runtime'), 'secondary compact')), 'warning') : null,
     !status.agents?.length ? element('p', { class: 'getting-started' }, '在 DSH 对话中选择“相续人格”预设，即可开始聊天。') : null,
     destinations(destination('了解相续', '它如何描述自己，以及留下的性格与习惯。', () => navigate('persona')),
       destination('独立任务与资料', '查看委派出去的任务和完整结果。', () => navigate('tasks')),
@@ -1854,10 +1863,10 @@ async function maintenancePage() {
     state.view === 'backup' ? card('创建备份', '使用受控目录和校验清单保存可恢复副本。', backupDestination.wrapper, button('创建备份', () => { if (!backupDestination.input.value.trim()) throw new Error('请填写备份目标绝对目录。'); return maintenance('backup', { destination: backupDestination.input.value.trim() }, '创建备份', '复制当前所选实例的可恢复数据并校验 SHA。活动写者会安全停用并在完成后恢复；不覆盖未知的外部目录。'); }, 'secondary')) : null,
     state.view === 'restore' ? card('从备份恢复', '恢复会替换当前实例数据，请先核对目录。', source.wrapper, notice('已有较新的明确撤销仍需保持有效。恢复旧备份不能复活已明确遗忘的材料。', 'warning'), button('校验并恢复', () => { if (!source.input.value.trim()) throw new Error('请填写备份来源绝对目录。'); return maintenance('restore', { source: source.input.value.trim() }, '确认恢复备份', '安全停用后校验版本、路径、容量与 SHA，再恢复所选实例。此操作会替换数据；完成后保持停用，需你明确加载。', true); }, 'danger')) : null,
     state.view === 'validate' ? card('恢复中断与来源缺口', '区分目录切换中断和宿主原件缺失。', element('div', { class: 'row-actions' }, button('恢复中断的目录切换', () => maintenance('recover', {}, '执行恢复检查', '处理本实例已有的恢复 journal；不会为未知格式删库重建。'), 'secondary'), button('回补可用来源', () => control('backfill'), 'secondary'))) : null), resultArea);
-  const kind = field('diagnostic-kind', '诊断类型', 'errors', { choices: [['errors', '运行错误'], ['gaps', '来源缺口'], ['usage', '实际用量'], ['outbox', '交付回执'], ['snapshots', '请求快照']] }), list = element('div'); let pageNumber = 1, listGeneration = 0;
+  const kind = field('diagnostic-kind', '诊断类型', state.view === 'source-diagnostics' ? 'gaps' : 'errors', { choices: [['errors', '运行错误'], ['gaps', '来源缺口'], ['usage', '实际用量'], ['outbox', '交付回执'], ['snapshots', '请求快照']] }), list = element('div'); let pageNumber = 1, listGeneration = 0;
   async function load(cursor) { const generation = ++listGeneration; pageNumber = cursor ? pageNumber + 1 : 1; const result = await request('diagnostics.list', { kind: kind.input.value, pageSize: 10, ...(cursor ? { cursor } : {}) }); if (generation !== listGeneration) return; replace(list, getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(item => element('article', { class: 'record' }, data(item)))) : empty('当前没有可用诊断', '用量缺失表示未知，不计作零；受保留容量限制，诊断不会无限积累。'), paginator(result, load, { pageNumber })); }
   kind.input.addEventListener('change', () => load().catch(showError));
-  if (state.status.available && state.view === 'diagnostics') { await load(); container.append(card('真实诊断', '仅查看已保留数据，不因打开面板调用模型。', element('div', { class: 'toolbar' }, kind.wrapper, button('刷新诊断', () => load(), 'secondary')), list)); }
+  if (state.status.available && ['diagnostics', 'source-diagnostics'].includes(state.view)) { await load(); container.append(card('真实诊断', '仅查看已保留数据，不因打开面板调用模型。', element('div', { class: 'toolbar' }, kind.wrapper, button('刷新诊断', () => load(), 'secondary')), list)); }
   return container;
 }
 $('page-back').addEventListener('click', () => goBack().catch(showError));

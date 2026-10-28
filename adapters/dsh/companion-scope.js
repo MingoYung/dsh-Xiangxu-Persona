@@ -83,7 +83,10 @@ export function mountCompanionScope(ctx, manager, { presetId = 'persona-memory',
     await activate(agent);
     let value = await next();
     const coordinator = currentCoordinator(manager);
-    if (coordinator?.preparePersonaAssembly) value = await coordinator.preparePersonaAssembly(agent, value);
+    // The inner agent waterfall may already have prepared a projection. This
+    // authoritative refresh must retain the same request context and signal,
+    // so the final model boundary checks the assembly actually returned here.
+    if (coordinator?.preparePersonaAssembly) value = await coordinator.preparePersonaAssembly(agent, value, context);
     const tools = agent.ctx?.tools ?? service('tools');
     const fresh = typeof tools?.wireSchemas === 'function' ? tools.wireSchemas(context.scope ?? agent.ctx).schemas : tools?.schemas?.(agent);
     return Array.isArray(fresh) ? { ...value, tools: fresh.map(tool => ({ ...tool, parameters: structuredClone(tool.parameters) })) } : value;

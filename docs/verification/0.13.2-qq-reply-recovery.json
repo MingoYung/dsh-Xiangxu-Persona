@@ -1,0 +1,104 @@
+{
+  "schema": "xiangxu-verification/1",
+  "version": "0.13.2",
+  "generatedAt": "2026-10-28T09:51:41.514Z",
+  "problem": {
+    "code": "PERSONA_CONTEXT_PROJECTION_MISSING",
+    "diagnostic": "live_missing",
+    "cause": "Outer companion assembly omitted the original request context during its refreshed personality projection"
+  },
+  "fixes": [
+    "Forward the original assembly context so the final projection and guard registration agree",
+    "Keep strict complete personality checks and add fixed technical failure enums",
+    "Resolve a native tool-result gap by event cursor only after every normalized process block was actually retained",
+    "Separate process dependency records from dialogue-copy failures in the management UI"
+  ],
+  "fullRegression": {
+    "platform": "Windows",
+    "node": "v24.16.0",
+    "startedAt": "2026-10-28T09:36:55.468Z",
+    "finishedAt": "2026-10-28T09:40:18.565Z",
+    "durationMs": 203097,
+    "counts": {
+      "tests": 1365,
+      "pass": 1365,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "sourceFilesHashed": 219,
+    "changedDuringRun": [],
+    "logSha256": "76c0de26f50a16177d0a545862afd4ebd41907a611ac4953743acb9c494af539"
+  },
+  "targetedRegression": {
+    "projectionAndLifecycle": {
+      "passed": 58,
+      "newTests": 4
+    },
+    "managementAndUi": {
+      "passed": 35,
+      "newTests": 4
+    },
+    "note": "Overlaps the full suite; counts must not be added together"
+  },
+  "nativeHostFixture": {
+    "status": "passed",
+    "realDshEngine": true,
+    "realModelCalls": 0,
+    "checks": {
+      "initialized": true,
+      "personaDecideCalled": true,
+      "memorySearchCalled": true,
+      "visibleFinal": true,
+      "personaToolsInActualRequest": true,
+      "personaTextInActualRequest": true
+    },
+    "scope": "Narrow original-request projection, actual deterministic provider dispatch, tool calls and visible final"
+  },
+  "historicalLongHostScript": {
+    "complete": false,
+    "note": "Reached deterministic provider after projection repair; later legacy restart/resume encountered an owned session write handle and an outdated unknown-person relationship-section assertion"
+  },
+  "originalIncident": {
+    "gapRecords": 44,
+    "uniqueSourceEvents": 29,
+    "toolResultEvents": 16,
+    "assistantMessageEvents": 13,
+    "userMessageEvents": 0,
+    "retainedHostEvents": 266,
+    "hostDecodeErrors": 0,
+    "reason": "hot_dependency_scan_incomplete",
+    "formalGapsCleared": false,
+    "dependencyRevocationProtectionRelaxed": false
+  },
+  "loadedDesktop": {
+    "restarted": true,
+    "newClassifiedGapUiObserved": true,
+    "scope": "Actual desktop settings displayed 29 process sources and 44 records after restart"
+  },
+  "liveQq": {
+    "status": "pending_phone_login",
+    "bridgeWasOnlineBeforeRestart": true,
+    "recoveryAttemptedOnce": true,
+    "qrDisplayedInLocalDesktop": true,
+    "privateRoundTripVerified": false,
+    "groupRoundTripVerified": false,
+    "realModelCallsInThisBatch": 0
+  },
+  "notClaimed": [
+    "Historical incomplete process dependencies have all been recovered",
+    "Every legacy integration-script stage passed",
+    "A QR screen or an online bridge proves live message round trips"
+  ],
+  "autonomy": "No personality judgement, recall, relationship, response-frequency or growth rules were added",
+  "sourceSha256": {
+    "package.json": "2712b6b722dc05860007908c8a5b77197f5179b5c73441d9ed2b7e991598335d",
+    "adapters/dsh/index.js": "8ef7c7cc19c1724b1a5504cca7a76c3d951cafb25b6bbfdeca22d6f4ff9a1c38",
+    "adapters/dsh/companion-scope.js": "bf2eace82cf0f5a9f9eafc9e4236232eb8be69b499270fbda3d1f6193ba3e7bc",
+    "adapters/dsh/management.js": "5715df282bb2ef789de65fda416cae2d9deeb366bdf0f67dc0a0f6fe639b0bc1",
+    "ui/app.js": "9e8f592cc49e0f463335b673d3859ba2d536ebbdb71452c50e85f4f29b71c627",
+    "ui/client.js": "8796b0eabf633e935e92b4a149cc21a621ed25af17d2a73cb2517f3ee30c6932",
+    "test/dsh-projection-and-gap-regressions.test.js": "e476b183c4fa7850e0154f7ab8125078f20d9ccd49412335abad6501c9dc6411"
+  }
+}
