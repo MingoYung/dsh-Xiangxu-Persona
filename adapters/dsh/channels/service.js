@@ -7,6 +7,7 @@ import { createOneBotClient, decodeOneBotEvent } from './onebot.js';
 import { CAPABILITY_IDS, capabilities as capabilityMap, normalizedEvent } from '../connections/common.js';
 import { QQ_DELIVERY_POLICY } from '../connections/qq.js';
 import { createBridgeClient } from '../connections/bridge.js';
+import { EXTERNAL_OUTPUT_FORMAT, projectExternalOutput, resolveExternalOutput } from '../external-output.js';
 
 export const CHANNEL_LIMITS = Object.freeze({ registryBytes: 1048576, bindings: 128, receipts: 2048, unresolved: 256, terminalReceipts: 1024, scopeIds: 256, bodyBytes: 65536, queued: 32, excluded: 8 });
 const SCHEMA = 'xiangxu-channels/1', IDS = ['qq', 'wechat'];
@@ -68,6 +69,7 @@ function validateRegistry(value) {
   const receiptIds = new Set();
   for (const receipt of value.receipts) {
     if (!object(receipt) || !/^[0-9a-f]{64}$/.test(receipt.id) || receiptIds.has(receipt.id) || !sessions.has(receipt.sessionId) || !['inbound', 'outbound'].includes(receipt.kind) || !['prepared', 'unknown', 'accepted', 'delivered', 'failed'].includes(receipt.status) || !/^[0-9a-f]{64}$/.test(receipt.textHash) || !Number.isSafeInteger(receipt.at) || receipt.at < 0 || receipt.text !== undefined || receipt.payload !== undefined) fail('CHANNEL_REGISTRY_INVALID', '渠道回执无效');
+    if (receipt.formatVersion === undefined ? receipt.sourceTextHash !== undefined : receipt.kind !== 'outbound' || receipt.formatVersion !== EXTERNAL_OUTPUT_FORMAT || !/^[0-9a-f]{64}$/.test(receipt.sourceTextHash)) fail('CHANNEL_REGISTRY_INVALID', '渠道文字投影回执无效');
     receiptIds.add(receipt.id);
   }
   if (value.receipts.filter(receipt => !terminal(receipt)).length > CHANNEL_LIMITS.unresolved) fail('CHANNEL_RECEIPT_CAPACITY', '未确认渠道回执已达到技术容量');
@@ -320,6 +322,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     if (receipt.status !== 'delivered') return { status: receipt.status === 'prepared' ? 'unknown' : receipt.status, duplicate, code: receipt.code ?? null, deliveryId: receipt.deliveryId ?? null };
     return { status: 'delivered', duplicate, deliveryId: receipt.deliveryId, receiptId: receipt.platformReceiptId, messageId: receipt.platformMessageId, ...(receipt.messageIdKind ? { messageIdKind: receipt.messageIdKind } : {}), deliveredAt: receipt.deliveredAt,
       sourceSessionId: receipt.sessionId, sourceEventId: receipt.sourceEventId, sourceSeq: receipt.seq, seq: receipt.seq, textHash: receipt.textHash, sourceKind: 'model', confirmedBy: receipt.confirmedBy,
+      ...(receipt.formatVersion ? { formatVersion: receipt.formatVersion, sourceTextHash: receipt.sourceTextHash } : {}),
       ...(receipt.voiceUnavailable ? { voiceUnavailable: true } : {}), ...(receipt.voiceDelivery ? { voiceDelivery: clone(receipt.voiceDelivery) } : {}) };
   }
   const confirmedDelivery = value => value?.status === 'delivered' && typeof value.messageId === 'string' && typeof value.receiptId === 'string';
@@ -356,10 +359,12 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     await ready; bounded(args.sessionId, '会话'); bounded(args.sourceEventId, '来源事件');
     if (typeof args.text !== 'string' || !args.text || Array.from(args.text).length > 16000 || !Number.isSafeInteger(args.seq) || args.seq < 0) fail('CHANNEL_OUTPUT_CAPACITY', '外发原文或事件序号无效，没有截断或发送');
     const binding = registry.bindings.find(value => value.sessionId === args.sessionId); if (!binding) return { status: 'unknown', code: 'CHANNEL_BINDING_NOT_FOUND' };
-    const id = hash([normalizedRoot(binding.memoryRoot), 'outbound', args.sessionId, args.sourceEventId]), textHash = hash(args.text), previous = registry.receipts.find(value => value.id === id);
-    if (previous) { if (previous.textHash !== textHash) fail('CHANNEL_OUTPUT_CONFLICT', '同一来源事件不能替换外发原文'); return resultFor(previous, true); }
+    const id = hash([normalizedRoot(binding.memoryRoot), 'outbound', args.sessionId, args.sourceEventId]), previous = registry.receipts.find(value => value.id === id);
+    if (previous) { const actual = resolveExternalOutput(args.text, previous); if (!actual) fail('CHANNEL_OUTPUT_CONFLICT', '同一来源事件不能替换外发原文'); return { ...resultFor(previous, true), ...(previous.status === 'delivered' ? { text: actual.text } : {}) }; }
     if (args.seq <= binding.outboundWatermark) return { status: 'unknown', code: 'CHANNEL_RECEIPT_EXPIRED', duplicate: true };
-    const selected = profile(binding.profileId), deliveryId = args.deliveryId || 'im-out-' + id.slice(0, 48), receipt = { id, kind: 'outbound', sessionId: args.sessionId, sourceEventId: args.sourceEventId, seq: args.seq, textHash, deliveryId, status: 'prepared', at: clock() };
+    const projection = projectExternalOutput(args.text), text = projection.text;
+    if (!text || Array.from(text).length > 16000) fail('CHANNEL_OUTPUT_CAPACITY', '平台显示文字超过外发容量，没有截断或发送');
+    const selected = profile(binding.profileId), deliveryId = args.deliveryId || 'im-out-' + id.slice(0, 48), receipt = { id, kind: 'outbound', sessionId: args.sessionId, sourceEventId: args.sourceEventId, seq: args.seq, textHash: projection.deliveryTextHash, sourceTextHash: projection.sourceTextHash, formatVersion: projection.formatVersion, deliveryId, status: 'prepared', at: clock() };
     bounded(deliveryId, '交付编号', 160);
     const next = compact(clone(registry)); next.receipts.push(receipt); await save(next);
     let outcome, audioOutcome = null;
@@ -368,10 +373,10 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       try {
         const entry = client(selected); await runProbe(selected);
         if (!entry.verified) outcome = { status: 'unknown', code: 'CHANNEL_BRIDGE_UNAVAILABLE' };
-        else if (selected.config.voiceMode === 'voice') outcome = audioOutcome = await voiceDelivery(entry, binding, args.text, deliveryId + '-voice');
+        else if (selected.config.voiceMode === 'voice') outcome = audioOutcome = await voiceDelivery(entry, binding, text, deliveryId + '-voice');
         else {
           await authorize(binding, 'chat.text');
-          outcome = await entry.value.sendText(binding.facts, args.text, { deliveryId });
+          outcome = await entry.value.sendText(binding.facts, text, { deliveryId });
           if (selected.config.voiceMode === 'both' && confirmedDelivery(outcome)) {
             const checkpoint = clone(registry), partial = { ...receipt, status: 'delivered', ...ackFields(outcome), voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_NOT_CONFIRMED' } };
             checkpoint.receipts = checkpoint.receipts.map(value => value.id === id ? partial : value);
@@ -379,7 +384,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
             // Persist the already-known text receipt before beginning another
             // delivery. A process failure cannot erase that acknowledged fact.
             await save(checkpoint);
-            try { audioOutcome = await voiceDelivery(entry, binding, args.text, deliveryId + '-voice'); }
+            try { audioOutcome = await voiceDelivery(entry, binding, text, deliveryId + '-voice'); }
             catch (error) { report(error); audioOutcome = { status: 'unknown', code: 'CHANNEL_VOICE_OUTCOME_UNKNOWN' }; }
           }
         }
@@ -393,10 +398,10 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     try { await save(final); } catch (error) {
       report(error);
       const retained = registry.receipts.find(value => value.id === id);
-      if (retained?.status === 'delivered') return { ...resultFor(retained), voiceUnavailable: true, voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_RECEIPT_PERSIST_UNKNOWN' } };
+      if (retained?.status === 'delivered') return { ...resultFor(retained), text, voiceUnavailable: true, voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_RECEIPT_PERSIST_UNKNOWN' } };
       return { status: 'unknown', code: 'CHANNEL_RECEIPT_PERSIST_UNKNOWN', deliveryId };
     }
-    return { ...resultFor(finished), ...(finished.voiceUnavailable ? { voiceUnavailable: true } : {}) };
+    return { ...resultFor(finished), ...(finished.status === 'delivered' ? { text } : {}), ...(finished.voiceUnavailable ? { voiceUnavailable: true } : {}) };
   }); }
   async function reconcile(record = {}) { await ready; const sessionId = record.target?.sessionId ?? record.sessionId;
     const found = registry.receipts.find(value => value.kind === 'outbound' && value.sessionId === sessionId && (record.sourceEventId ? value.sourceEventId === record.sourceEventId : record.deliveryId && value.deliveryId === record.deliveryId));

@@ -6,7 +6,10 @@ import { dependenciesRevoked } from './source-dependencies.js';
 export const SELF_PROFILE_PATH = 'self/profile.json';
 export const SELF_PROFILE_SCHEMA_VERSION = 'xiangxu-self/1';
 export const SELF_PROFILE_FIELDS = Object.freeze(['name', 'pronouns', 'gender', 'ageDescription', 'birthday', 'background', 'selfDescription']);
-export const SELF_PROFILE_LIMITS = Object.freeze({ profileBytes: 65536, sectionChars: 2400, history: 8, sourceRefs: 16, sourceRecordIds: 32 });
+// Provenance follows the same absolute scan ceilings as process dependencies.
+// These are input safety bounds; the complete 64 KiB profile bound still
+// applies to complete current sources; only bounded old versions may rotate.
+export const SELF_PROFILE_LIMITS = Object.freeze({ profileBytes: 65536, sectionChars: 2400, history: 8, sourceRefs: 8192, sourceRecordIds: 16384 });
 const modes = ['together', 'autonomous', 'unset'];
 const actors = ['user', 'persona'];
 const clone = value => structuredClone(value);
@@ -26,14 +29,15 @@ function textFields(value, name, partial = false) {
 }
 export function selfProfileLinks({ sourceRefs = [], sourceRecordIds = [] } = {}) {
   if (!Array.isArray(sourceRefs) || !Array.isArray(sourceRecordIds)) fail('Self profile sources must be arrays');
-  if (sourceRefs.length > SELF_PROFILE_LIMITS.sourceRefs) throw capacityError('selfProfileSourceRefs', sourceRefs.length, SELF_PROFILE_LIMITS.sourceRefs);
-  if (sourceRecordIds.length > SELF_PROFILE_LIMITS.sourceRecordIds) throw capacityError('selfProfileSourceRecordIds', sourceRecordIds.length, SELF_PROFILE_LIMITS.sourceRecordIds);
   for (const ref of sourceRefs) {
     validateSrcRef(ref); assertFiniteJson(ref);
     if (countChars(ref.sourceSessionId) > 1024 || countChars(ref.sourceEventId) > 1024) fail('Self profile source identity is too long');
   }
   for (const id of sourceRecordIds) if (typeof id !== 'string' || !id || countChars(id) > 256) fail('Self profile record identity is invalid');
-  return { sourceRefs: [...new Map(sourceRefs.map(ref => [sourceKey(ref), clone(ref)])).values()], sourceRecordIds: [...new Set(sourceRecordIds)] };
+  const refs = [...new Map(sourceRefs.map(ref => [sourceKey(ref), clone(ref)])).values()], ids = [...new Set(sourceRecordIds)];
+  if (refs.length > SELF_PROFILE_LIMITS.sourceRefs) throw capacityError('selfProfileSourceRefs', refs.length, SELF_PROFILE_LIMITS.sourceRefs);
+  if (ids.length > SELF_PROFILE_LIMITS.sourceRecordIds) throw capacityError('selfProfileSourceRecordIds', ids.length, SELF_PROFILE_LIMITS.sourceRecordIds);
+  return { sourceRefs: refs, sourceRecordIds: ids };
 }
 function provenance(value, name) {
   keys(value, ['initial', 'current'], name);

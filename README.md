@@ -1,12 +1,12 @@
 # dsh-Xiangxu-Persona · 相续人格
 
-当前版本0.13.2修复QQ原生请求的人格上下文组装失配，并分别提示过程资料依赖问题与交流原文保存问题。根因、修复和本轮验证状态见[QQ无回复修复](docs/qq-reply-recovery.md)。0.13.1的“设置 → 报告问题”继续保留，最小诊断由用户检查后主动提交公开Issue；见[问题申报](docs/support.md)与[收录记录](docs/market-submission.md)。
+当前版本0.13.3修复自我档案写入来源容量与实际上下文不匹配，以及QQ等文字渠道收到桌面卡片源码的问题。内部自我档案与QQ账号资料工具分开说明，发送、记忆与回执使用同一文字投影；根因和本轮未测边界见[QQ资料与文字输出修复](docs/qq-profile-output-recovery.md)。0.13.2的[QQ无回复修复](docs/qq-reply-recovery.md)及0.13.1的问题反馈通道继续保留；见[问题申报](docs/support.md)与[收录记录](docs/market-submission.md)。
 
-0.13.0引入的统一短期、长期与归档记忆继续兼容：同一格式按时间线转层，长期活动正文默认100万字符，最旧内容超额时完整转入可回查归档；每轮人格请求必须取得当前人格及必要近况，加载故障明确报错。说明见[时间线记忆与上下文](docs/memory-timeline-and-context.md)，唯一字段见[第26节](docs/plan/persona/persona-schema.md#0130-memory-timeline-contract)。0.13.0的原始验收范围保留历史含义；本轮QQ修复与实测状态以[本轮说明](docs/qq-reply-recovery.md)为准，其他社交连接仍显示未测试。此前账号功能与0.12.0实测保留其[历史范围](docs/account-capabilities.md#0120-current-acceptance)。
+0.13.0引入的统一短期、长期与归档记忆继续兼容：同一格式按时间线转层，长期活动正文默认100万字符，最旧内容超额时完整转入可回查归档；每轮人格请求必须取得当前人格及必要近况，加载故障明确报错。说明见[时间线记忆与上下文](docs/memory-timeline-and-context.md)，唯一字段见[第26节](docs/plan/persona/persona-schema.md#0130-memory-timeline-contract)。0.13.0的原始验收范围保留历史含义；本轮资料与文字输出修复状态以[本轮说明](docs/qq-profile-output-recovery.md)为准，其他社交连接仍显示未测试。此前账号功能与0.12.0实测保留其[历史范围](docs/account-capabilities.md#0120-current-acceptance)。
 
 0.8.1历史补丁增强透明主题下的操作提示：主导航和内容分类的选中项有常驻下划线，功能入口有“打开 →”轮廓标记，状态单独显示；悬停与键盘焦点可见。颜色继续取自DSH主题，0.8系列操作流程及后台契约不变。 相关55项回归与三种主题检查已通过，范围见[本补丁回执](docs/verification/0.8.1-affordance.json)。
 
-相续人格是面向DSH的长期人格与记忆插件，版本 **0.13.2**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供五个主入口和任务式子页，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
+相续人格是面向DSH的长期人格与记忆插件，版本 **0.13.3**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供五个主入口和任务式子页，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
 
 这是同一个跨关系成长的人格。它自己判断认出谁、注意谁、记什么、回不回复、何时主动、是否有必要整理、何时睡和怎样醒。软件保存来源与归属、执行选择、控制资源并恢复故障，没有每日主动额度、最短交流间隔、沉默惩罚、印象证据门槛、强制睡眠、话题硬拦截或承诺履约器。
 
@@ -144,9 +144,9 @@ node scripts/persona-cli.mjs recover
 
 ## 文档与验证
 
-0.13.0的时间线与必要上下文历史验证见[本版机器回执](docs/verification/0.13.0-memory-timeline.json)，使用方式见[时间线说明](docs/memory-timeline-and-context.md)。本轮不调用真实模型或社交平台，QQ交由用户自行验证，其他社交入口标未测试；0.12.0的[账号能力与当时待验收表](docs/account-capabilities.md#0120-current-acceptance)、0.11.0的[好友／聊天历史结果](docs/qq-one-click-setup.md#0110-final-acceptance)保留原范围。本轮按用户决定推进Market申请，实际PR与审核状态见[收录记录](docs/market-submission.md)，不能由本地测试推断已获收录。
+0.13.0的时间线与必要上下文历史验证见[本版机器回执](docs/verification/0.13.0-memory-timeline.json)，使用方式见[时间线说明](docs/memory-timeline-and-context.md)。本轮0.13.3冻结完整回归1400/1400通过，失败／取消／跳过均为0，见[机器回执](docs/verification/0.13.3-qq-profile-output.json)；隔离验证与真实加载边界见[修复说明](docs/qq-profile-output-recovery.md)。本轮尚未重载真实桌面或重新进行真实模型／QQ资料修改验收，QQ资料变更由用户自行测试，其他社交入口继续标未测试；0.12.0的[账号能力与当时待验收表](docs/account-capabilities.md#0120-current-acceptance)、0.11.0的[好友／聊天历史结果](docs/qq-one-click-setup.md#0110-final-acceptance)保留原范围。本轮按用户决定推进Market申请，实际PR与审核状态见[收录记录](docs/market-submission.md)，不能由本地测试推断已获收录。
 
-本轮真实Flash早期阶段已完成lexical／association记忆检索、QQ账号只读检查与已有好友查询，模型自主选择不改资料、不发空间，真实写入未验收。冻结源码完整回归1289／1289与实际ownership残锁自动恢复已通过；累计17次真实模型请求，修后3次工具调用已核当前QQ／B站未登录的能力状态与明确错误。本次新受控QQ和B站仍等待本人扫码，OneBot API尚不可用，登录后材料、平台写入和新群消息往返待验；前阶段在线不代表当前已登录。结果见[本轮观测](docs/account-capabilities.md#0120-stage-observations)与[公开收据](docs/verification/0.12.0-account-recovery.json)。
+0.12.0历史阶段的真实Flash早期验证已完成lexical／association记忆检索、QQ账号只读检查与已有好友查询，模型自主选择不改资料、不发空间，真实写入未验收。冻结源码完整回归1289／1289与实际ownership残锁自动恢复已通过；累计17次真实模型请求，修后3次工具调用已核当前QQ／B站未登录的能力状态与明确错误。本次新受控QQ和B站仍等待本人扫码，OneBot API尚不可用，登录后材料、平台写入和新群消息往返待验；前阶段在线不代表当前已登录。结果见[本轮观测](docs/account-capabilities.md#0120-stage-observations)与[公开收据](docs/verification/0.12.0-account-recovery.json)。
 
 0.9.0已修改核心与适配层，自我档案、关联/检索状态、交流定位、人格生命周期和新增界面需要本轮重新验收。统一结论与证据在[0.9.0最终验收状态](docs/management-ui.md#090-final-acceptance)更新，不能从以下历史通过数推定。尤其0.8.0“50份后台及配套文件未变”不适用于本轮。
 

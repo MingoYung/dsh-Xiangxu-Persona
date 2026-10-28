@@ -129,23 +129,28 @@ test('maximum single-field profile text survives owner API, tool schema and page
   assert.ok(Buffer.byteLength(JSON.stringify(observed)) < 131072);
 });
 
-test('source-link overflow reports each real limit and leaves the prior profile untouched without trimming sources', async t => {
-  assert.throws(() => selfProfileLinks({ sourceRefs: Array.from({ length: 17 }, (_, i) => ({ sourceSessionId: 's', sourceEventId: String(i) })) }), error => error.resource === 'selfProfileSourceRefs' && error.actual === 17 && error.limit === 16);
-  assert.throws(() => selfProfileLinks({ sourceRecordIds: Array.from({ length: 33 }, (_, i) => 'record-' + i) }), error => error.resource === 'selfProfileSourceRecordIds' && error.actual === 33 && error.limit === 32);
+test('self updates keep all 27 context sources and enforce the absolute dependency scan ceilings', async t => {
+  assert.throws(() => selfProfileLinks({ sourceRefs: Array.from({ length: SELF_PROFILE_LIMITS.sourceRefs + 1 }, (_, i) => ({ sourceSessionId: 's', sourceEventId: String(i) })) }), error => error.resource === 'selfProfileSourceRefs' && error.actual === SELF_PROFILE_LIMITS.sourceRefs + 1 && error.limit === SELF_PROFILE_LIMITS.sourceRefs);
+  assert.throws(() => selfProfileLinks({ sourceRecordIds: Array.from({ length: SELF_PROFILE_LIMITS.sourceRecordIds + 1 }, (_, i) => 'record-' + i) }), error => error.resource === 'selfProfileSourceRecordIds' && error.actual === SELF_PROFILE_LIMITS.sourceRecordIds + 1 && error.limit === SELF_PROFILE_LIMITS.sourceRecordIds);
+  const maximumRefs = Array.from({ length: SELF_PROFILE_LIMITS.sourceRefs }, (_, i) => ({ sourceSessionId: 'same-scan', sourceEventId: String(i) }));
+  const maximumIds = Array.from({ length: SELF_PROFILE_LIMITS.sourceRecordIds }, (_, i) => 'id-' + i);
+  assert.equal(selfProfileLinks({ sourceRefs: [...maximumRefs, maximumRefs[0]] }).sourceRefs.length, SELF_PROFILE_LIMITS.sourceRefs);
+  assert.equal(selfProfileLinks({ sourceRecordIds: [...maximumIds, maximumIds[0]] }).sourceRecordIds.length, SELF_PROFILE_LIMITS.sourceRecordIds);
   const f = await fixture(t), client = await f.attach('session-a');
-  await f.service.dispatch('self.update', { patch: { current: { name: '应当保留的名字' } }, expectedVersion: 0 });
-  const saved = await fs.readFile(path.join(f.root, SELF_PROFILE_PATH)), refs = [];
-  for (let i = 0; i < 17; i++) {
+  await f.service.dispatch('self.update', { patch: { current: { name: '先前名字' } }, expectedVersion: 0 });
+  const refs = [];
+  for (let i = 0; i < 27; i++) {
     await f.repository.ingest({ personId: null, sourceSessionId: 'extra-sources', sourceEventId: 'original-' + i, sourceKind: 'user', contentClass: 'participant_dialogue', channelId: 'fixture-extra', role: 'user', text: '实际接收原件' + i });
     refs.push({ sourceSessionId: 'extra-sources', sourceEventId: 'original-' + i });
   }
   const state = f.coordinator.agents.get(client.agent.id);
   state.currentTurn = 9;
   state.processDependenciesByTurn.set(9, { refs: new Map(refs.map(ref => [JSON.stringify([ref.sourceSessionId, ref.sourceEventId]), ref])), recordIds: new Set(), complete: true });
-  const result = await fullTool(client, { action: 'update_self', expectedVersion: 1, selfPatch: { name: '不可截断来源后偷偷保存' } });
-  assert.equal(result.status, 'memory_error'); assert.equal(result.code, 'CAPACITY_EXCEEDED');
-  assert.ok(result.message.includes('17 > 16'));
-  assert.deepEqual(await fs.readFile(path.join(f.root, SELF_PROFILE_PATH)), saved);
+  const result = await fullTool(client, { action: 'update_self', expectedVersion: 1, selfPatch: { name: '人格自行采用的名字' } });
+  assert.notEqual(result.status, 'memory_error');
+  assert.equal(result.current.name, '人格自行采用的名字');
+  assert.deepEqual(result.provenance.current.name.sourceRefs, refs);
+  assert.equal((await f.service.dispatch('self.get')).provenance.current.name.sourceRefs.length, 27);
 });
 
 test('owner endpoint returns complete bounded source metadata and does not silently drop extension data', async t => {

@@ -1,0 +1,104 @@
+{
+  "schema": "xiangxu-verification/1",
+  "version": "0.13.3",
+  "generatedAt": "2026-10-28T11:25:07.701Z",
+  "incident": {
+    "scope": "Historical pre-fix formal QQ private conversation only",
+    "selfProfileWriteAttempts": 3,
+    "selfProfileWriteError": {
+      "code": "CAPACITY_EXCEEDED",
+      "resource": "selfProfileSourceRefs",
+      "actual": 27,
+      "limit": 16
+    },
+    "qqPlatformProfileCalls": 0,
+    "qqAccountActionReceipts": 0,
+    "nativeModelCallsObserved": 6,
+    "source": "Native final assistant message contained dsh-ui and its raw hash matched the delivered platform receipt"
+  },
+  "fixes": [
+    "Deduplicate complete source links and align absolute scan ceilings with existing process dependency limits while retaining the 64 KiB profile bound",
+    "Clarify internal self profile and actual QQ account profile tools without selecting their content or timing",
+    "Remove only the named desktop GenUI prompt in external chat and include an independent short factual channel-capability section",
+    "Project DSH cards to bounded readable text for external delivery and voice; ordinary code and text remain unchanged",
+    "Version source and delivery hashes so actual delivered text, accepted dialogue, delivery ack and restart recovery agree",
+    "Preserve raw host material using its original block kind in both single-record and cumulative-cache trace paths"
+  ],
+  "capacities": {
+    "selfProfile": {
+      "sourceRefs": 8192,
+      "sourceRecordIds": 16384,
+      "profileBytes": 65536,
+      "sectionChars": 2400,
+      "history": 8
+    },
+    "scope": "Source ceilings apply after deduplication; all current sources are retained. The full profile byte bound can reject before these count ceilings; bounded historical snapshots retain their existing rotation behavior."
+  },
+  "firstAttempt": {
+    "counts": {
+      "tests": 1398,
+      "pass": 1396,
+      "fail": 2,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "logSha256": "7b1d95bfa891489adeaaa3f3dc9fd330c48af3606b0960874f36ef3237e72c8d",
+    "scope": "Two old external receipt fixtures omitted the real channel raw-text hash; updated the fixtures without weakening receipt verification. This was not the final passing regression."
+  },
+  "fullRegression": {
+    "platform": "Windows",
+    "node": "v24.16.0",
+    "startedAt": "2026-10-28T11:21:38.376Z",
+    "finishedAt": "2026-10-28T11:24:45.997Z",
+    "durationMs": 187621,
+    "counts": {
+      "tests": 1400,
+      "pass": 1400,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "sourceFilesHashed": 222,
+    "changedDuringRun": [],
+    "logSha256": "e5af50a2edbc445e2e82cf53ec0785372075e38a184960788a89772736ca85e5"
+  },
+  "targetedRegression": {
+    "externalDeliveryAndProjection": 67,
+    "selfProfile": 32,
+    "independentMergeReview": 54,
+    "newTests": 34,
+    "scope": "All counts overlap the full suite; do not add them together"
+  },
+  "staticChecks": {
+    "syntaxFiles": 221,
+    "planDocuments": 14,
+    "implementationDocuments": 30,
+    "status": "passed"
+  },
+  "runtime": {
+    "desktopReloadedForThisPatch": false,
+    "newRealModelCalls": 0,
+    "newQqProfileMutations": 0,
+    "newLiveQqRoundTrips": 0,
+    "scope": "This patch is verified with isolated tests; the incident model calls are historical pre-fix evidence, not new acceptance"
+  },
+  "presentationLimits": [
+    "Unknown, damaged or graphical-only components use an explicit display limitation; complete graphical rendering is not claimed",
+    "Legacy raw-JSON deliveries remain historical raw text and are never rewritten as if plain text had been sent",
+    "Raw host sources remain separately available; displayed card buttons are not executed"
+  ],
+  "autonomy": "No personality content, nickname, avatar, timing, relationship, recall or growth decisions were imposed",
+  "sourceSha256": {
+    "package.json": "3ca390e2f901b19161794eb253f45185ac1998ae143d88d8680523f358682e4e",
+    "core/self-profile.js": "b19f0f8bf168d0752115af5eb632e490596e36c82e914e867ab31d7405ecebb1",
+    "adapters/dsh/index.js": "49804c721b027597c05d84c8657b0bcf3c8a70aaa0e61c001a9118a0c4b4feca",
+    "adapters/dsh/tool-schema.js": "53c0fa5159a985b7a16bc88a2035a1eedd4a63836fbfc863572b1b73ff9b3ad4",
+    "adapters/dsh/channels/service.js": "489a91774a6acebd556559dda02223b9bb0c9e53a25a1452e8822d0bbdc0ad43",
+    "adapters/dsh/external-output.js": "3caf0566ce58da1690825e5adca657e43adae7288bb20b2d93f9c35574f9d9d8",
+    "test/self-profile-source-capacity.test.js": "8a1052f45bf5648cc7a11d63c1e6ee8829c5d25e138bbefdff6c92058916cd78",
+    "test/dsh-projection-and-gap-regressions.test.js": "bffd3999a6e5791e2fe0409020435a34696b445f733c581d204018f5b848fbe1",
+    "test/external-output.test.js": "c38df8763965fc34430a50742c0f822d46a7860e92be9b41230d11d6b84fff59"
+  }
+}

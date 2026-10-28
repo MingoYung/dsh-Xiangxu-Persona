@@ -110,6 +110,27 @@ test('unknown platform result never becomes a native ack and is not retried acro
   await f.reopen(); assert.equal((await f.service.output(args)).status, 'unknown'); assert.equal(f.sent.length, 1);
 });
 
+test('desktop UI replies are delivered as text with versioned source hashes and persist no message body', async t => {
+  const f=await fixture(t),invitation=await f.start();await f.callback(invitation,f.event());
+  const raw='我想好了。\n```dsh-ui\n'+JSON.stringify({title:'草案',items:[{type:'keyvalue',pairs:[{key:'昵称',value:'相续'}]}]})+'\n```';
+  const args={sessionId:f.created[0].sessionId,sourceEventId:'ui-reply',seq:19,text:raw};
+  const result=await f.service.output(args);assert.equal(result.status,'delivered');assert.equal(result.formatVersion,'dsh-plain/1');
+  assert.match(result.text,/昵称：相续/);assert(!result.text.includes('dsh-ui'));assert.equal(f.sent[0].text,result.text);
+  assert.equal(result.sourceTextHash,hash(raw));assert.equal(result.textHash,hash(result.text));
+  assert(!JSON.stringify(f.disk()).includes('草案'));assert(!JSON.stringify(f.disk()).includes('相续'));
+  await f.reopen();const restored=await f.service.reconcile({sessionId:args.sessionId,sourceEventId:args.sourceEventId});
+  assert.equal(restored.sourceTextHash,hash(raw));assert.equal(restored.textHash,hash(result.text));assert.equal(restored.text,undefined);
+  assert.equal((await f.service.output(args)).text,result.text);assert.equal(f.sent.length,1);
+});
+
+test('old raw output receipts replay exactly what was historically sent without a second platform message', async t => {
+  const f=await fixture(t),invitation=await f.start();await f.callback(invitation,f.event());
+  const text='```dsh-ui\n'+JSON.stringify({title:'历史原文',items:[]})+'\n```',args={sessionId:f.created[0].sessionId,sourceEventId:'legacy-card',seq:20,text};
+  await f.service.output(args);const disk=f.disk(),receipt=disk.receipts.find(row=>row.kind==='outbound');
+  delete receipt.formatVersion;delete receipt.sourceTextHash;receipt.textHash=hash(text);f.setDisk(disk);await f.reopen();
+  const replay=await f.service.output(args);assert.equal(replay.status,'delivered');assert.equal(replay.text,text);assert.equal(replay.formatVersion,undefined);assert.equal(f.sent.length,1);
+});
+
 test('busy stop, suspend and restore invalidation fail before mutating state; explicit close still releases', async t => {
   const f = await fixture(t), invitation = await f.start(); await f.callback(invitation, f.event()); const sessionId = f.created[0].sessionId;
   f.current().agents.set(sessionId, { agent: { session: { id: sessionId }, status: 'running' } });

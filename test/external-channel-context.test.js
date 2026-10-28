@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { createDshCoordinator } from '../adapters/dsh/index.js';
 
 const A = 'xiangxu-social-' + 'a'.repeat(32), B = 'xiangxu-social-' + 'b'.repeat(32);
@@ -95,7 +96,7 @@ test('a thrown platform error cannot promote generated text to a delivered assis
 
 test('confirmed platform delivery alone records the assistant and clears only that turn admitted inputs', async t => {
   const f = await fixture(t); await f.register();
-  f.coordinator.externalDelivery = { output: async () => ({ status: 'delivered', receiptId: 'platform-message-99' }) };
+  f.coordinator.externalDelivery = { output: async args => ({ status: 'delivered', receiptId: 'platform-message-99', textHash: createHash('sha256').update(args.text).digest('hex') }) };
   await f.enter(A, user('in-admitted', 'Admitted A original'), 1);
   f.agents.get(A).handlers.get('agent/inbox/inserted')({ message: user('in-late-A', 'Late original from A') });
   f.agents.get(B).handlers.get('agent/inbox/inserted')({ message: user('in-pending-B', 'Unanswered original from B', 'B') }); await f.coordinator.readyState();
@@ -119,7 +120,7 @@ test('a real platform receipt permits reconciliation of the retained native orig
   const f = await fixture(t); await f.register();
   f.events.set(A, [{ type: 'turn/start', seq: 1, data: { turn: 8 } }, { type: 'user/message', seq: 2, data: { id: 'delivery-2', source: { kind: 'persona-memory:delivery', deliveryId: 'delivery-2' } } },
     { type: 'assistant/message', seq: 3, time: 23456, data: { turn: 8, message: { id: 'platform-backed-original', content: [{ type: 'text', text: 'The retained native reply body' }] } } }]);
-  f.coordinator.externalDelivery = { reconcile: async () => ({ status: 'delivered', receiptId: 'real-platform-message-2', sourceEventId: 'platform-backed-original', sourceSeq: 3, deliveredAt: 23456 }) };
+  f.coordinator.externalDelivery = { reconcile: async () => ({ status: 'delivered', receiptId: 'real-platform-message-2', sourceEventId: 'platform-backed-original', sourceSeq: 3, deliveredAt: 23456, textHash: createHash('sha256').update('The retained native reply body').digest('hex') }) };
   const receipt = await f.coordinator.runtime.host.reconcileDelivery({ deliveryId: 'delivery-2', target: { channelId: 'dsh:' + A, sessionId: A, personId: null } });
   assert.equal(receipt.status, 'delivered'); assert.equal(receipt.receiptId, 'real-platform-message-2'); assert.equal(receipt.text, 'The retained native reply body');
   assert.equal(receipt.sourceSessionId, A); assert.equal(receipt.sourceEventId, 'platform-backed-original'); assert.equal(receipt.deliveredAt, 23456);

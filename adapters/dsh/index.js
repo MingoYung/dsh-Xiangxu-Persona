@@ -2,6 +2,7 @@ import { conversationOrientation } from '../../core/onboarding.js';
 import { createRetrievalProvider } from './retrieval-provider.js';
 import { createBilibiliService } from './bilibili/service.js';
 import { attachPlatformImages, renderPlatformOutput } from './platform-images.js';
+import { resolveExternalOutput } from './external-output.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { resolve, join, dirname, basename, relative, isAbsolute, sep } from 'node:path';
@@ -50,7 +51,7 @@ const DESCRIPTIONS = {
   persona_task: '自主创建独立工程或研究任务，查看状态并按需读取完整档案；retain选择真实资料片段供既有记忆整理，是否记住及如何理解仍由你决定。',
   memory_search: '按你选择的线索翻找长期记忆；可明确查某个已知的人或全部关系。结果保留真实主体。',
   memory_forget: '执行已经明确选择的遗忘或纠正。给出记录ids或时间范围和对象，空选择不会清库。',
-  persona_introspect: '查看共同人格、当前自我档案、对某人的印象和实际状态；update_self可按你的选择更新current自我描述，初始用户想法另存，不规定性格与成长。',
+  persona_introspect: '查看共同人格、当前自我档案、对某人的印象和实际状态；update_self只更新内部current自我描述，不会修改QQ昵称或平台资料卡。平台账号资料用persona_platform。初始用户想法另存，内容及成长由你决定。',
   persona_decide: '表达你自己的认人、注意、回话、等待、检索、必要时的记忆梳理、下次思考或睡眠决定。它不规定你该怎样做人。',
   persona_voice: '查看当前设备可用的声音，或自主保存一个音色、语速和音高选择；用户指定模式保留用户的播放设置。',
   persona_media: '按需查看形象档案和作品，使用用户已开通的图片或视频服务；生成返回真实作业与资产编号，不等于已经发给对方。',
@@ -222,13 +223,13 @@ export function createDshCoordinator(ctx, config = {}) {
     if (Number.isSafeInteger(turn)) record.contextGroupId = `dsh:${state.agent.session.id}:turn:${turn}`;
     return record;
   }
-  function withSourceAccess(record, sessionId, seq) {
+  function withSourceAccess(record, sessionId, seq, traceKind = record.kind) {
     const query = safeGet(ctx, 'sessionQuery');
     record.hostAvailable = Boolean(query?.readSession);
     record.sourceCursor = seq ?? `message:${record.sourceEventId ?? record.sourceRef?.sourceEventId}`;
     if (record.content) {
       const data = { sessionId, messageId: record.sourceRef.sourceEventId, ...(Number.isSafeInteger(seq) ? { seq } : {}),
-        blockIndex: record.blockIndex ?? 0, kind: record.kind };
+        blockIndex: record.blockIndex ?? 0, kind: traceKind };
       record.traceLocator = `dsh-trace:${encodeURIComponent(JSON.stringify(data))}`;
     }
     return record;
@@ -238,6 +239,7 @@ export function createDshCoordinator(ctx, config = {}) {
     const environment = dshEnvironment(agent, { timezone: repository.config.timezone, displayName: facts?.sender?.name ?? null });
     if (facts) { environment.platform = facts.platform; environment.placeDescription = facts.conversation.type === 'group' ? facts.platform + ' group ' + facts.conversation.id : facts.platform + ' private chat';
       environment.participantClues = [{ externalId: facts.platform + ':' + facts.accountId + ':' + facts.sender.id, displayName: facts.sender.name ?? null, avatarRef: null }];
+      environment.outputCapabilities = { text: true, dshUi: false };
       environment.externalChannel = structuredClone(facts); }
     const inputFacts = agents.get(agent.id)?.externalInput;
     if (facts && inputFacts) environment.externalInput = structuredClone(inputFacts);
@@ -374,8 +376,9 @@ export function createDshCoordinator(ctx, config = {}) {
         }
         const normalized = event ? normalizeDshEvent({ id: record.target.sessionId }, event, { personId: record.target.personId, proactiveId: record.proactiveId }) : null;
         if (!normalized?.dialogue?.text || normalized.dialogue.sourceEventId !== receipt.sourceEventId) return { status: 'unknown', receiptId: receipt.receiptId, reason: 'platform_delivered_source_unavailable' };
-        if (receipt.textHash && createHash('sha256').update(normalized.dialogue.text).digest('hex') !== receipt.textHash) return { status: 'unknown', receiptId: receipt.receiptId, reason: 'platform_delivered_source_changed' };
-        return { ...receipt, sourceSessionId: record.target.sessionId, sourceKind: 'model', text: normalized.dialogue.text };
+        const actual = resolveExternalOutput(normalized.dialogue.text, receipt);
+        if (!actual) return { status: 'unknown', receiptId: receipt.receiptId, reason: 'platform_delivered_source_changed' };
+        return { ...receipt, sourceSessionId: record.target.sessionId, sourceKind: 'model', text: actual.text };
       }
       const query = safeGet(ctx, 'sessionQuery');
       if (!query?.readSession) return { status: 'unknown' };
@@ -587,7 +590,7 @@ export function createDshCoordinator(ctx, config = {}) {
     for (const record of normalized.hot) { const captured = await repository.captureHot(withSourceAccess(markProcessDependencies(state, record, turn), agent.session.id, seq)); gap = Boolean(captured.gap) || gap; }
     return { gap, observed: true };
   }
-  const environmentSignature = environment => JSON.stringify(Object.fromEntries(['channelId', 'sessionId', 'platform', 'placeDescription', 'participantClues', 'visual', 'timezone', 'externalInput'].map(key => [key, environment[key]])));
+  const environmentSignature = environment => JSON.stringify(Object.fromEntries(['channelId', 'sessionId', 'platform', 'placeDescription', 'participantClues', 'visual', 'timezone', 'externalInput', 'outputCapabilities'].map(key => [key, environment[key]])));
   async function notifyEnvironment(agent, { newChannel = false } = {}) {
     if (closed || initializationError) return;
     const state = agents.get(agent.id); if (!state) return;
@@ -631,24 +634,37 @@ export function createDshCoordinator(ctx, config = {}) {
         catch (error) { report(error); receipt = { status: 'unknown', code: error.code ?? 'CHANNEL_OUTPUT_UNKNOWN' }; }
         receipt ??= { status: 'unknown', code: 'CHANNEL_OUTPUT_UNAVAILABLE' };
       }
+      let actualText = normalized.dialogue?.text;
+      if (external && visibleFinal && receipt?.status === 'delivered') {
+        const actual = resolveExternalOutput(normalized.dialogue.text, receipt);
+        if (actual) actualText = actual.text;
+        else receipt = { status: 'unknown', code: 'CHANNEL_OUTPUT_PROJECTION_MISMATCH', receiptId: receipt.receiptId };
+      }
       const delivered = !external || receipt?.status === 'delivered';
-      if (normalized.dialogue && delivered) gap = Boolean((await runtime.accept(withSourceAccess(normalized.dialogue, session.id, event.seq), context.environment)).gap) || gap;
+      if (normalized.dialogue && delivered) gap = Boolean((await runtime.accept(withSourceAccess({ ...normalized.dialogue, text: actualText }, session.id, event.seq), context.environment)).gap) || gap;
       for (const record of normalized.hot) {
+        const hostKind = record.kind;
+        if (external && delivered && actualText !== normalized.dialogue?.text && record.kind === 'dialogue' && record.content?.mode === 'cached') {
+          record.kind = 'plugin_state'; record.origin = 'system';
+          record.navigationSummary = '宿主渲染前输出原件；平台实际发送文字另存于交流记录。';
+          record.content.text = JSON.stringify({ state: 'host_output_before_transport_projection', formatVersion: receipt.formatVersion, text: record.content.text });
+          record.content.chars = Array.from(record.content.text).length;
+        }
         if (external && !delivered && record.kind === 'dialogue' && record.content?.mode === 'cached') { record.kind = 'plugin_state'; record.origin = 'system';
           record.content.text = JSON.stringify({ state: 'generated_not_confirmed_on_platform', deliveryStatus: receipt?.status ?? 'draft', text: record.content.text }); record.content.chars = Array.from(record.content.text).length; }
         markProcessDependencies(state, record, event.data?.turn ?? state.eventTurn);
         const maxChars = repository.config.tempTargetChars;
         if (record.content.mode === 'cached' && record.content.chars > maxChars && safeGet(ctx, 'sessionQuery')) {
-          const data = { sessionId: session.id, seq: event.seq, blockIndex: record.blockIndex ?? 0, kind: record.kind };
+          const data = { sessionId: session.id, seq: event.seq, blockIndex: record.blockIndex ?? 0, kind: hostKind };
           record.content = { mode: 'host_trace', locator: `dsh-trace:${encodeURIComponent(JSON.stringify(data))}`, available: true, chars: record.content.chars };
         }
-        const captured = await repository.captureHot(withSourceAccess(record, session.id, event.seq));
+        const captured = await repository.captureHot(withSourceAccess(record, session.id, event.seq, hostKind));
         gap = Boolean(captured.gap) || gap;
         if (event.type === 'tool/result' && !(captured.record || captured.duplicate && !captured.revoked && captured.eventId)) toolResultCaptured = false;
       }
       if (event.type === 'assistant/message' && normalized.dialogue?.text && !event.data.message.content.some(x => x.type === 'tool-call')) {
         if (active?.deliveryId) await runtime.acknowledgeDelivery(active.deliveryId, { ...(external ? receipt : { status: 'delivered', receiptId: `dsh-output:${session.id}:${event.seq}` }),
-          sourceSessionId: session.id, sourceEventId: normalized.dialogue.sourceEventId, sourceKind: 'model', text: normalized.dialogue.text, deliveredAt: receipt?.deliveredAt ?? event.time });
+          sourceSessionId: session.id, sourceEventId: normalized.dialogue.sourceEventId, sourceKind: 'model', text: actualText, deliveredAt: receipt?.deliveredAt ?? event.time });
         if (delivered) await repository.clearPending([...(state.admittedByTurn.get(event.data.turn) ?? [])]);
         state.admittedByTurn.delete(event.data.turn); state.activeByTurn.delete(event.data.turn);
       }
@@ -706,7 +722,11 @@ export function createDshCoordinator(ctx, config = {}) {
     const state = agents.get(agent.id);
     if (taskIsolation.isWorkerSession(agent.session.id)) return value;
     if (closed || initializationError || !state || state.disposed) throw personaContextFailure(initializationError);
-    const sections = value.sections ?? [];
+    // A desktop-only renderer cannot render cards in external text transports.
+    // Remove only its known named section here; desktop sessions and all other
+    // system sections retain their original prompts and order.
+    const externalTextChannel = Boolean(externalChannels.sessions[agent.session.id]);
+    const sections = (value.sections ?? []).filter(section => !externalTextChannel || section.name !== 'genui:fence');
     let snapshot;
     try { snapshot = await runtime.compose(contextFor(agent, { requestId: 'dsh-' + agent.id + '-' + randomUUID(),
       pending: state.claimedSourceRefs ?? [] })); }
@@ -717,7 +737,8 @@ export function createDshCoordinator(ctx, config = {}) {
     if (requestContext.signal && typeof requestContext.signal === 'object') {
       (state.projectionsBySignal ??= new WeakMap()).set(requestContext.signal, { texts: state.personaPromptTexts, snapshot });
     }
-    return { ...value, sections: [...sections.filter(section => !['persona-memory:conversation', 'persona-memory:protocol', 'persona-memory:live'].includes(section.name)),
+    return { ...value, sections: [...sections.filter(section => !['persona-memory:conversation', 'persona-memory:protocol', 'persona-memory:live', 'persona-memory:channel-output'].includes(section.name)),
+      ...(externalTextChannel ? [{ name: 'persona-memory:channel-output', text: '当前通道显示能力（技术事实）：普通文字可用，DSH 界面卡片（dsh-ui）不可渲染。', interpolate: false }] : []),
       { name: 'persona-memory:conversation', text: conversationText, interpolate: false },
       { name: 'persona-memory:protocol', text: CONTROL_GUIDANCE, interpolate: false },
       { name: 'persona-memory:live', text: snapshot.injectedText, interpolate: false }] };
