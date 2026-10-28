@@ -1,6 +1,6 @@
 # DSH Market 收录申请
 
-当前发布补丁：**0.13.1**。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28用户决定直接申请；本轮准备并提交目录条目，**实际申请PR待创建后登记，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
+当前发布补丁：**0.13.1**。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28已按用户决定提交[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，**当前开放且未合并，检查等待，待维护者审核，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
 
 ## 本轮材料与反馈入口
 
@@ -11,13 +11,13 @@
 
 ## 验证与未测边界
 
-0.13.0统一时间线的证据见[历史机器回执](verification/0.13.0-memory-timeline.json)。该版可移植性修复后GitHub Actions运行40624830474在Windows通过1343项，在Linux通过1342项并保留1项Windows专用跳过；结果属于原提交4013d009164c10848f50e903eedd7f2f409b8b8a，不是0.13.1新增报错功能的验收。0.13.1在Windows、Node.js 24.16.0下完成本机全量1357/1357，失败、取消和跳过均为0；源文件哈希在测试前后不变。定向49/49包含本轮新增14项，与全量不叠加计算，详见[0.13.1报错通道回执](verification/0.13.1-support-channel.json)。本轮远程CI等待推送后运行，不能以本机结果替代。
+0.13.0统一时间线的证据见[历史机器回执](verification/0.13.0-memory-timeline.json)。该版可移植性修复后GitHub Actions运行40624830474在Windows通过1343项，在Linux通过1342项并保留1项Windows专用跳过；结果属于原提交4013d009164c10848f50e903eedd7f2f409b8b8a，不是0.13.1新增报错功能的验收。0.13.1在Windows、Node.js 24.16.0下完成本机全量1357/1357，失败、取消和跳过均为0；源文件哈希在测试前后不变。定向49/49包含本轮新增14项，与全量不叠加计算，详见[0.13.1报错通道回执](verification/0.13.1-support-channel.json)。本轮源码已推送，远程CI结果待核实，不能以本机结果替代。
 
 本轮报错通道、文档与收录材料不运行真实模型或社交账号测试，不因申请收录宣称QQ、B站或其他社交平台已全部验证。QQ按用户安排自行验证；其他社交连接继续显示未测试，旧版真实验收仍保留原范围。问题反馈不会自动上传记忆库，也不承诺持续调用付费模型来监控工单。
 
 ## 申请进度
 
-本轮申请PR：待实际创建后登记。CI通过不表示已获收录；提交后以PR检查、维护者意见与最终合并状态为准。
+本轮申请为[awesome-dsh-plugin/awesome-dsh-plugin#10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，创建于2026-10-28T04:28:39Z，状态为开放、未合并，待维护者审核；登记时检查仍在等待。申请目标为main，提交头为d6e56096044211a0db9e8b791efe54b5c2514b65；插件0.13.1源码已推送至主仓库86f0677。CI通过不表示已获收录；后续以PR检查、维护者意见与最终合并状态为准。
 
 ## 历史材料与当时状态
 
