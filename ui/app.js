@@ -64,8 +64,10 @@ function destination(title, description, action, status = '') {
 function destinations(...items) { return element('div', { class: 'destination-list' }, ...items); }
 function sectionTabs(items) { return element('nav', { class: 'module-tabs', 'aria-label': '当前页面内容' }, items.map(([view, label]) => button(label, () => openSection(view, false), 'module-tab', { class: 'module-tab' + ((state.view ?? '') === view ? ' active' : ''), 'aria-current': (state.view ?? '') === view ? 'page' : 'false' }))); }
 let pageScrollRequested = false;
+const timelineTierNames = { recent: '短期记忆', long_term: '长期记忆', archive: '归档记忆' };
 const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overview', maintenance: 'settings' };
 const viewTitles = { retrieval: '查找关联记忆', 'retrieval-settings': '可选语义服务', 'retrieval-diagnostics': '检索与参考记录', 'provider-feed': 'QQ 动态扩展', 'provider-cover': '可选翻唱服务', bilibili: '连接 B 站', 'bilibili-permissions': 'B 站能力与权限', 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', 'qq-official': 'QQ 官方 Bot', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-account': 'QQ 账号操作记录', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
+viewTitles.timeline = '记忆时间线';
 async function openSection(view, remember = true) { pageScrollRequested = true; if (remember) state.trail.push({ page: state.page, view: state.view }); state.view = view || null; await renderPage(); }
 async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? null; await renderPage(); }
 
@@ -96,10 +98,15 @@ function documentView(value) {
   }
   if (value && typeof value === 'object' && value.recordType) {
     const refs = value.srcRefs ?? (value.sourceEventId ? [{ sourceSessionId: value.sourceSessionId, sourceEventId: value.sourceEventId, sourceRole: value.role }] : []);
-    const label = value.recordType === 'deep' ? value.title ?? '深刻经历' : ({ chat: '对话原文', memory: '保留的记忆', code: '记忆短语' })[value.recordType] ?? '已保留内容';
+    const label = value.timeline?.title || (value.recordType === 'deep' ? value.title ?? '深刻经历' : ({ chat: '对话原文', memory: '保留的记忆', code: '记忆短语' })[value.recordType] ?? '已保留内容');
     const metadata = disclosure({}, element('summary', {}, '查看来源与记录信息'), kv({ '类型': value.recordType, '记忆归属': memoryScopeLabel(value), '实际角色': value.role ?? value.sourceRole ?? '人格的记忆与理解', '实际发言者': value.speakerId ?? '未提供', '发生时间': value.sourceAt ? date(value.sourceAt) : '未提供', '记录编号': value.id }),
       refs.map(ref => element('div', { class: 'source-reference' }, kv({ '会话': ref.sourceSessionId, '来源': ref.sourceEventId, '角色': ref.sourceRole ?? '未提供', '原件': ref.available === false ? '已不可用' : '可查询' }), button('查看这份原件', () => inspectDocument('sources.read', { sourceRefs: [ref] }, '来源原件'), 'link'))), disclosure({}, element('summary', {}, '原始字段'), data(value)));
-    const content = value.recordType === 'deep'
+    const content = value.timeline
+      ? element('div', {}, kv({ '存放位置': ({ recent: '短期记忆', long_term: '长期记忆', archive: '归档记忆' })[value.tier] ?? '统一时间线', '发生时间': date(value.timeline.occurredAt ?? value.sourceAt), '记录时间': date(value.timeline.recordedAt ?? value.observedAt) }),
+        element('section', { class: 'reading-section' }, element('h3', {}, '原始交流'), element('p', { class: 'detail-value' }, value.text ?? '')),
+        ...[['background', '前因'], ['process', '经过'], ['outcome', '结果'], ['details', '重要细节'], ['feltThen', '当时的感受'], ['meaningNow', '现在的理解']].filter(([key]) => value.timeline[key]).map(([key, title]) => element('section', { class: 'reading-section' }, element('h3', {}, title), element('p', { class: 'detail-value' }, value.timeline[key]))),
+        element('p', { class: 'subtle-note' }, '没有描述的部分留空。转入长期或归档不会改写原话，也不会要求人格形成某种感受。'))
+      : value.recordType === 'deep'
       ? element('div', {}, element('p', { class: 'subtle-note' }, '这是人格留下的参考。是否想起、怎样理解与修剪，由它自己决定。'),
         ...[['experience', '经历'], ['feltThen', '当时的感受'], ['meaningNow', '现在的理解']].map(([key, title]) => element('section', { class: 'reading-section' }, element('h3', {}, title), element('p', { class: 'detail-value' }, value[key] || '尚未描述'))), value.reference ? element('p', { class: 'subtle-note' }, '留下的参考：' + value.reference) : null)
       : element('div', { class: 'detail-value' }, value.text ?? value.meaning ?? value.desc ?? value.reference ?? '本条目没有正文。');
@@ -305,10 +312,11 @@ async function overviewPage() {
       element('p', {}, '这是表达偏好，复杂内容仍可展开。分次补充可能增加模型调用，不保证每次发多条。')), conversationStyle));
   replace($('page-actions'));
   const controls = element('div', { class: 'row-actions' }, button('查看完整运行态', () => inspectDocument('state.get', {}, '完整运行状态'), 'secondary compact'), button('整理一批', () => control('consolidate'), 'secondary compact'));
-  if (state.view === 'runtime') return element('div', {}, element('div', { class: 'stats-grid' }, stat('长期记忆', number(persistent), '上限 ' + number(persistentLimit) + ' 字符'), stat('临时资料', number(hot), '上限 ' + number(hotLimit) + ' 字符')),
+  if (state.view === 'runtime') return element('div', {}, element('div', { class: 'stats-grid' }, stat('短期记忆', number(capacity.recentChars), '超出天数或容量转入长期'), stat('长期记忆', number(persistent), '上限 ' + number(persistentLimit) + ' 字符'), stat('归档记忆', number(capacity.archivedChars), '可回查，不自动删除'), stat('临时资料', number(hot), '上限 ' + number(hotLimit) + ' 字符')),
     kv({ '当前状态': labels[runtime.sleep?.state] ?? '未知', '唤醒方式': ({ at_time: '相续选择的时间', consolidation_complete: '所选整理完成后', explicit_wake: '等你叫醒' })[runtime.sleep?.wakeCondition] ?? '尚未选择', '计划唤醒': date(runtime.sleep?.wakeAt), '下次判断': date(runtime.schedule?.nextCheckAt), '来源缺口': number(gaps), '接入会话': number(status.agents?.length), '排队整理': number(jobs.queued ?? 0), '物理占用': number(capacity.physicalBytes) + ' bytes' }), controls,
     status.agents?.length ? card('已接入的会话', '', status.agents.map(agent => kv({ '会话': agent.sessionId, '关系': personName(agent.personId), '渠道': agent.channelId }))) : empty('还没有接入人格会话', '回到 DSH 对话，选择“相续人格”预设即可开始。'));
   return element('div', {}, onboardingHint(), daily,
+    gaps > 0 ? notice('有 ' + number(gaps) + ' 处记忆保存缺口尚未解决。请查看运行与用量、磁盘容量及来源回补；归档不会被自动删除以腾空间。', 'warning') : null,
     !status.agents?.length ? element('p', { class: 'getting-started' }, '在 DSH 对话中选择“相续人格”预设，即可开始聊天。') : null,
     destinations(destination('了解相续', '它如何描述自己，以及留下的性格与习惯。', () => navigate('persona')),
       destination('独立任务与资料', '查看委派出去的任务和完整结果。', () => navigate('tasks')),
@@ -381,6 +389,8 @@ const userGuideTopics = [
   ['开始相处', '在 DSH 对话中选择“相续人格”预设即可开始。可以直接打招呼，也可以在“了解相续 → 自我档案”给出名字、称呼或形象方面的初始想法；由相续选择或暂不设置都可以。初始资料与当前采用的自我描述分别保存。'],
   ['同一个人格，新的聊天窗口', '继续使用同一人格实例时，新开窗口不等于重新创建人格。不同实例分别保存资料。换了平台、昵称或群聊环境，可能需要提醒相续你希望被怎样称呼；账号和称呼是线索，不保证一定认对人。'],
   ['记住、想起与检索', '接收记录、当前回忆和长期整理是不同过程。本次没有提起过去，不代表资料已经被删除；尚未检索、检索未找到、记忆库为空和读取失败也不同。记什么、怎样理解和何时回忆，由相续决定。你可以在“记忆”里查看已保留内容，并在理解有误时直接纠正。'],
+  ['短期、长期与归档', '在“记忆 → 短期、长期与归档”查看统一时间线。新交流进入短期，超出短期天数或容量的部分按时间线转入长期；长期默认一百万 Unicode 字符，满后最旧部分转入归档。同一编号、原话、来源和已补充的经历描述一起转存，不需重复梳理或调用模型。归档仍可搜索和回查，不自动删除。'],
+  ['每次对话带上自己与近况', '每次人格请求都会加载当前人格核心、身份、必要关系和有界近期材料；详细旧事通过检索回查，扩展资料省略会标明。必要资料加载失败会明确报错，不悄悄缺少人格继续回答。提供记忆背景不规定相续必须想起哪件事、产生什么感受或怎样回应。'],
   ['查找关联与指定时间', '在“记忆 → 查找关联记忆”输入关键词，可以结合文字匹配、已有关系和可选语义服务查找。“当前”、已明确结束的旧理解和指定时间仅筛选仍保留的资料，不会重建已删除的历史。候选结果与实际提供过的参考分别记录，不代表相续一定回忆了它。'],
   ['可选语义服务与费用', '普通文字与关联检索一直可用。只有你配置并开启语义服务、点“建立一批索引”时，这一批记忆才会发送给指定的向量服务；后续语义查询也会提交查询文字，可能产生费用。缓存有容量上限，只移除可重新生成的向量，不因此删除原始记忆。'],
   ['短句与分条表达', '在“相处 → 交流节奏”选择自然短聊、按内容决定或完整展开。这是表达偏好，不是字数、条数或频率硬限制，复杂内容仍可展开。可以分次表达，但不保证每次发多条；每次补充可能增加一次模型调用。分不分条、说几句、是否继续，由相续结合实际交流决定；不会按消息条数要求人格进化。各渠道以实际能力和逐条回执为准。'],
@@ -392,7 +402,7 @@ const userGuideTopics = [
   ['QQ 图片、语音与表情', '兼容桥实际支持并获准时，可接收结构化消息、引用、提及、表情与转发。看图需要当前模型支持图片且桥接端确实提供图片；语音转文字还需另行开启并已有可用的 DSH 识别服务。无法识别时保留原消息及识别状态，不把猜测当成你说过的话。'],
   ['B 站与可选扩展', 'B 站需要扫码绑定、分别授予能力并开启连接。读取、评论、回复、私信和分享按实际权限执行；字幕与故事板仅覆盖接口返回部分，不等于完整观看视频。发送回执不能保证公开可见或对方已读；结果未知时先核对原收据，不会自动重发。发表 QQ 空间说说可使用已核实的 NapCat 账号接口；空间浏览、点赞、评论与翻唱仍需要相应扩展服务，按实际能力显示。'],
   ['翻唱与本地音频', '可在“创作”中导入、查看和下载本地音频；真正的翻唱需要你配置兼容服务、模型及目标音色。文件传输校验只证明数据完整，不保证翻唱质量。服务是否生成成功、平台是否发送成功分别记录。'],
-  ['容量、备份与遗忘', '记忆有存储与上下文容量限制，不承诺永久保存全部原话。你可以查看容量、创建备份或明确遗忘；实际作用范围以操作说明和回执为准。文本备份不包含外部图片、视频、平台凭据或供应商保存的副本。用于生成的材料会交给你选择的模型服务处理。'],
+  ['容量、备份与遗忘', '转入归档不丢失已保存的原话或注释，但仍受实例物理空间和实际磁盘容量限制。空间不足会提示保存缺口，不会偷偷删除归档；可查看具体归档后明确遗忘，所选原件和依赖记忆会一起撤销。你也可以创建备份。硬件损坏、外部原件丢失和明确遗忘不在转存保真保证内；文本备份不包含外部图片、视频、平台凭据或供应商副本。用于生成的材料会交给你选择的模型服务处理。'],
   ['认错人、记错事或表达不自然', '可以直接告诉相续你的感受，说明哪一处理解不对。若反复声称刚认识你、把未检索说成完全没有记忆，或身份资料前后矛盾，可记录使用的人格实例、模型、原话与时间；在“设置 → 数据维护与诊断”查看实际状态，再区分表达问题与技术故障。'],
 ];
 function userGuidePage() {
@@ -522,8 +532,63 @@ async function retrievalPage() {
   return container;
 }
 
+async function timelinePage() {
+  const instanceId = state.instanceId, generation = state.generation;
+  const alive = () => state.instanceId === instanceId && state.generation === generation && state.page === 'memory' && state.view === 'timeline';
+  const container = element('div'), results = element('div'), summaryArea = element('div');
+  const tier = field('timeline-tier', '查看哪部分记忆', 'recent', { choices: Object.entries(timelineTierNames) });
+  const query = field('timeline-query', '搜索这部分记忆', '', { placeholder: '标题、原话、经历或感受', class: 'search' });
+  let selection = {}, cursors = [null], pageNumber = 1, readGeneration = 0, readError = null, rendered = false;
+  async function openRecord(item) {
+    await inspectDocument('memory.detail', { id: item.id }, item.timeline?.title || timelineTierNames[item.tier] || '经历详情', { eyebrow: 'MEMORY / TIMELINE', actions: [{
+      label: item.tier === 'archive' ? '明确遗忘这条归档…' : '明确遗忘这条记忆…', kind: 'danger', run: async () => {
+        if (!alive()) return;
+        const result = await mutate('memory.forget', { ids: [item.id], ...(item.personId ? { targetPersonId: item.personId, scope: 'person' } : { scope: 'unknown' }) }, {
+          title: '明确遗忘所选经历', description: '这会撤销所选原件及依赖它的相关记忆，并清理受管副本。归档转存本身不会删除内容；只有你确认这次遗忘才会移除。宿主日志和外部备份不由此删除。',
+          preview: { id: item.id, title: item.timeline?.title, tier: timelineTierNames[item.tier], chars: item.chars }, reason: true, danger: true, accept: '确认遗忘', refresh: false,
+        });
+        if (result && alive()) { $('detail-dialog').close(); await load(); }
+      },
+    }] });
+  }
+  async function load(cursor = null, { pageIndex } = {}) {
+    if (!alive()) return;
+    const currentRead = ++readGeneration, reset = cursor == null && pageIndex === undefined;
+    const requested = reset ? { tier: tier.input.value, query: query.input.value.trim(), pageSize: 12 } : selection;
+    const index = reset ? 0 : pageIndex ?? pageNumber;
+    results.setAttribute('aria-busy', 'true');
+    try {
+      const page = await request('memory.timeline.list', { ...requested, instanceId, ...(cursor != null ? { cursor } : {}) });
+      if (!alive() || currentRead !== readGeneration) return;
+      clearReadError(readError); readError = null; selection = requested; pageNumber = index + 1;
+      if (reset) cursors = [null]; cursors[index] = cursor; cursors = cursors.slice(0, index + 1);
+      const paging = { pageNumber, first: () => load(), previous: () => load(cursors[index - 1], { pageIndex: index - 1 }), label: '时间线列表' };
+      replace(results, paginator(page, next => load(next, { pageIndex: index + 1 }), { ...paging, position: 'top' }),
+        getItems(page).length ? element('div', { class: 'record-list' }, getItems(page).map(item => memoryRecord({ ...item, title: item.timeline?.title || item.title, label: item.timeline?.title || '交流记录' }, () => openRecord(item))))
+          : empty('这部分还没有匹配的记忆', requested.tier === 'archive' ? '长期容量尚未用满时，归档可以为空。也可以调整搜索线索。' : '新交流会进入短期；超出天数或容量后按时间线转存。'),
+        paginator(page, next => load(next, { pageIndex: index + 1 }), paging));
+      if (rendered) scrollListStart(results); rendered = true;
+    } catch (error) {
+      if (!alive() || currentRead !== readGeneration) return;
+      if (cursor != null && stalePage(error)) { replace(results, pageChanged(() => load())); return; }
+      readError = error; throw error;
+    } finally { if (alive() && currentRead === readGeneration) results.setAttribute('aria-busy', 'false'); }
+  }
+  const status = await request('memory.timeline.status', { instanceId });
+  if (!alive()) return container;
+  replace(summaryArea, element('div', { class: 'stats-grid' }, Object.entries(timelineTierNames).map(([key, title]) => stat(title, number(status[key]?.count), number(status[key]?.chars) + ' 字符'))),
+    element('p', { class: 'subtle-note' }, '短期默认保留近 ' + number(status.preferredDays ?? state.status.config?.recentPreferredDays) + ' 天，并受短期容量限制。长期容量 ' + number(status.longTermTargetChars ?? state.status.config?.longTermTargetChars) + ' 字符，满后最旧部分转入归档。'));
+  tier.input.addEventListener('change', () => load().catch(showError));
+  query.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); load().catch(showError); } });
+  container.append(summaryArea, notice('三部分使用同一格式和来源编号。转存不重新概括、不调用模型，也不自动删除归档。归档仍可搜索和查看原文；需要释放空间时，可查看具体条目后明确遗忘。'),
+    element('div', { class: 'toolbar', role: 'search' }, tier.wrapper, query.wrapper, button('查找', () => load(), 'primary')), results,
+    destinations(destination('调整记忆容量', '设置短期天数、长期容量和实例磁盘上限。', () => navigate('settings', 'budgets'))));
+  await load(); return container;
+}
+
 async function memoryPage() {
   if (['retrieval','retrieval-settings','retrieval-diagnostics'].includes(state.view)) return retrievalPage();
+  if (state.view === 'timeline') return timelinePage();
   const container = element('div'), filters = element('div', { class: 'toolbar', role: 'search' }), resultArea = element('div'), ownerInstance = state.instanceId, ownerGeneration = state.generation;
   const alive = () => state.instanceId === ownerInstance && state.generation === ownerGeneration && state.page === 'memory';
   const query = field('memory-query', '搜索线索', '', { placeholder: '原话、记忆或编码中的文字', class: 'search' });
@@ -599,7 +664,8 @@ async function memoryPage() {
   peopleQuery.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadPeople().catch(showError); } });
   const relations = card('人物与关系', '按真实人物列表分页。查看主观印象、编码与相处状态。', peopleQuery.wrapper, button('搜索人物', () => loadPeople(), 'secondary compact'), peopleResults);
   const tabs = sectionTabs([['', '全部记忆'], ['deep', '深刻经历'], ['people', '认识的人']]);
-  container.append(destinations(destination('查找关联记忆', '使用文字、可选语义和已有关系查找，并查看过去与现在的理解。', () => openSection('retrieval'))));
+  container.append(destinations(destination('短期、长期与归档', '按时间线查看同一份经历；超出短期转入长期，长期满后最旧部分转入归档。', () => openSection('timeline')),
+    destination('查找关联记忆', '使用文字、可选语义和已有关系查找，并查看过去与现在的理解。', () => openSection('retrieval'))));
   container.append(tabs);
   if (state.view === 'people') { await loadPeople(); container.append(relations); return container; }
   if (state.memoryPerson) { const selected = state.memoryPerson; scope.input.value = 'person'; person.input.disabled = false; if (![...person.input.options].some(item => item.value === selected.id)) person.input.append(element('option', { value: selected.id }, selected.name)); person.input.value = selected.id; container.append(element('div', { class: 'active-filter' }, element('span', {}, '正在看：' + selected.name), button('查看所有人的记忆', async () => { state.memoryPerson = null; await openSection('', false); }, 'link'))); }
@@ -643,15 +709,16 @@ async function evolutionPage() {
   await load(); content.append(tabs, element('div', { class: 'toolbar' }, filter.wrapper, button('整理这批资料', () => control('consolidate'), 'secondary')), element('p', { class: 'subtle-note' }, '相续可以暂缓整理，也可以选择不改变任何内容。这里显示真实进度。'), list); return content;
 }
 const configGroups = [
-  ['记忆与存储', [['longTermTargetChars', '长期文本总目标', '字符'], ['recentTargetChars', '近期视图目标', '字符'], ['recentPreferredDays', '近期优先天数', '天；不是永久保留保证'], ['tempTargetChars', '临时过程目标', '字符'], ['diskReserveBytes', '磁盘保留空间', 'bytes']]],
+  ['记忆与存储', [['longTermTargetChars', '长期记忆容量', 'Unicode 字符；超出后最旧部分转入归档'], ['recentTargetChars', '短期记忆容量', 'Unicode 字符；超出部分转入长期'], ['recentPreferredDays', '短期记忆天数', '天；超出部分转入长期，不是删除或梳理周期'], ['tempTargetChars', '临时过程目标', '字符'], ['diskReserveBytes', '磁盘保留空间', 'bytes；不足时明确提示，不自动删归档']]],
   ['记录与文件上限', [['capacityLimits.artifactTextChars', '单条进化记录文本', '字符'], ['capacityLimits.artifactRecordBytes', '单条记录序列化', 'bytes'], ['capacityLimits.documentBytes', '业务 JSON 文档', 'bytes'], ['capacityLimits.storeBytes', '实例物理空间', 'bytes；另验事务峰值']]],
   ['整理输入与输出', [['processingLimits.consolidationInputChars', '新批每目标增量', '字符；不重切旧批'], ['processingLimits.consolidationContextChars', '旧记忆每页', '字符'], ['processingLimits.consolidationRequestTokens', '核心完整请求预算', '计数单位；缺 tokenizer 时标估算'], ['processingLimits.consolidationOutputTokens', '整理输出预留', 'tokens'], ['processingLimits.controlOutputTokens', '控制输出预留', 'tokens'], ['processingLimits.replyOutputTokens', '回复输出预留', 'tokens']]],
   ['作业执行容量', [['processingLimits.consolidationCallsPerSegment', '单执行段调用尝试', '跨全部子批共享；不是每日频率'], ['processingLimits.maxQueuedConsolidations', '最大排队作业', '个'], ['processingLimits.maxTargetsPerJob', '每作业最多目标', '个']]],
-  ['普通注入预算', [['contextBudget.totalTokens', '动态人格材料总预算', '计数单位'], ['contextBudget.environmentTokens', '环境', '计数单位'], ['contextBudget.anchorTokens', '身份基调', '计数单位'], ['contextBudget.personaTokens', '人格', '计数单位'], ['contextBudget.habitTokens', '习惯', '计数单位'], ['contextBudget.relationTokens', '关系', '计数单位'], ['contextBudget.retrievalTokens', '检索', '计数单位'], ['contextBudget.deepMemoryTokens', '深刻记忆参考', '计数单位；仍受总预算约束，不表示已触发回忆']]],
+  ['普通注入预算', [['contextBudget.totalTokens', '动态人格材料总预算', '计数单位；必要核心放不下时明确报错'], ['contextBudget.environmentTokens', '环境', '计数单位'], ['contextBudget.anchorTokens', '身份基调', '计数单位；必要核心完整保留'], ['contextBudget.personaTokens', '人格', '计数单位'], ['contextBudget.selfProfileTokens', '自我资料扩展', '计数单位；当前身份与自我描述完整保留'], ['contextBudget.recentMemoryTokens', '近期记忆参考', '计数单位；包含在动态总预算内'], ['contextBudget.habitTokens', '习惯', '计数单位'], ['contextBudget.relationTokens', '关系', '计数单位'], ['contextBudget.retrievalTokens', '检索', '计数单位'], ['contextBudget.deepMemoryTokens', '深刻记忆参考', '计数单位；仍受总预算约束，不表示已触发回忆']]],
   ['条目容量', [['artifactLimits.axes', '性格维度', '个'], ['artifactLimits.tendencyFacets', '倾向', '个'], ['artifactLimits.boundaryFacets', '软边界', '个'], ['artifactLimits.signatures', '共同签名', '个'], ['artifactLimits.habits', '习惯', '个'], ['artifactLimits.impressionSignaturesPerPerson', '每人印象签名', '个'], ['artifactLimits.indexItemsPerPerson', '每人索引', '个'], ['artifactLimits.codesPerScope', '每范围编码', '个'], ['artifactLimits.interpretationsPerPerson', '每人待解释', '个'], ['artifactLimits.relationEventsPerPerson', '每人关系事件', '个'], ['artifactLimits.deepMemories', '深刻记忆条目', '个；满容量不自动替人格选取舍'], ['artifactLimits.deepMemoryChars', '深刻记忆文本总量', '字符；仍受实例容量约束']]],
   ['有限历史与诊断', [['retention.snapshotMaxRequests', '快照保留数量', '条'], ['retention.personaHistoryMaxVersions', '人格历史版本', '个'], ['retention.journalMaxBytes', '运行日志与工作区', 'bytes'], ['retention.backupMaxBytes', '维护备份容量', 'bytes']]],
 ];
 const getPath = (object, path) => path.split('.').reduce((value, key) => value?.[key], object);
+const budgetMinimum = path => /^(capacityLimits|processingLimits)\./.test(path) || ['contextBudget.totalTokens', 'contextBudget.recentMemoryTokens'].includes(path) ? 1 : 0;
 function setPath(object, path, value) { const keys = path.split('.'); let node = object; for (const key of keys.slice(0, -1)) node = node[key] ??= {}; node[keys.at(-1)] = value; }
 function instanceLifecyclePanel(instances, { alive }) {
   async function refresh(preferId, { useActualSelection = false } = {}) {
@@ -787,7 +854,7 @@ async function settingsPage() {
   for (const [index, [title, definitions]] of configGroups.entries()) {
     if (state.view !== 'budgets' || String(index) !== state.configGroup) continue;
     const group = element('fieldset', { class: 'form-section' }, element('legend', {}, title)), grid = element('div', { class: 'form-grid wide' });
-    for (const [path, label, hint] of definitions) { const input = field('config-' + path.replaceAll('.', '-'), label, budgetDraft[path] ?? getPath(current, path), { type: 'number', min: /^(capacityLimits|processingLimits)\./.test(path) ? 1 : 0, hint }); inputs.set(path, input.input); grid.append(input.wrapper); }
+    for (const [path, label, hint] of definitions) { const input = field('config-' + path.replaceAll('.', '-'), label, budgetDraft[path] ?? getPath(current, path), { type: 'number', min: budgetMinimum(path), hint }); inputs.set(path, input.input); grid.append(input.wrapper); }
     group.append(grid); form.append(group);
   }
   async function saveSettings() {
@@ -795,7 +862,7 @@ async function settingsPage() {
     const partial = {};
     if (timezone.input.value.trim() !== current.timezone) partial.timezone = timezone.input.value.trim();
     if (mode.input.value !== current.consolidationMode) partial.consolidationMode = mode.input.value;
-    if (state.view === 'budgets') { captureBudgetDraft(); for (const [path, raw] of Object.entries(budgetDraft)) { const value = Number(raw), min = /^(capacityLimits|processingLimits)\./.test(path) ? 1 : 0; if (!raw.trim() || !Number.isSafeInteger(value) || value < min) throw new Error('请修正未保存的容量值：' + path); if (value !== getPath(current, path)) setPath(partial, path, value); } }
+    if (state.view === 'budgets') { captureBudgetDraft(); for (const [path, raw] of Object.entries(budgetDraft)) { const value = Number(raw), min = budgetMinimum(path); if (!raw.trim() || !Number.isSafeInteger(value) || value < min) throw new Error('请修正未保存的容量值：' + path); if (value !== getPath(current, path)) setPath(partial, path, value); } }
     for (const [path, input] of inputs) { const value = Number(input.value); if (!input.value.trim() || !Number.isSafeInteger(value) || value < Number(input.min)) throw new Error('请输入有效整数：' + path); if (value !== getPath(current, path)) setPath(partial, path, value); }
     if (!Object.keys(partial).length) { toast('没有配置变更。'); return; }
     await request('config.update', { instanceId, config: partial });
@@ -1426,9 +1493,9 @@ async function chatPage() {
   const platformName = value => ({ qq: 'QQ', wechat: '微信' })[value] ?? value;
   const statusName = value => ({ connected: '已连接', ready: '已就绪', connecting: '正在连接', disconnected: '尚未连接', disabled: '已停用', unconfigured: '尚未配置', unavailable: '暂不可用', error: '连接异常' })[value] ?? value;
   if (!state.view) return destinations(
-    ...['qq', 'wechat'].map(id => { const item = connections.find(value => value.id === id), authorized = official.connections?.find(value => value.id === id); return destination(id === 'qq' ? 'QQ' : '微信', id === 'qq' ? '一键准备个人 QQ 连接，扫码接入后由相续自主社交。' : '官方扫码接入私聊；群聊需已有兼容桥支持。', () => openSection(id === 'qq' ? 'qq' : item?.config?.mode === 'bridge' && item.configured ? id + '-bridge' : id), item?.connected ? '已连接' : authorized?.connected ? '已授权，待启用' : '未连接'); }),
-    destination('B 站', '可选扫码连接，按授权浏览资料、发表评论或发送私信。', () => openSection('bilibili')),
-    destination('QQ 动态扩展', '仅在自备兼容服务时开启，普通 OneBot 不保证空间接口。', () => openSection('provider-feed')),
+    ...['qq', 'wechat'].map(id => { const item = connections.find(value => value.id === id), authorized = official.connections?.find(value => value.id === id); return destination(id === 'qq' ? 'QQ' : '微信', id === 'qq' ? '一键准备个人 QQ 连接，扫码接入后由相续自主社交。' : '官方扫码接入私聊；群聊需已有兼容桥支持。', () => openSection(id === 'qq' ? 'qq' : item?.config?.mode === 'bridge' && item.configured ? id + '-bridge' : id), (id === 'wechat' ? '未测试 · ' : '') + (item?.connected ? '已连接' : authorized?.connected ? '已授权，待启用' : '未连接')); }),
+    destination('B 站', '可选扫码连接，按授权浏览资料、发表评论或发送私信。', () => openSection('bilibili'), '未测试'),
+    destination('QQ 动态扩展', '仅在自备兼容服务时开启，普通 OneBot 不保证空间接口。', () => openSection('provider-feed'), '未测试'),
     destination('声音', '选择音色、试听，以及由谁决定声音。', () => openSection('voice')),
     destination('社交身份', '登记人格的平台账号，核对连接与可用能力。', () => openSection('accounts')));
   if (state.view === 'accounts') return socialIdentitiesPanel({ generation, connections });

@@ -1,6 +1,6 @@
 # 自主整理、容量与补充唤醒验证
 
-> 当前版本入口：产品dsh-Xiangxu-Persona（相续人格）0.12.0的账号能力与本版状态见[当前说明](account-capabilities.md#0120-current-acceptance)；日常操作见[管理界面](management-ui.md)。下文是0.2.0历史验证，只保留当时数字、SHA、路径及失败，不作为后续新增能力或当前真实平台的验收。
+> 当前版本入口：0.13.0的[统一时间线与必需上下文](memory-timeline-and-context.md)及[本版验证收据](verification/0.13.0-memory-timeline.json)。下文只保留对应旧版历史数字、SHA、路径与失败，不作为本版新增功能、当前账号或真实模型效果的验收。
 
 实现版本0.2.0，数据契约仍为persona-memory/3。最终冷启动完整本地回归206/206通过；真实模型已观察整理完成唤醒与明确唤醒，两条历史unknown助手原件均已完整读取。最后只读轮在读完后发生模型工具JSON错误，整轮状态保留technical_failure，不能把读取成功说成整轮正常结束。0.1.1的97次真实调用和155项回归保留为历史。
 

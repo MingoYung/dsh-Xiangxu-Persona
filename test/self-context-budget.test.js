@@ -34,31 +34,36 @@ function assertProfileMatchesVisible(snapshot, original) {
 
 test('a total smaller than mandatory route facts rejects without cutting self identity into partial JSON', async () => {
   const base = await snapshot();
-  await assert.rejects(snapshot({ totalTokens: base.tokens - 1, budgets: { selfProfileTokens: 350 }, material: { selfProfile: profile() } }), { code: 'ESSENTIAL_CONTEXT_BUDGET' });
+  const environment = base.segments.find(item => item.name === 'environment');
+  await assert.rejects(snapshot({ totalTokens: environment.tokens - 1, budgets: { selfProfileTokens: 350 }, material: { selfProfile: profile() } }), { code: 'ESSENTIAL_CONTEXT_BUDGET' });
 });
 
-test('essential facts near the total cap omit whole self fields and truthfully report omitted values', async () => {
+test('essential facts near the total cap reject rather than omit the current identity', async () => {
   const base = await snapshot(), original = profile(), totalTokens = base.tokens + 30;
-  const result = await snapshot({ totalTokens, budgets: { selfProfileTokens: 350 }, material: { selfProfile: original } });
-  assert.ok(result.tokens <= totalTokens); assertProfileMatchesVisible(result, original);
-  assert.deepEqual(result.selfProfileReference.shown, []);
-  assert.deepEqual(result.sourceDependencies, { refs: [], recordIds: [] });
+  await assert.rejects(snapshot({ totalTokens, budgets: { selfProfileTokens: 350 }, material: { selfProfile: original } }), { code: 'PERSONA_CONTEXT_BUDGET' });
 });
 
-test('the optional environment tail consumes real budget before any self profile is admitted', async () => {
+test('the optional environment tail cannot displace the complete current identity', async () => {
   const base = await snapshot(), original = profile(), totalTokens = base.tokens + 180;
   const result = await snapshot({ totalTokens, budgets: { environmentTokens: 5000, selfProfileTokens: 350 },
     ctx: { environment: { placeDescription: 'A long real environment '.repeat(200) } }, material: { selfProfile: original } });
   assert.ok(result.tokens <= totalTokens); assertProfileMatchesVisible(result, original);
-  assert.deepEqual(result.selfProfileReference.shown, []);
-  assert.ok(result.selfProfileReference.omitted.includes('current.name'));
-  assert.ok(!result.injectedText.includes('[self_profile]'));
+  assert.ok(result.selfProfileReference.shown.includes('current.name'));
+  assert.ok(result.selfProfileReference.shown.includes('current.gender'));
+  assert.ok(result.injectedText.includes('[self_profile]'));
+  assert.ok(!result.injectedText.includes('A long real environment'));
 });
 
-test('later oversized segments never truncate an admitted self profile and omitted fields do not claim source dependencies', async () => {
+test('an oversized mandatory anchor rejects rather than silently truncating identity or anchor', async () => {
   const base = await snapshot(), original = profile(), totalTokens = base.tokens + 390;
-  const result = await snapshot({ totalTokens, budgets: { selfProfileTokens: 250, anchorTokens: 5000, personaTokens: 5000, relationTokens: 5000, retrievalTokens: 5000 },
-    material: { selfProfile: original, persona: { anchor: { text: 'Later text '.repeat(1000) } } } });
+  await assert.rejects(snapshot({ totalTokens, budgets: { selfProfileTokens: 250, anchorTokens: 5000, personaTokens: 5000, relationTokens: 5000, retrievalTokens: 5000 },
+    material: { selfProfile: original, persona: { anchor: { text: 'Later text '.repeat(1000) } } } }), { code: 'PERSONA_CONTEXT_BUDGET' });
+});
+
+test('optional biography and large recalled material do not claim omitted source dependencies', async () => {
+  const base = await snapshot(), original = profile(), totalTokens = base.tokens + 390;
+  const result = await snapshot({ totalTokens, budgets: { selfProfileTokens: 250, anchorTokens: 20, retrievalTokens: 5000 },
+    material: { selfProfile: original, persona: { anchor: { text: 'Complete anchor' } } }, ctx: { memories: [{ id: 'oversized', text: 'Optional detail '.repeat(1000) }] } });
   assert.ok(result.tokens <= totalTokens); const visible = assertProfileMatchesVisible(result, original);
   assert.equal(visible.current.name, '相续');
   assert.ok(result.selfProfileReference.omitted.includes('current.background'));
@@ -85,6 +90,6 @@ test('boundary-sensitive token counting cannot cut a whole profile after concate
     (text.includes('[environment]') && text.includes('[self_profile]') ? 73 : 0) };
   const base = await snapshot({ tokenCounter: boundaryCounter }), original = profile(), totalTokens = base.tokens + 240;
   const result = await snapshot({ totalTokens, budgets: { selfProfileTokens: 350, anchorTokens: 5000 },
-    material: { selfProfile: original, persona: { anchor: { text: 'overflow '.repeat(1000) } } }, tokenCounter: boundaryCounter });
+    material: { selfProfile: original, persona: { anchor: { text: 'A complete anchor' } } }, tokenCounter: boundaryCounter });
   assert.ok(result.tokens <= totalTokens); assertProfileMatchesVisible(result, original);
 });

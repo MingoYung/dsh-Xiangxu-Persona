@@ -111,7 +111,8 @@ test('natural original eviction preserves the reference while explicit source fo
   const f = await fixture(t); const source = await f.repository.ingest(chat('event', '需要区分自然淘汰和明确遗忘'));
   await remember(f.repository, 'deep_event', deep());
   await f.repository.clearPending([source.eventId]); await f.repository.evictSources([source.record.id]);
-  const item = await f.repository.getMemoryRecord('deep_event'); assert.equal(item.srcRefs[0].available, false);
+  const item = await f.repository.getMemoryRecord('deep_event'); assert.equal(item.srcRefs[0].available, true);
+  assert.equal((await f.repository.getMemoryRecord(source.record.id)).tier, 'archive');
   const run = await f.repository.prepareConsolidation();
   await f.repository.forget({ scope: 'global', ids: ['deep_event'], reason: '明确遗忘' });
   assert.equal(await f.repository.getMemoryRecord('deep_event'), null);
@@ -175,7 +176,7 @@ test('known naturally evicted sources remain usable without inventing their avai
   const run = await f.repository.prepareConsolidation();
   await f.repository.applyConsolidation(run, [entry(run, 'natural', deep({ srcRefs: [{ sourceSessionId: 'source', sourceEventId: 'remembered_ai', available: true }] }))]);
   const stored = await f.repository.getMemoryRecord('natural');
-  assert.equal(stored.srcRefs[0].available, false); assert.equal(stored.srcRefs[0].sourceRole, 'assistant');
+  assert.equal(stored.srcRefs[0].available, true); assert.equal(stored.srcRefs[0].sourceRole, 'assistant');
 });
 
 test('optional review assistant configuration is bounded and explicitly disabled by default', () => {

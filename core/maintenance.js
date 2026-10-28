@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { JsonStore, atomicReplaceWithRetry } from './store.js';
 import { temporaryCleanupPlan, runReferencesRevocation } from './source-dependencies.js';
 import { SELF_PROFILE_PATH, validateSelfProfile, redactSelfProfile } from './self-profile.js';
+import { TIMELINE_CATALOG, validateTimelineCatalog, unifiedRecord, isTimelinePath, archiveDescriptor, timelineChars, redactTimelineRecord } from './timeline.js';
 import { SCHEMA_VERSION, validateConfig, validatePersona, validateChat, validateHot,
   validateMemoryItem, validateCode, validateInterpretation, validateImpression, validateDeepMemory } from './schema.js';
 
@@ -82,6 +83,8 @@ async function scan(root, maxBytes, extensionValidator) {
 async function validateContent(root, files, extensionValidator) {
   const required = ['config.json', 'meta/state.json', 'self/persona.json', 'global/state.json'];
   for (const name of required) if (!files.some((f) => f.path === name)) fail('INVALID_MEMORY', 'Missing required memory file: ' + name);
+  const sourceMeta = await json(inside(root, 'meta/state.json'));
+  if (sourceMeta.requiredDocuments?.includes(SELF_PROFILE_PATH) && !files.some(file => file.path === SELF_PROFILE_PATH)) fail('INVALID_MEMORY', 'Missing saved required self profile');
   let preparedWal = 0;
   for (const file of files) {
     if (!/\.jsonl?$/.test(file.path)) fail('UNSUPPORTED_FILE', 'Unknown non-JSON memory file: ' + file.path);
@@ -97,7 +100,8 @@ async function validateContent(root, files, extensionValidator) {
       if (value && typeof value === 'object' && value.schemaVersion && value.schemaVersion !== SCHEMA_VERSION) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema in ' + file.path);
       if (file.path === 'config.json') validateConfig(value);
       else if (file.path === 'self/persona.json') validatePersona(value);
-      else if (/^(people\/[^/]+\/stream|staging\/events)\.jsonl$/.test(file.path)) validateChat(value);
+      else if (file.path === TIMELINE_CATALOG) validateTimelineCatalog(value);
+      else if (isTimelinePath(file.path)) unifiedRecord(value);
       else if (/^(people\/[^/]+\/hot|staging\/hot)\.jsonl$/.test(file.path)) validateHot(value);
       else if (/^(people\/[^/]+|global)\/index\.json$/.test(file.path)) { if (!Array.isArray(value.items)) fail('INVALID_MEMORY', 'Index items missing'); value.items.forEach(validateMemoryItem); }
       else if (/^(people\/[^/]+|global)\/codes\.json$/.test(file.path)) { if (!Array.isArray(value.items)) fail('INVALID_MEMORY', 'Code items missing'); value.items.forEach(validateCode); }
@@ -114,6 +118,18 @@ async function validateContent(root, files, extensionValidator) {
       }
     }
   }
+  const catalogFile = files.find(file => file.path === TIMELINE_CATALOG);
+  if (catalogFile) {
+    const catalog = validateTimelineCatalog(await json(inside(root, TIMELINE_CATALOG))), described = new Set(catalog.archiveFiles.map(item => item.path));
+    for (const file of files.filter(item => item.path.startsWith('timeline/archive/'))) if (!described.has(file.path)) fail('INVALID_MEMORY', 'Archive shard is missing from catalog: ' + file.path);
+    for (const item of catalog.archiveFiles) {
+      const file = files.find(file => file.path === item.path);
+      if (!file || file.bytes !== item.bytes || file.sha256 !== item.sha256) fail('INVALID_MEMORY', 'Archive catalog checksum mismatch: ' + item.path);
+      const rows = (await fs.readFile(inside(root, item.path), 'utf8')).split(/\r?\n/).filter(Boolean).map(JSON.parse);
+      const measured = archiveDescriptor(item.path, rows);
+      if (measured.count !== item.count || measured.chars !== item.chars) fail('INVALID_MEMORY', 'Archive catalog counters disagree with contents: ' + item.path);
+    }
+  } else if (files.some(file => file.path.startsWith('timeline/')) || Object.values(sourceMeta.sources ?? {}).some(receipt => receipt.storagePath)) fail('INVALID_MEMORY', 'Timeline catalog is missing');
   return { preparedWal };
 }
 export async function validateMemoryRoot(root, { maxBytes = DEFAULT_MAX, extensionValidator } = {}) {
@@ -189,6 +205,18 @@ async function sanitizeSelfProfile(root, meta) {
   const stored = await json(file), result = redactSelfProfile(stored, meta);
   if (result.changed) await syncWrite(file, validateSelfProfile({ ...result.profile, version: stored.version + 1, updatedAt: Date.now() }));
 }
+async function refreshTimelineCatalog(root, files) {
+  if (!files.some(file => file.path === TIMELINE_CATALOG)) return;
+  const catalog = validateTimelineCatalog(await json(inside(root, TIMELINE_CATALOG)));
+  const counters = { recent: { count: 0, chars: 0 }, long_term: { count: 0, chars: 0 }, archive: { count: 0, chars: 0 } };
+  for (const file of files.filter(file => isTimelinePath(file.path))) {
+    const rows = (await fs.readFile(inside(root, file.path), 'utf8')).split(/\r?\n/).filter(Boolean).map(JSON.parse);
+    const tier = file.path.startsWith('timeline/archive/') ? 'archive' : file.path.startsWith('timeline/long/') ? 'long_term' : 'recent';
+    counters[tier].count += rows.length; counters[tier].chars += rows.reduce((sum, row) => sum + timelineChars(row), 0);
+    if (tier === 'archive') catalog.archiveFiles[catalog.archiveFiles.findIndex(item => item.path === file.path)] = archiveDescriptor(file.path, rows);
+  }
+  Object.assign(catalog, counters); catalog.version++; await syncWrite(inside(root, TIMELINE_CATALOG), catalog);
+}
 async function carryRevocations(currentRoot, candidate, maxBytes, extensionValidator) {
   const current = await json(path.join(currentRoot, 'meta', 'state.json'));
   const ids = new Set(current.revokedIds ?? []), roots = new Set(current.revokedSources ?? []);
@@ -216,7 +244,8 @@ async function carryRevocations(currentRoot, candidate, maxBytes, extensionValid
     }
     return next;
   };
-  for (const file of (await scan(candidate, maxBytes, extensionValidator)).files) {
+  const candidateFiles = (await scan(candidate, maxBytes, extensionValidator)).files;
+  for (const file of candidateFiles) {
     if (file.path.startsWith('.wal/') || file.path === 'meta/state.json' || file.path.startsWith('extensions/')) continue;
     if (file.path === SELF_PROFILE_PATH) { await sanitizeSelfProfile(candidate, candidateMeta); continue; }
     if (file.path.startsWith('journal/runs/')) {
@@ -228,7 +257,7 @@ async function carryRevocations(currentRoot, candidate, maxBytes, extensionValid
     if (file.path === 'global/snapshots.jsonl') { await syncWrite(inside(candidate, file.path), ''); continue; }
     const raw = await fs.readFile(inside(candidate, file.path), 'utf8');
     if (file.path.endsWith('.jsonl')) {
-      const rows = raw.split(/\r?\n/).filter(Boolean).map(JSON.parse).map((value) => walk(value)).filter((value) => value !== undefined);
+      const rows = raw.split(/\r?\n/).filter(Boolean).map(JSON.parse).map((value) => walk(isTimelinePath(file.path) ? redactTimelineRecord(value, candidateMeta).record : value)).filter((value) => value !== undefined);
       await syncWrite(inside(candidate, file.path), rows.map((value) => JSON.stringify(value)).join('\n') + (rows.length ? '\n' : ''));
     } else {
       const value = walk(JSON.parse(raw));
@@ -242,6 +271,7 @@ async function carryRevocations(currentRoot, candidate, maxBytes, extensionValid
       await syncWrite(inside(candidate, file.path), value);
     }
   }
+  await refreshTimelineCatalog(candidate, candidateFiles);
   candidateMeta.pending = (candidateMeta.pending ?? []).filter((eventId) => !revokedEvents.has(eventId));
   await syncWrite(path.join(candidate, 'meta', 'state.json'), candidateMeta);
   const currentLog = path.join(currentRoot, 'global', 'revocations.jsonl');

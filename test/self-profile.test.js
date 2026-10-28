@@ -93,13 +93,16 @@ test('current text remains intact while bounded history rotates and UTF-32 chara
   assert.ok(saved.length < SELF_PROFILE_LIMITS.profileBytes);
 });
 
-test('self profile counts toward persistent memory target and cannot bypass instance capacity', async t => {
+test('self profile has independent semantic limits and cannot bypass physical instance capacity', async t => {
   const f = await fixture(t);
   const first = await f.repository.updateSelfProfile({ current: { name: '相续' } }, { actor: 'persona' });
-  const capacity = await f.repository.getCapacity(); assert.ok(capacity.persistentChars >= 2);
-  const saved = await bytes(f);
-  await f.repository.updateConfig({ longTermTargetChars: capacity.persistentChars + 10 });
-  await assert.rejects(f.repository.updateSelfProfile({ current: { background: '长'.repeat(200) } }, { actor: 'persona', expectedVersion: first.version }), { code: 'CAPACITY_EXCEEDED' });
+  const capacity = await f.repository.getCapacity(); assert.ok(capacity.semanticChars >= 2);
+  await f.repository.updateConfig({ longTermTargetChars: 0 });
+  const second = await f.repository.updateSelfProfile({ current: { background: '长'.repeat(200) } }, { actor: 'persona', expectedVersion: first.version });
+  const saved = await bytes(f), limits = f.repository.store.capacityLimits;
+  f.repository.store.capacityLimits = { ...limits, storeBytes: 1 };
+  await assert.rejects(f.repository.updateSelfProfile({ current: { name: '另一个名字' } }, { actor: 'persona', expectedVersion: second.version }), { code: 'CAPACITY_EXCEEDED' });
+  f.repository.store.capacityLimits = limits;
   assert.deepEqual(await bytes(f), saved);
 });
 
@@ -113,8 +116,8 @@ test('explicit source withdrawal cleans current, initial and old versions and re
   const dependencies = selfProfileDependencies(material.selfProfile);
   assert.ok(dependencies.refs.some(item => item.sourceEventId === 'old'));
   assert.ok(dependencies.recordIds.includes(original.record.id));
-  assert.deepEqual(material.sourceDependencies.refs, []);
-  assert.deepEqual(material.sourceDependencies.recordIds, []);
+  assert.ok(material.sourceDependencies.refs.some(item => item.sourceEventId === 'old'));
+  assert.ok(material.sourceDependencies.recordIds.includes(original.record.id));
   await f.repository.saveSnapshot({ requestId: 'with-profile', injectedIds: [], injectedText: '小续', sourceDependencies: dependencies });
   await f.repository.forget({ ids: [original.record.id], scope: 'unknown' });
   const clean = await f.repository.getSelfProfile();

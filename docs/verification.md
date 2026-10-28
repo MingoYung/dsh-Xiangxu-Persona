@@ -1,6 +1,6 @@
 # 实现与验证记录
 
-> 当前版本入口：产品dsh-Xiangxu-Persona（相续人格）0.10.0的接入、检索与最终状态见[本轮说明](integrations-and-retrieval.md)；日常操作见[管理界面](management-ui.md)。下文只保留对应旧版历史数字、SHA及失败，不作为0.10.0新增能力或当前真实平台的验收。
+> 当前版本入口：0.13.0的[统一时间线与必需上下文](memory-timeline-and-context.md)及[本版验证收据](verification/0.13.0-memory-timeline.json)。下文只保留对应旧版历史数字、SHA、路径与失败，不作为本版新增功能、当前账号或真实模型效果的验收。
 
 ## 0.2.0历史结果入口
 

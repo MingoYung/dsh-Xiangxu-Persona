@@ -45,6 +45,8 @@ function memorySummary(row) {
   return { id: row.id, recordType: row.recordType, personId: row.personId ?? null, scope: row.scope ?? null,
     role: row.role ?? null, speakerId: row.speakerId ?? null, createdAt: row.createdAt ?? row.sourceAt ?? null, updatedAt: row.updatedAt ?? null,
     title: row.title ?? null, reference: row.reference == null ? null : short(row.reference), textPreview: short(row.text ?? row.reference ?? row.experience ?? row.meaning ?? row.desc ?? row.label ?? row.if ?? ''), chars: row.chars ?? points(row.text ?? '').length,
+    ...(row.tier ? { tier: row.tier } : {}),
+    ...(row.timeline ? { timeline: { title: short(row.timeline.title ?? '', 160), occurredAt: row.timeline.occurredAt ?? row.sourceAt ?? null, recordedAt: row.timeline.recordedAt ?? row.observedAt ?? null } } : {}),
     sourceCount: row.srcRefs?.length ?? (row.sourceEventId ? 1 : 0), sourceSessionId: row.sourceSessionId ?? null, sourceEventId: row.sourceEventId ?? null };
 }
 function runSummary(run) {
@@ -209,6 +211,27 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
       return pageDetail(action, args, value);
     }
     if (action === 'retrieval.detail') return pageDetail(action,args,await repo.getRetrievalDiagnostics());
+    if (action === 'memory.timeline.status') return repo.getTimelineStatus();
+    if (action === 'memory.timeline.list') {
+      const tier = args.tier ?? 'recent', size = args.pageSize ?? 12;
+      if (!['recent', 'long_term', 'archive', 'all'].includes(tier)) throw error('BAD_MANAGEMENT_REQUEST', 'Choose recent, long_term, archive or all timeline records');
+      if (!Number.isSafeInteger(size) || size < 1 || size > 100) throw error('BAD_MANAGEMENT_REQUEST', 'pageSize must be 1..100');
+      if (args.query !== undefined && (typeof args.query !== 'string' || points(args.query).length > 512)) throw error('BAD_MANAGEMENT_REQUEST', 'Timeline query must be at most 512 characters');
+      let offset = 0;
+      if (args.cursor != null) {
+        if (typeof args.cursor !== 'string' || args.cursor.length > 2048) throw error('INVALID_MANAGEMENT_CURSOR', 'Invalid timeline cursor');
+        try { offset = JSON.parse(Buffer.from(args.cursor, 'base64url').toString('utf8')).offset; }
+        catch { throw error('INVALID_MANAGEMENT_CURSOR', 'Invalid timeline cursor'); }
+        if (!Number.isSafeInteger(offset) || offset < 0) throw error('INVALID_MANAGEMENT_CURSOR', 'Invalid timeline offset');
+      }
+      const result = await repo.browseTimeline({ tier, query: args.query ?? '', offset, limit: size,
+        ...(Object.hasOwn(args, 'personId') ? { personId: args.personId } : {}) });
+      const fingerprint = hash({ selection: selection(args), revision: result.revision });
+      decodeCursor(args.cursor, action, fingerprint);
+      const items = result.items.map(memorySummary);
+      return { items, total: result.total, offset: result.offset ?? offset, pageSize: size, revision: result.revision,
+        nextCursor: result.nextOffset == null ? null : encodeCursor(action, fingerprint, result.nextOffset) };
+    }
     if (action === 'memory.search') {
       const input = Object.fromEntries(['query','mode','timeMode','asOf','seedIds','associationDepth','diversity','scope','limit'].filter(key => args[key] !== undefined).map(key => [key,args[key]]));
       if (args.personId ?? args.targetPersonId) input.targetPersonId = args.personId ?? args.targetPersonId;

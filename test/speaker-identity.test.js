@@ -9,7 +9,9 @@ import { MemoryRepository } from '../core/repository.js';
 const chat = (id, role, personId = null, extra = {}) => ({ personId, sourceSessionId: 'actual-session', sourceEventId: id,
   sourceKind: role, contentClass: 'participant_dialogue', channelId: 'desktop', role, text: '实际说出的原话😀', sourceAt: 1000, observedAt: 1000, ...extra });
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
-const sourceHash = record => { const { personId, speakerId, ...source } = record; return hash(source); };
+// Routing, storage tier and the optional narrative wrapper are projections.
+// Compare all original source fields, independently of added annotation fields.
+const sourceFacts = record => { const { personId, speakerId, tier, timeline, ...source } = record; return source; };
 async function fixture(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'persona-speaker-'));
   const repository = new MemoryRepository({ root, clock: () => 5000 }); await repository.open();
@@ -34,16 +36,19 @@ test('assigning unknown assistant memories changes only relationship ownership, 
     const original = (await repository.ingest(chat(id, 'assistant', null, extra))).record;
     const assigned = await repository.assign({ sourceSessionId: original.sourceSessionId, sourceEventId: id, personId: 'b', reason: '人格明确选择关系归属' });
     assert.equal(assigned.record.personId, 'b'); assert.equal(assigned.record.speakerId, original.speakerId);
-    assert.equal(assigned.record.role, 'assistant'); assert.equal(sourceHash(assigned.record), sourceHash(original));
+    assert.equal(assigned.record.role, 'assistant'); assert.deepEqual(sourceFacts(assigned.record), sourceFacts(original));
+    assert.equal(assigned.record.timeline.format, 'persona-timeline/1');
+    assert.equal(assigned.record.timeline.occurredAt, original.sourceAt);
+    assert.equal(assigned.record.timeline.recordedAt, original.observedAt);
     const found = (await repository.search({ query: original.text, targetPersonId: 'b', limit: 100 })).items.find(item => item.id === original.id);
     assert.equal(found.srcRefs[0].sourceRole, 'assistant'); assert.equal(found.speakerId, original.speakerId);
     const reassigned = await repository.assign({ sourceSessionId: original.sourceSessionId, sourceEventId: id, personId: 'a' });
-    assert.equal(reassigned.record.speakerId, original.speakerId); assert.equal(sourceHash(reassigned.record), sourceHash(original));
+    assert.equal(reassigned.record.speakerId, original.speakerId); assert.deepEqual(sourceFacts(reassigned.record), sourceFacts(original));
   }
   const user = (await repository.ingest(chat('user-unknown', 'user', null, { speakerId: null }))).record;
   assert.equal((await repository.assign({ sourceSessionId: user.sourceSessionId, sourceEventId: user.sourceEventId, personId: 'a' })).record.speakerId, 'a');
   const changed = await repository.assign({ sourceSessionId: user.sourceSessionId, sourceEventId: user.sourceEventId, personId: 'b' });
-  assert.equal(changed.record.speakerId, 'b'); assert.equal(changed.record.role, 'user'); assert.equal(sourceHash(changed.record), sourceHash(user));
+  assert.equal(changed.record.speakerId, 'b'); assert.equal(changed.record.role, 'user'); assert.deepEqual(sourceFacts(changed.record), sourceFacts(user));
   assert.deepEqual((await repository.getPending()).map(record => record.id), [user.id]);
 });
 
@@ -59,7 +64,7 @@ test('opening old v3 corrects only exact assistant speaker placeholders, idempot
   const runtimeBefore = await repository.getRuntime(); await repository.close(); await repository.open();
   const after = await repository.store.readLines('people/b/stream.jsonl');
   assert.deepEqual(after, before.map(record => record.id === polluted.id ? { ...record, speakerId: null } : record));
-  assert.equal(sourceHash(after.find(record => record.id === polluted.id)), sourceHash(polluted));
+  assert.deepEqual(sourceFacts(after.find(record => record.id === polluted.id)), sourceFacts(polluted));
   assert.equal(after.find(record => record.id === independent.id).speakerId, 'shared_ai'); assert.equal(after.find(record => record.id === human.id).speakerId, 'b');
   assert.equal((await repository.readSources({ sourceRefs: [{ sourceSessionId: unknown.sourceSessionId, sourceEventId: unknown.sourceEventId }] }))[0].personId, null);
   assert.equal(hash(await fs.readFile(path.join(root, 'self/persona.json'), 'utf8')), c3Before); assert.deepEqual(await repository.getRuntime(), runtimeBefore);

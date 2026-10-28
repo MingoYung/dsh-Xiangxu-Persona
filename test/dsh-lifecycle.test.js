@@ -69,6 +69,14 @@ test('trace pagination reads every Unicode codepoint using the runtime cursor co
 
 test('capacity gaps retain an earlier host checkpoint and actually backfill the available rejected source', async t => {
   const events = [], f = await fixture(t, events, { longTermTargetChars: 8 });
+  const checkCapacity = f.repository.store._checkCapacity.bind(f.repository.store); let refuseSource = true;
+  f.repository.store._checkCapacity = async (entries, manifest) => {
+    if (refuseSource && entries.some(entry => entry.path === 'staging/events.jsonl' && entry.text?.includes('gap-source'))) {
+      refuseSource = false;
+      throw Object.assign(new Error('injected actual physical storage limit'), { code: 'CAPACITY_EXCEEDED', resource: 'storeBytes' });
+    }
+    return checkCapacity(entries, manifest);
+  };
   const message = f.user('gap-source', 'capacity gap original remains available in the native inbox event');
   const event = { type: 'agent/inbox/spliced', seq: 1, time: Date.now(), data: { inserted: [message] } };
   events.push(event); await f.coordinator.observeEvent(f.agent.session, event);
@@ -76,7 +84,7 @@ test('capacity gaps retain an earlier host checkpoint and actually backfill the 
   assert.equal(checkpoint.blocked['session-a'], 1);
   assert.equal((await f.repository.getRuntime()).memoryGaps.at(-1).recoverable, true);
   assert.equal((await f.repository.getPending()).length, 0);
-  await f.runtime.updateConfig({ longTermTargetChars: 2000 });
+  f.repository.store._checkCapacity = checkCapacity;
   const replay = await f.coordinator.replaySources(f.agent);
   assert.equal(replay.processed, 1); assert.equal(replay.blockedFromSeq, null);
   assert.equal((await f.repository.getPending())[0].text, message.content[0].text);
@@ -102,8 +110,8 @@ test('a post-admission local failure never invokes the native next callback twic
   const original = f.repository.getPending;
   f.repository.getPending = async () => { throw new Error('injected local projection failure'); };
   try {
-    const entered = await f.handlers.get('agent/pre-step')({ messages: [message], turn: 1 }, async () => { calls++; return { kind: 'enter', messages: [message] }; });
-    assert.equal(entered.kind, 'enter'); assert.equal(calls, 1);
+    await assert.rejects(f.handlers.get('agent/pre-step')({ messages: [message], turn: 1 }, async () => { calls++; return { kind: 'enter', messages: [message] }; }), { code: 'PERSONA_CONTEXT_UNAVAILABLE' });
+    assert.equal(calls, 1);
   } finally { f.repository.getPending = original; }
 });
 

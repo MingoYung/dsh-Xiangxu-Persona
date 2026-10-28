@@ -241,13 +241,13 @@ test('native host decide executeReply:false recovers identity effects without cr
 
 test('bounded pending pages and reference-only wake summaries keep unseen tails pending', async t => {
   const seen = [];
-  const f = await fixture(t, { model: { maxInputTokens: 5000, complete: async r => { seen.push(r); return { decision: listen() }; } } });
+  const f = await fixture(t, { model: { maxInputTokens: 6000, complete: async r => { seen.push(r); return { decision: listen() }; } } });
   const one = await f.runtime.accept({ ...chat('long'), text: 'BEGIN_TEXT_' + '很长的一段原话'.repeat(3000) }, env());
   await f.runtime.accept(chat('unseen_tail'), env());
   const all = await f.repository.getPending();
   const result = await f.runtime.handleSignal('new_message', { personId: 'a', environment: env(), incoming: one.record,
     wakeSummary: [{ personId: 'a', channelId: 'channel_a', sessionId: 'session_a', records: all }] });
-  assert.equal(seen.length, 1); const text = seen[0].messages.map(x => x.content).join('\n'); assert.ok(Array.from(JSON.stringify(seen[0].messages)).length <= 5000);
+  assert.equal(seen.length, 1); const text = seen[0].messages.map(x => x.content).join('\n'); assert.ok(Array.from(JSON.stringify(seen[0].messages)).length <= 6000);
   assert.equal(text.split('BEGIN_TEXT_').length - 1, 1);
   const payload = JSON.parse(seen[0].messages.at(-1).content); assert.ok(payload.pending[0].fragment); assert.equal(payload.pending.length, 1);
   assert.ok(!JSON.stringify(payload.wakeSummary).includes('BEGIN_TEXT_')); assert.equal(result.pendingPage.completeEventIds.length, 0);

@@ -303,6 +303,9 @@ export class PersonaRuntime {
   async compose(context = {}, { contextTokenLimit, persist = true } = {}) {
     this._requireOpen(); const state = detached(await this.repository.getRuntime()), ctx = { ...this._context(context) };
     const material = await this.repository.getContext({ personId: ctx.personId });
+    if (!material || !material.persona || typeof material.persona !== 'object' || !material.persona.anchor) {
+      throw Object.assign(new Error('人格资料加载不完整，本次暂停生成；消息仍保留，恢复后可继续。'), { code: 'PERSONA_CONTEXT_UNAVAILABLE' });
+    }
     if (!own(ctx, 'capacity') && typeof this.repository.getCapacity === 'function') {
       try { ctx.capacity = this._capacityFacts(await this.repository.getCapacity(), state); }
       catch (error) {
@@ -357,7 +360,7 @@ export class PersonaRuntime {
         // context token would starve the current source down to one character.
         try { selected = await attempt(limit); break; }
         catch (error) {
-          if (error.code === 'ESSENTIAL_CONTEXT_BUDGET') low = limit + 1;
+          if (['ESSENTIAL_CONTEXT_BUDGET', 'PERSONA_CONTEXT_BUDGET'].includes(error.code)) low = limit + 1;
           else if (error.code === 'MODEL_INPUT_BUDGET') high = limit - 1;
           else throw error;
         }

@@ -218,7 +218,7 @@ export function validatePatch(patch) {
   for (const entry of entries) {
     object(entry, 'patch entry'); str(entry.documentKey, 'documentKey'); str(entry.recordId, 'recordId');
     if (['__proto__', 'constructor', 'prototype'].includes(entry.recordId)) fail('reserved recordId');
-    if (!/^(persona|global:(index|codes|deep)|person:[A-Za-z0-9_-]+:(index|codes|impression|pending))$/.test(entry.documentKey)) fail('uncontrolled documentKey');
+    if (!/^(persona|global:(index|codes|deep|timeline)|person:[A-Za-z0-9_-]+:(index|codes|impression|pending))$/.test(entry.documentKey)) fail('uncontrolled documentKey');
     enumeration(entry.operation, ['upsert', 'remove'], 'operation'); integer(entry.expectedVersion, 'expectedVersion');
     if (entry.operation === 'upsert' && !own(entry, 'value')) fail('upsert requires value');
   }
@@ -236,7 +236,7 @@ export function defaultConfig(overrides = {}) {
     schemaVersion: SCHEMA_VERSION, consolidationMode: 'sleep', timezone: 'UTC', conversationStyle: 'short_chat',
     reviewAssistant: { enabled: false, maxOutputTokens: 1024, maxReportChars: 4000 },
     longTermTargetChars: 1000000, recentTargetChars: 100000, recentPreferredDays: 3, tempTargetChars: 200000, diskReserveBytes: 0,
-    contextBudget: { totalTokens: 2970, environmentTokens: 120, anchorTokens: 200, personaTokens: 700, habitTokens: 150, relationTokens: 300, retrievalTokens: 1500, deepMemoryTokens: 600, selfProfileTokens: 350 },
+    contextBudget: { totalTokens: 2970, environmentTokens: 120, anchorTokens: 200, personaTokens: 700, habitTokens: 150, relationTokens: 300, retrievalTokens: 1500, deepMemoryTokens: 600, selfProfileTokens: 350, recentMemoryTokens: 600 },
     artifactLimits: { axes: 5, tendencyFacets: 12, boundaryFacets: 20, signatures: 24, habits: 8, impressionSignaturesPerPerson: 8, indexItemsPerPerson: 80, codesPerScope: 12, interpretationsPerPerson: 30, relationEventsPerPerson: 80, ...DEFAULT_DEEP_MEMORY_LIMITS },
     capacityLimits: { ...DEFAULT_CAPACITY_LIMITS }, processingLimits: { ...DEFAULT_PROCESSING_LIMITS },
     retention: { snapshotMaxRequests: 50, personaHistoryMaxVersions: 5, journalMaxBytes: 8388608, backupMaxBytes: 8388608 }

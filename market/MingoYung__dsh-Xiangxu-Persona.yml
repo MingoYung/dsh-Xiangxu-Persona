@@ -2,5 +2,5 @@ url: https://github.com/MingoYung/dsh-Xiangxu-Persona
 name: MingoYung/dsh-Xiangxu-Persona
 category: memory
 description:
-  en: 'Long-term persona memory with evolving deep references, optional advisory review, isolated tasks, social-account profiles, five native navigation entries with focused task views, optional QQ/WeChat connections, speech and media interfaces.'
-  zh: '长期人格记忆与可演化的深刻参考、可选资料整理助手、自主委派和任务档案、社交身份目录及原生五入口任务式管理；可选QQ Bot／微信扫码、实际能力授权、语音和形象创作，其他平台适配接口保留。'
+  en: 'Unified recent, long-term and archive timeline memory with required persona context, evolving deep references, isolated tasks, five native settings entries and optional social, speech and media interfaces.'
+  zh: '统一短期／长期／归档时间线与每轮人格上下文，可演化深刻参考、自主委派和独立任务档案、原生五入口设置；可选社交连接、能力授权、语音和形象创作，平台实测状态分别说明。'

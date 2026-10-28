@@ -32,7 +32,7 @@ test('structured-only native mail preserves actor, original empty text, independ
   const normalized=normalizeDshEvent({id:sessionId},{type:'user/message',data:messages[0],time:1000000});
   assert.equal(normalized.dialogue.text,'');assert.equal(normalized.dialogue.role,'user');assert.equal(normalized.dialogue.sourceAt,1000000);
   assert.equal(normalized.hot.length,1);assert.equal(normalized.hot[0].kind,'plugin_state');assert.equal(normalized.hot[0].speakerId,null);assert(normalized.hot[0].content.text.includes('识别出的句子'));
-  const repo=new MemoryRepository({root});await repo.open();t.after(()=>repo.close());await repo.ingest(normalized.dialogue);await repo.captureHot(normalized.hot[0]);
+  const repo=new MemoryRepository({root,clock:()=>1000000});await repo.open();t.after(()=>repo.close());await repo.ingest(normalized.dialogue);await repo.captureHot(normalized.hot[0]);
   const context=await repo.getContext({personId:null});assert.equal(context.records[0].text,'');assert.equal(context.records.some(r=>r.text.includes('识别出的句子')),false);await port.close();
 });
 

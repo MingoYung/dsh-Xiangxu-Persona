@@ -91,8 +91,14 @@ test('task archives cannot be configured inside the personality text store or as
 
 test('the real first pre-step recovers its claimed turn so subsequent delegated tasks retain actual human provenance', async t => {
   const f = await fixture(t), assembly = await f.c.preparePersonaAssembly(f.agent, { sections: [], tools: [] });
-  const state = f.c.agents.get(f.agent.id), snapshot = state.latestSnapshot; assert.equal(state.currentTurn, null);
-  assert.equal(await f.c.preparePersonaAssembly(f.agent, assembly), assembly); assert.equal(state.latestSnapshot, snapshot);
+  const state = f.c.agents.get(f.agent.id), previousSnapshot = state.latestSnapshot; assert.equal(state.currentTurn, null);
+  const refreshed = await f.c.preparePersonaAssembly(f.agent, assembly), snapshot = state.latestSnapshot;
+  assert.notStrictEqual(refreshed, assembly); assert.notStrictEqual(snapshot, previousSnapshot);
+  assert.notEqual(snapshot.requestId, previousSnapshot.requestId); assert.equal(snapshot.personaVersion, previousSnapshot.personaVersion);
+  assert.equal(snapshot.mandatoryContext.complete, true);
+  for (const name of ['conversation', 'protocol', 'live']) assert.equal(refreshed.sections.filter(section => section.name === 'persona-memory:' + name).length, 1);
+  assert.equal(refreshed.sections.find(section => section.name === 'persona-memory:live').text, snapshot.injectedText);
+  assert.deepEqual(refreshed.tools, assembly.tools);
   const human = { id: 'real-human-source', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'ACTUAL_HUMAN_REQUEST' }] };
   const entered = await f.handlers.get('agent/pre-step')({ agent: f.agent, turn: 23, messages: [human] }, async () => ({ kind: 'enter', messages: [human] }));
   assert.equal(entered.kind, 'enter'); assert.equal(state.currentTurn, 23); assert.equal(state.eventTurn, 23); assert.equal(state.snapshots.get(23), snapshot); assert.equal(state.snapshots.has(null), false);
@@ -106,7 +112,7 @@ test('the real first pre-step recovers its claimed turn so subsequent delegated 
   assert.equal(status.documents, undefined); assert.equal(status.taskId, output.taskId);
 });
 
-test('forgetting a deep memory of retained task material blocks archive rereads while natural source eviction does not', async t => {
+test('forgetting a deep memory of retained task material blocks task rereads while lossless source archival does not', async t => {
   const f = await fixture(t), doc = f.task.documents.find(d => d.kind === 'final_report');
   const retained = await f.tools.get('persona_task').execute({ action: 'retain', taskId: f.task.taskId, documentId: doc.documentId, offset: 7, maxChars: 27 }, { agent: f.agent, callId: 'retain-for-deep-revocation' });
   assert.equal(retained.capturedForReview, true);
@@ -118,7 +124,11 @@ test('forgetting a deep memory of retained task material blocks archive rereads 
   const original = (await f.c.repository.readSources({ sourceRefs: [{ sourceSessionId: f.session.id, sourceEventId: 'real-human-source' }] }))[0]; assert(original);
   await f.c.repository.clearPending([original.eventId]);
   assert.equal((await f.c.repository.evictSources([original.id])).removed.length, 1);
-  assert.equal((await f.c.repository.readSources({ eventIds: [original.eventId] })).length, 0);
+  const archived = await f.c.repository.readSources({ eventIds: [original.eventId] });
+  assert.equal(archived.length, 1); assert.equal(archived[0].tier, 'archive');
+  assert.equal(archived[0].text, original.text); assert.equal(archived[0].sourceEventId, original.sourceEventId);
+  assert.equal(archived[0].role, 'user');
+  assert.equal((await f.c.repository.getContext()).records.some(record => record.id === original.id), false);
   assert.equal((await f.c.tasks.read({ taskId: f.task.taskId, documentId: doc.documentId, offset: 7, maxChars: 27 })).text, Array.from(f.report).slice(7, 34).join(''));
   assert.equal((await f.c.repository.getMemoryRecord('task-experience')).srcRefs[0].sourceEventId, hot.sourceRef.sourceEventId);
   const forgotten = await f.c.executeCommand('forget', { scope: 'global', ids: ['task-experience'], reason: 'explicit selected task experience forgetting' });

@@ -6,6 +6,7 @@ import { countStringValues, serializedBytes, assertRecordCapacity, assertDocumen
 import { SELF_PROFILE_PATH, emptySelfProfile, validateSelfProfile, validateSelfProfilePatch, applySelfProfilePatch, selfProfileLinks, redactSelfProfile } from './self-profile.js';
 import { validateRetrievalInput, temporalReference, lexicalCandidates, associationCandidates, mergeCandidates } from './retrieval.js';
 import { RetrievalState } from './retrieval-semantic.js';
+import { TimelineStorage, TIMELINE_CATALOG, TIMELINE_FIELDS, unifiedRecord, timelineChars, timelineOrder, isTimelinePath, validateTimelineAnnotation, redactTimelineRecord } from './timeline.js';
 import {
   SCHEMA_VERSION, SchemaError, defaultConfig, mergeConfig, emptyPersona, emptyRuntime,
   newId, sourceKey, countChars, safeId, validateChat, validateHot, validateMemoryItem,
@@ -52,6 +53,17 @@ function keywords(query) {
   for (const text of han) { for (let i = 0; i < text.length - 1; i++) terms.add(text.slice(i, i + 2)); }
   return [...terms];
 }
+// Earlier shared v3 entries could omit catalogue scope. Reader projection is
+// compatible without rewriting stored bytes or guessing a personal subject.
+function readCompatiblePersona(stored) {
+  const persona = copy(stored);
+  const shared = entry => entry && typeof entry === 'object' && !Array.isArray(entry) &&
+    (!Object.hasOwn(entry, 'scope') || entry.scope === 'global') && (!Object.hasOwn(entry, 'personId') || entry.personId === null)
+    ? { ...entry, scope: 'global', personId: null } : entry;
+  for (const field of ['facets', 'signatures', 'habits']) if (Array.isArray(persona?.[field])) persona[field] = persona[field].map(shared);
+  if (Array.isArray(persona?.retired)) persona.retired = persona.retired.map(record => record && typeof record === 'object' ? { ...record, entry: shared(record.entry) } : record);
+  return validatePersona(persona);
+}
 
 export class MemoryRepository {
   constructor({ root, config = {}, clock = Date.now, fault = null, semanticPort = null }) {
@@ -59,11 +71,13 @@ export class MemoryRepository {
     this.store = new JsonStore(root, { fault, journalMaxBytes: this.config.retention.journalMaxBytes, capacityLimits: this.config.capacityLimits, diskReserveBytes: this.config.diskReserveBytes });
     this._tail = Promise.resolve();
     this._retrieval = new RetrievalState({ clock: () => this.now(), getConfig: () => this.config.retrieval, semanticPort });
+    this.timeline = new TimelineStorage(this.store, () => this.config, () => this.now());
   }
   _queue(work) { const result = this._tail.then(work); this._tail = result.catch(() => {}); return result; }
   now() { return this.clock(); }
   async open() {
     try {
+      this.timeline.invalidate();
       await this.store.open({ preflight: async (reader) => {
         const stored = await reader.readJson('config.json'); if (stored) {
           validateConfig(stored); const deployment = defaultConfig(mergeConfig(stored, this.configOverrides ?? {}));
@@ -71,21 +85,43 @@ export class MemoryRepository {
         }
         const persona = await reader.readJson('self/persona.json'); if (persona && persona.schemaVersion !== SCHEMA_VERSION) throw new SchemaError('Unsupported stored persona schemaVersion; source is preserved');
         const runtime = await reader.readJson('global/state.json'); if (runtime && runtime.schemaVersion !== SCHEMA_VERSION) throw new SchemaError('Unsupported stored runtime schemaVersion; source is preserved');
+        if (persona) readCompatiblePersona(persona);
+        if (runtime) validateRuntime(runtime);
         const selfProfile = await reader.readJson(SELF_PROFILE_PATH); if (selfProfile) validateSelfProfile(selfProfile);
       } });
       const stored = await this.store.readJson('config.json');
-      if (stored) this.config = defaultConfig(mergeConfig(stored, this.configOverrides ?? {}));
-      else await this.store.transaction({ runId: newId('init'), json: { 'config.json': this.config, 'meta/state.json': initialMeta(), 'self/persona.json': emptyPersona(this.now()), 'global/state.json': emptyRuntime(this.now()) } });
+      if (stored) {
+        this.config = defaultConfig(mergeConfig(stored, this.configOverrides ?? {}));
+        await this._requiredDocument('meta/state.json'); await this._persona(); await this._runtime();
+      } else {
+        if ((await Promise.all(['meta/state.json', 'self/persona.json', 'global/state.json'].map(path => this.store.readJson(path)))).some(Boolean)) throw Object.assign(new Error('An existing memory root is missing config.json; no empty persona was substituted'), { code: 'MEMORY_REQUIRED_DOCUMENT_MISSING' });
+        await this.store.transaction({ runId: newId('init'), json: { 'config.json': this.config, 'meta/state.json': initialMeta(), 'self/persona.json': emptyPersona(this.now()), 'global/state.json': emptyRuntime(this.now()) } });
+      }
       const meta = await this._meta(); const writes = { json: {}, jsonl: {} };
+      const existingProfile = await this.store.readJson(SELF_PROFILE_PATH);
+      if (!existingProfile && meta.requiredDocuments?.includes(SELF_PROFILE_PATH)) throw Object.assign(new Error('Required saved self profile is missing; no empty identity was substituted'), { code: 'MEMORY_REQUIRED_DOCUMENT_MISSING' });
+      const registeredProfile = Boolean(existingProfile && !meta.requiredDocuments?.includes(SELF_PROFILE_PATH));
+      if (registeredProfile) meta.requiredDocuments = [...(meta.requiredDocuments ?? []), SELF_PROFILE_PATH];
       const correctedSpeakers = await this._correctAssistantSpeakerPlaceholders(meta, writes);
       const cleanedDependencies = await this._cleanDependencyCaches(meta, writes, 'open_revocation_cleanup');
       const cleanedSelfProfile = await this._cleanSelfProfile(meta, writes);
-      if (correctedSpeakers || cleanedDependencies || cleanedSelfProfile) await this._commit(meta, writes);
+      if (correctedSpeakers || cleanedDependencies || cleanedSelfProfile || registeredProfile) await this._commit(meta, writes);
+      await this._rotateTimeline(await this._meta());
       return this;
     } catch (error) { await this.store.close(); throw error; }
   }
   close() { return this._queue(async () => { this._retrieval.clearCache(); this._retrieval.clearDiagnostics(); await this.store.close(); }); }
-  async _meta() { return this.store.readJson('meta/state.json', initialMeta()); }
+  async _requiredDocument(path) {
+    const value = await this.store.readJson(path);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw Object.assign(new Error('Required memory document is unavailable: ' + path), { code: 'MEMORY_REQUIRED_DOCUMENT_MISSING' });
+    return value;
+  }
+  async _meta() {
+    const value = await this._requiredDocument('meta/state.json');
+    if (!Number.isSafeInteger(value.version) || !Number.isSafeInteger(value.sequence) || !value.sources || !value.hotSources || ['personIds', 'pending', 'revokedIds', 'revokedSources', 'completedRuns'].some(key => !Array.isArray(value[key]))) throw new SchemaError('Required source metadata is invalid');
+    for (const receipt of Object.values(value.sources)) if (receipt.storagePath !== undefined && !isTimelinePath(receipt.storagePath)) throw new SchemaError('Source receipt points outside timeline storage');
+    return value;
+  }
   validateSourceRefs(refs, { requireOriginal = false } = {}) {
     return this._queue(async () => {
       if (!Array.isArray(refs)) throw new SchemaError('sourceRefs must be an array');
@@ -101,16 +137,22 @@ export class MemoryRepository {
       return copy(refs);
     });
   }
-  async _runtime() { return this.store.readJson('global/state.json', emptyRuntime(this.now())); }
-  async _persona() { return this.store.readJson('self/persona.json', emptyPersona(this.now())); }
+  async _runtime() { return validateRuntime(await this._requiredDocument('global/state.json')); }
+  async _persona() { return readCompatiblePersona(await this._requiredDocument('self/persona.json')); }
   async _selfProfile(meta = null) {
     const stored = await this.store.readJson(SELF_PROFILE_PATH);
-    if (!stored) return emptySelfProfile();
+    if (!stored) {
+      if ((meta ?? await this._meta()).requiredDocuments?.includes(SELF_PROFILE_PATH)) throw Object.assign(new Error('Required saved self profile is missing; no empty identity was substituted'), { code: 'MEMORY_REQUIRED_DOCUMENT_MISSING' });
+      return emptySelfProfile();
+    }
     return redactSelfProfile(stored, meta ?? await this._meta()).profile;
   }
   async _cleanSelfProfile(meta, writes) {
     const stored = writes.json[SELF_PROFILE_PATH] ?? await this.store.readJson(SELF_PROFILE_PATH);
-    if (!stored) return false;
+    if (!stored) {
+      if (meta.requiredDocuments?.includes(SELF_PROFILE_PATH)) throw Object.assign(new Error('Required saved self profile is missing'), { code: 'MEMORY_REQUIRED_DOCUMENT_MISSING' });
+      return false;
+    }
     const result = redactSelfProfile(stored, meta);
     if (!result.changed) return false;
     writes.json[SELF_PROFILE_PATH] = validateSelfProfile({ ...result.profile, version: stored.version + 1, updatedAt: this.now() });
@@ -122,7 +164,9 @@ export class MemoryRepository {
       const actor = options.actor ?? 'user';
       validateSelfProfilePatch(patch, actor);
       if (options.expectedVersion !== undefined && (!Number.isSafeInteger(options.expectedVersion) || options.expectedVersion < 0)) throw new SchemaError('expectedVersion must be a nonnegative integer');
-      const stored = validateSelfProfile(await this.store.readJson(SELF_PROFILE_PATH, emptySelfProfile()));
+      const storedValue = await this.store.readJson(SELF_PROFILE_PATH);
+      if (!storedValue && (await this._meta()).requiredDocuments?.includes(SELF_PROFILE_PATH)) throw Object.assign(new Error('Required saved self profile is missing; no empty identity was substituted'), { code: 'MEMORY_REQUIRED_DOCUMENT_MISSING' });
+      const stored = validateSelfProfile(storedValue ?? emptySelfProfile());
       if (options.expectedVersion !== undefined && options.expectedVersion !== stored.version) throw conflict('Self profile changed');
       const meta = await this._meta(); let links = selfProfileLinks(options);
       if (dependenciesRevoked({ refs: links.sourceRefs, recordIds: links.sourceRecordIds }, meta)) throw Object.assign(new Error('Self profile update references an explicitly revoked source'), { code: 'SOURCE_REVOKED' });
@@ -159,33 +203,43 @@ export class MemoryRepository {
       if (!result.changed && !cleaned.changed) return copy(result.profile);
       const next = result.changed ? result.profile : validateSelfProfile({ ...result.profile, version: stored.version + 1, updatedAt: this.now() });
       const writes = { json: { [SELF_PROFILE_PATH]: next }, expectedVersions: { [SELF_PROFILE_PATH]: stored.version } };
+      meta.requiredDocuments = [...new Set([...(meta.requiredDocuments ?? []), SELF_PROFILE_PATH])];
       await this._enforceLimits(writes); await this._commit(meta, writes); return copy(next);
     });
   }
   async _document(path) { return this.store.readJson(path, doc(this.now())); }
   _bump(value) { return { ...value, version: (value.version ?? 0) + 1, updatedAt: this.now() }; }
   _event(meta) { meta.sequence += 1; return 'ev_' + String(meta.sequence).padStart(20, '0'); }
-  async _commit(meta, { json = {}, jsonl = {}, expectedVersions = {}, runId = newId('write') } = {}) {
+  async _commit(meta, { json = {}, jsonl = {}, expectedVersions = {}, expectedAbsent = [], runId = newId('write'), skipTimeline = false, archiveSourceIds } = {}) {
+    const writes = { json, jsonl, expectedAbsent, ...(archiveSourceIds ? { archiveSourceIds } : {}) };
+    if (!skipTimeline) await this.timeline.plan(meta, writes);
     const priorVersion = meta.version; meta.version += 1;
-    const result = await this.store.transaction({ runId, json: { ...json, 'meta/state.json': meta }, jsonl, expectedVersions: { ...expectedVersions, 'meta/state.json': priorVersion } });
+    const result = await this.store.transaction({ runId, json: { ...json, 'meta/state.json': meta }, jsonl, expectedAbsent, expectedVersions: { ...expectedVersions, 'meta/state.json': priorVersion } });
     this._retrieval.invalidate(meta, { clearQueries: Object.hasOwn(jsonl, 'global/revocations.jsonl') });
     return result;
   }
-  async _records(meta = null) {
-    meta ??= await this._meta(); const rows = [];
-    for (const id of [null, ...meta.personIds]) rows.push(...await this.store.readLines(streamPath(id)));
-    return rows.filter((row) => !meta.revokedIds.includes(row.id) && !meta.revokedSources.includes(sourceKey(row)));
+  async _rotateTimeline(meta) {
+    const writes = { json: {}, jsonl: {} }, result = await this.timeline.plan(meta, writes);
+    if (result.changed) await this._commit(meta, { ...writes, skipTimeline: true });
+    return result.catalog;
+  }
+  async _records(meta = null, options = {}) {
+    return this.timeline.read(meta ?? await this._meta(), options);
   }
   async _correctAssistantSpeakerPlaceholders(meta, writes) {
     let changed = false;
-    for (const personId of [null, ...meta.personIds]) {
-      const path = streamPath(personId), rows = writes.jsonl[path] ?? await this.store.readLines(path);
+    for (const path of await this.timeline.paths(meta)) {
+      const rows = writes.jsonl[path] ?? await this.timeline.readPath(path);
       let changedPath = false;
-      const corrected = rows.map(record => {
+      const corrected = rows.map(original => {
+        const redacted = redactTimelineRecord(original, meta); let record = redacted.record;
+        if (redacted.changed) changedPath = true;
         if (record.role !== 'assistant' || record.personId == null || record.speakerId !== record.personId) return record;
         changedPath = true; return { ...record, speakerId: null };
       });
       if (changedPath) { writes.jsonl[path] = corrected; changed = true; }
+    }
+    for (const personId of [null, ...meta.personIds]) {
       const hp = hotPath(personId), hot = writes.jsonl[hp] ?? await this.store.readLines(hp);
       const correctedHot = hot.map(correctHotSpeakerPlaceholder);
       if (correctedHot.some((record, index) => record !== hot[index])) { writes.jsonl[hp] = correctedHot; changed = true; }
@@ -261,14 +315,16 @@ export class MemoryRepository {
     for (const file of files) {
       if (/^(people\/[^/]+\/hot|staging\/hot)\.jsonl$/.test(file.path)) {
         for (const entry of await this.store.readLines(file.path)) if (entry.content?.mode === 'cached') hotChars += countChars(entry.content.text);
-      } else if (/^(self\/(persona|history|profile)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(stream\.jsonl|identity\.json|index\.json|codes\.json|impression\.json|pending\.json))$/.test(file.path) || file.path === 'staging/events.jsonl') {
+      } else if (/^(self\/(persona|history|profile)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity\.json|index\.json|codes\.json|impression\.json|pending\.json))$/.test(file.path)) {
         persistentChars += strings(file.path.endsWith('.jsonl') ? await this.store.readLines(file.path) : await this.store.readJson(file.path));
       }
     }
     const freeBytes = await this.store.availableBytes();
-    return { persistentChars, hotChars, physicalBytes: files.reduce((sum, f) => sum + f.bytes, 0), freeBytes,
+    const timeline = await this.timeline.catalog();
+    return { persistentChars: timeline.long_term.chars, semanticChars: persistentChars, recentChars: timeline.recent.chars, archivedChars: timeline.archive.chars,
+      timeline, hotChars, physicalBytes: files.reduce((sum, f) => sum + f.bytes, 0), freeBytes,
       longTermTargetChars: this.config.longTermTargetChars, tempTargetChars: this.config.tempTargetChars,
-      pressure: { longTerm: persistentChars >= this.config.longTermTargetChars, hot: hotChars >= this.config.tempTargetChars, disk: freeBytes <= this.config.diskReserveBytes } };
+      pressure: { longTerm: timeline.long_term.chars >= this.config.longTermTargetChars, hot: hotChars >= this.config.tempTargetChars, disk: freeBytes <= this.config.diskReserveBytes } };
   }
   getCapacity() { return this._queue(() => this._capacity()); }
   async _gap(meta, input, reason) {
@@ -325,9 +381,9 @@ export class MemoryRepository {
         proactiveId: input.proactiveId ?? null, reactionTo: input.reactionTo ?? null });
       const meta = await this._meta(); const key = sourceKey(record);
       if (meta.revokedSources.includes(key) || meta.revokedIds.includes(record.id)) return { duplicate: true, revoked: true, record: null, eventId: meta.sources[key]?.eventId ?? null };
-      if (meta.sources[key]) return { duplicate: true, record: (await this._records(meta)).find((r) => sourceKey(r) === key) ?? null, eventId: meta.sources[key].eventId };
+      if (meta.sources[key]) return { duplicate: true, record: (await this._records(meta, { paths: [meta.sources[key].storagePath ?? streamPath(meta.sources[key].personId)] })).find((r) => sourceKey(r) === key) ?? null, eventId: meta.sources[key].eventId };
       const cap = await this._capacity();
-      if (cap.pressure.disk || cap.persistentChars + strings(record) > this.config.longTermTargetChars || Buffer.byteLength(JSON.stringify(meta)) > this.config.retention.journalMaxBytes) return this._gap(meta, input, 'memory_copy_paused_at_capacity');
+      if (cap.pressure.disk || Buffer.byteLength(JSON.stringify(meta)) > this.config.retention.journalMaxBytes) return this._gap(meta, input, 'memory_copy_paused_at_capacity');
       if (record.personId && !meta.personIds.includes(record.personId)) throw new SchemaError('Unknown personId; upsertPerson before ingestion');
       record.eventId = this._event(meta);
       meta.sources[key] = { id: record.id, eventId: record.eventId, lastEventId: record.eventId, personId: record.personId, sourceAt: record.sourceAt,
@@ -410,7 +466,7 @@ export class MemoryRepository {
     return this._queue(async () => {
       safeId(personId); const meta = await this._meta(); if (!meta.personIds.includes(personId)) throw new SchemaError('Assignment target is unknown');
       const key = sourceKey({ sourceSessionId, sourceEventId }); const source = meta.sources[key]; if (!source) throw new SchemaError('Assignment source is unknown');
-      const oldPath = streamPath(source.personId); const oldRows = await this.store.readLines(oldPath); const record = oldRows.find((r) => sourceKey(r) === key);
+      const oldPath = source.storagePath ?? streamPath(source.personId); const oldRows = await this.timeline.readPath(oldPath); const record = oldRows.find((r) => sourceKey(r) === key);
       if (!record) throw Object.assign(new Error('Source original is no longer available'), { code: 'SOURCE_UNAVAILABLE' });
       if (source.personId === personId) return { assignment: null, record, duplicate: true };
       const eventId = this._event(meta);
@@ -419,8 +475,10 @@ export class MemoryRepository {
       const oldPersonId = record.personId; record.personId = personId;
       if (record.role === 'user' && (record.speakerId == null || record.speakerId === oldPersonId)) record.speakerId = personId;
       else if (record.role === 'assistant' && oldPersonId !== null && record.speakerId === oldPersonId) record.speakerId = null;
-      const nextPath = streamPath(personId); const nextRows = await this.store.readLines(nextPath); nextRows.push(record);
-      const jsonl = { [oldPath]: oldRows.filter((r) => sourceKey(r) !== key), [nextPath]: nextRows };
+      const nextPath = oldPath.startsWith('timeline/archive/') ? oldPath : streamPath(personId);
+      if (nextPath === oldPath) oldRows.splice(oldRows.findIndex(row => sourceKey(row) === key), 1);
+      const nextRows = nextPath === oldPath ? oldRows : await this.store.readLines(nextPath); nextRows.push(record);
+      const jsonl = nextPath === oldPath ? { [oldPath]: nextRows } : { [oldPath]: oldRows.filter((r) => sourceKey(r) !== key), [nextPath]: nextRows };
       for (const id of new Set([oldPersonId, personId])) {
         const hp = hotPath(id); const rows = await this.store.readLines(hp);
         const relevant = rows.filter((r) => sourceKey(r.sourceRef) === key);
@@ -538,7 +596,41 @@ export class MemoryRepository {
   getMemoryRecord(id) {
     return this._queue(async () => {
       if (typeof id !== 'string' || !id || countChars(id) > 200) throw new SchemaError('A bounded memory record ID is required');
-      return copy((await this._allMemory(await this._meta())).find(item => item.id === id) ?? null);
+      const meta = await this._meta(), receipt = Object.values(meta.sources).find(row => row.id === id);
+      if (receipt) {
+        const row = (await this._records(meta, { paths: [receipt.storagePath ?? streamPath(receipt.personId)] })).find(item => item.id === id);
+        if (row) return copy({ ...row, scope: row.personId ? 'person' : 'staging', recordType: 'chat', srcRefs: [sourceRef(row)] });
+        return null;
+      }
+      return copy((await this._allMemory(meta)).find(item => item.id === id) ?? null);
+    });
+  }
+  getTimelineStatus() {
+    return this._queue(async () => {
+      const meta = await this._meta(), catalog = await this._rotateTimeline(meta), files = await this.store.listFiles();
+      return { ...copy(catalog), preferredDays: this.config.recentPreferredDays, recentTargetChars: this.config.recentTargetChars,
+        longTermTargetChars: this.config.longTermTargetChars, physicalBytes: files.reduce((sum, item) => sum + item.bytes, 0),
+        storeLimitBytes: this.config.capacityLimits.storeBytes, automaticDeletion: false, archivalPreservesOriginals: true,
+        characterAccounting: 'Unicode code points in text and narrative annotation fields; routing metadata and links excluded' };
+    });
+  }
+  browseTimeline({ tier = 'all', offset = 0, limit = 12, query = '', personId } = {}) {
+    return this._queue(async () => {
+      if (!['recent', 'long_term', 'archive', 'all'].includes(tier)) throw new SchemaError('Unknown timeline tier');
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new SchemaError('Timeline offset/limit must be safe integers and limit 1..100');
+      if (typeof query !== 'string' || countChars(query) > 2000) throw new SchemaError('Timeline query exceeds 2000 characters');
+      if (personId !== undefined && personId !== null) safeId(personId);
+      const meta = await this._meta(), catalog = await this._rotateTimeline(meta);
+      if (personId && !meta.personIds.includes(personId)) throw Object.assign(new Error('Unknown timeline person'), { code: 'UNKNOWN_PERSON_TARGET' });
+      const paths = tier === 'archive' ? catalog.archiveFiles.map(item => item.path) : tier === 'all' ? undefined
+        : [null, ...meta.personIds].map(id => tier === 'recent' ? streamPath(id) : 'timeline/long/' + (id ? 'person-' + id : 'unknown') + '.jsonl');
+      let rows = await this._records(meta, { paths });
+      if (personId !== undefined) rows = rows.filter(row => row.personId === personId);
+      if (query) { const normalized = query.toLocaleLowerCase(); rows = rows.filter(row => [row.text, ...Object.values(row.timeline).filter(value => typeof value === 'string'), ...row.timeline.indexCodes].join(' ').toLocaleLowerCase().includes(normalized)); }
+      rows.sort(timelineOrder);
+      return { items: copy(rows.slice(offset, offset + limit).map(row => ({ ...row, scope: row.personId ? 'person' : 'staging',
+        recordType: 'chat', srcRefs: [sourceRef(row)] }))), total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null,
+        revision: String(catalog.version) + ':' + String(meta.version), chronological: true, tier };
     });
   }
   getPersona() { return this._queue(() => this._persona()); }
@@ -581,16 +673,12 @@ export class MemoryRepository {
     });
   }
   async _context({ personId = null, query, includeIndexes = false } = {}) {
-    const meta = await this._meta(); const all = await this._records(meta); const records = all.filter((r) => r.personId === personId);
-    const recent = []; let chars = 0;
-    for (const row of [...records].sort((a, b) => b.sourceAt - a.sourceAt)) {
-      if (chars + row.chars > this.config.recentTargetChars) continue;
-      recent.push(row); chars += row.chars;
-    }
-    recent.reverse();
+    const personaDocument = await this._persona(); const meta = await this._meta(); await this._rotateTimeline(meta);
+    const records = await this._records(meta, { paths: [streamPath(personId)] });
+    const recent = records.filter(row => row.tier === 'recent').sort(timelineOrder);
     const emptyImpression = { schemaVersion: SCHEMA_VERSION, version: 0, personId, summary: '', signatures: [], coordinates: {}, events: [], updatedAt: this.now() };
     const deep = await this._document('global/deep.json');
-    const result = { persona: await this._persona(), selfProfile: await this._selfProfile(meta),
+    const result = { persona: personaDocument, selfProfile: await this._selfProfile(meta),
       memoryAvailability: { knownSourceCount: Object.entries(meta.sources).filter(([key, receipt]) => !meta.revokedSources.includes(key) && !meta.revokedIds.includes(receipt.id)).length,
         personAssociation: personId ? 'associated' : 'unassociated', storeContent: 'not_assessed' },
       deepMemories: deep.items.filter(item => !meta.revokedIds.includes(item.id) && !item.srcRefs?.some(ref => meta.revokedSources.includes(sourceKey(ref)))), deepMemoryVersion: deep.version,
@@ -599,7 +687,9 @@ export class MemoryRepository {
       impression: personId ? await this.store.readJson(personPath(personId, 'impression.json'), emptyImpression) : emptyImpression,
       interpretations: personId ? (await this._document(personPath(personId, 'pending.json'))).items : [],
       codes: [...(await this._document('global/codes.json')).items, ...(personId ? (await this._document(personPath(personId, 'codes.json'))).items : [])],
-      state: personId ? await this._personState(personId) : null, records, recent, pending: records.filter((r) => meta.pending.includes(r.eventId)),
+      state: personId ? await this._personState(personId) : null, records, recent,
+      recentMemory: { items: copy(recent), total: recent.length, omitted: 0, preferredDays: this.config.recentPreferredDays, asOf: this.now(), originalsRemainQueryable: true },
+      pending: records.filter((r) => meta.pending.includes(r.eventId)),
       memories: query ? (await this._search({ query }, { personId })).items : [] };
     const eligible = entries => entries.filter(entry => entry.scope !== 'person' || entry.personId === personId);
     const persona = { ...result.persona, facets: eligible(result.persona.facets), signatures: eligible(result.persona.signatures), habits: eligible(result.persona.habits) };
@@ -610,13 +700,15 @@ export class MemoryRepository {
       if (path === 'self/persona.json' && !personaKeys.has(field)) continue;
       for (const root of roots) { try { const [sourceSessionId, sourceEventId] = JSON.parse(root); lineageRefs.push({ sourceSessionId, sourceEventId }); } catch {} }
     }
-    const dependencies = extractSourceDependencies({ persona, impression: result.impression, interpretations: result.interpretations, codes: result.codes, memories: result.memories, ...(includeIndexes ? { memoryIndexes: result.memoryIndexes, deepMemories: result.deepMemories } : {}), lineageRefs });
+    const dependencies = extractSourceDependencies({ persona, impression: result.impression, interpretations: result.interpretations, codes: result.codes, memories: result.memories, recent: result.recent, ...(includeIndexes ? { memoryIndexes: result.memoryIndexes, deepMemories: result.deepMemories } : {}), lineageRefs });
     result.sourceDependencies = { refs: dependencies.refs, recordIds: dependencies.recordIds };
     return result;
   }
   getContext(input = {}) { return this._queue(() => this._context(input)); }
   getPending({ personId } = {}) {
-    return this._queue(async () => { const meta = await this._meta(); return (await this._records(meta)).filter((r) => meta.pending.includes(r.eventId) && (personId === undefined || r.personId === personId)); });
+    return this._queue(async () => { const meta = await this._meta(), pending = new Set(meta.pending);
+      const paths = [...new Set(Object.values(meta.sources).filter(row => pending.has(row.eventId) && (personId === undefined || row.personId === personId)).map(row => row.storagePath ?? streamPath(row.personId)))];
+      return (await this._records(meta, { paths })).filter(row => pending.has(row.eventId) && (personId === undefined || row.personId === personId)); });
   }
   readSources({ eventIds, sourceRefs } = {}) {
     return this._queue(async () => {
@@ -626,7 +718,8 @@ export class MemoryRepository {
       const events = new Set(eventIds ?? []), sources = new Set((sourceRefs ?? []).map(sourceKey));
       if (!events.size && !sources.size) return [];
       const meta = await this._meta();
-      return copy((await this._records(meta)).filter((record) => events.has(record.eventId) || sources.has(sourceKey(record))));
+      const paths = [...new Set(Object.entries(meta.sources).filter(([key, receipt]) => events.has(receipt.eventId) || sources.has(key)).map(([, receipt]) => receipt.storagePath ?? streamPath(receipt.personId)))];
+      return copy((await this._records(meta, { paths })).filter((record) => events.has(record.eventId) || sources.has(sourceKey(record))));
     });
   }
   clearPending(ids) {
@@ -650,28 +743,10 @@ export class MemoryRepository {
     });
   }
   async _evict(meta, ids, writes) {
-    const selected = new Set(ids); const removedRefs = [];
-    for (const personId of [null, ...meta.personIds]) {
-      const path = streamPath(personId); const rows = writes.jsonl[path] ?? await this.store.readLines(path);
-      const removed = rows.filter((r) => (selected.has(r.id) || selected.has(r.eventId)) && !meta.pending.includes(r.eventId));
-      if (!removed.length) continue;
-      removed.forEach((r) => removedRefs.push(sourceKey(r)));
-      writes.jsonl[path] = rows.filter((r) => !removed.includes(r));
-    }
-    const set = new Set(removedRefs);
-    const mark = (value) => {
-      if (!value || typeof value !== 'object') return value;
-      if (Array.isArray(value)) return value.map(mark);
-      const result = {};
-      for (const [key, item] of Object.entries(value)) result[key] = mark(item);
-      if (typeof value.sourceSessionId === 'string' && typeof value.sourceEventId === 'string' && set.has(sourceKey(value)) && Object.hasOwn(value, 'available')) result.available = false;
-      return result;
-    };
-    for (const file of await this.store.listFiles()) if (/^(self\/persona\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(index|codes|impression|pending)\.json)$/.test(file.path)) {
-      const before = writes.json[file.path] ?? await this.store.readJson(file.path); const after = mark(before);
-      if (JSON.stringify(before) !== JSON.stringify(after)) writes.json[file.path] = this._bump(after);
-    }
-    return removedRefs;
+    // Legacy natural eviction now means cold archival; explicit forget remains separate.
+    const selectedRows = (await this._records(meta, { includeArchived: false })).filter(row => ids.includes(row.id) || ids.includes(row.eventId));
+    writes.archiveSourceIds = [...new Set([...(writes.archiveSourceIds ?? []), ...selectedRows.map(row => row.id)])];
+    return selectedRows.map(sourceKey);
   }
   evictSources(ids) {
     return this._queue(async () => { const meta = await this._meta(); const writes = { json: {}, jsonl: {} }; const removed = await this._evict(meta, ids, writes); await this._commit(meta, writes); return { removed }; });
@@ -717,9 +792,10 @@ export class MemoryRepository {
         }
       }
       // Remove original selected sources and matching temporary process material.
-      for (const id of [null, ...meta.personIds]) {
-        const sp = streamPath(id); const rows = await this.store.readLines(sp); const remain = rows.filter((r) => !refKeys.has(sourceKey(r)));
-        if (remain.length !== rows.length) writes.jsonl[sp] = remain;
+      for (const sp of await this.timeline.paths(meta)) {
+        const rows = await this.timeline.readPath(sp);
+        const remain = rows.filter((r) => !refKeys.has(sourceKey(r))).map(row => redactTimelineRecord(row, { revokedSources: [...meta.revokedSources, ...refKeys], revokedIds: [...meta.revokedIds, ...affected] }).record);
+        if (JSON.stringify(remain) !== JSON.stringify(rows)) writes.jsonl[sp] = remain;
       }
       meta.revokedIds = [...new Set([...meta.revokedIds, ...affected])]; meta.revokedSources = [...new Set([...meta.revokedSources, ...refKeys])];
       const revokedEvents = new Set(Object.entries(meta.sources).filter(([key]) => refKeys.has(key)).map(([, info]) => info.eventId));
@@ -737,6 +813,7 @@ export class MemoryRepository {
   }
   _docPath(key) {
     if (key === 'persona') return 'self/persona.json';
+    if (key === 'global:timeline') return TIMELINE_CATALOG;
     if (/^global:(index|codes|deep)$/.test(key)) return 'global/' + key.split(':')[1] + '.json';
     const parts = key.split(':'); if (parts.length === 3 && parts[0] === 'person' && ['index', 'codes', 'impression', 'pending'].includes(parts[2])) return personPath(parts[1], parts[2] + '.json');
     throw new SchemaError('Uncontrolled documentKey');
@@ -744,7 +821,7 @@ export class MemoryRepository {
   async prepareConsolidation({ personId = null, maxInputChars = this.config.processingLimits.consolidationInputChars, boundedContext = true } = {}) {
     return this._queue(async () => {
       if (personId !== null) safeId(personId); if (!Number.isFinite(maxInputChars) || maxInputChars <= 0) throw new SchemaError('maxInputChars must be positive');
-      const meta = await this._meta();
+      const meta = await this._meta(); await this._rotateTimeline(meta);
       if (personId !== null && !meta.personIds.includes(personId)) throw Object.assign(new Error('The selected consolidation person does not exist; use null for unknown material'), { code: 'UNKNOWN_PERSON_TARGET', personId });
       const runtime = await this._runtime(); const cursorKey = personId ? 'person:' + personId : 'global';
       const cursor = runtime.consolidationCursors?.[cursorKey]?.lastCommittedEventId ?? '';
@@ -771,6 +848,7 @@ export class MemoryRepository {
       }
       const keys = ['persona', 'global:index', 'global:codes', 'global:deep', ...(personId ? ['index', 'codes', 'impression', 'pending'].map((type) => 'person:' + personId + ':' + type) : [])];
       const inputVersions = {}; for (const key of keys) inputVersions[key] = (await this.store.readJson(this._docPath(key)))?.version ?? 0;
+      inputVersions['global:timeline'] = (await this.timeline.catalog()).version;
       const runId = newId('run');
       const context = await this._context({ personId, includeIndexes: true });
       const consolidationContext = Object.fromEntries(['persona', 'identity', 'impression', 'interpretations', 'codes', 'memoryIndexes', 'deepMemories', 'deepMemoryVersion', 'state', 'sourceDependencies'].map((key) => [key, context[key]]));
@@ -849,6 +927,29 @@ export class MemoryRepository {
       for (const slice of run.inputSlices ?? []) if ((meta.consolidationOffsets?.[slice.key] ?? 0) !== slice.from) throw conflict('Consolidation fragment was already consumed by another run');
       for (const entry of entries) {
         if (!Object.hasOwn(run.inputVersions, entry.documentKey)) throw new SchemaError('Patch targets a document outside this run');
+        if (entry.documentKey === 'global:timeline') {
+          const catalog = await this.timeline.catalog();
+          if (catalog.version !== entry.expectedVersion || catalog.version !== run.inputVersions['global:timeline']) throw conflict('Stale timeline annotation input');
+          const receipts = Object.values(meta.sources).filter(row => row.id === entry.recordId);
+          if (receipts.length !== 1) throw new SchemaError('Timeline annotation requires one unambiguous original ID');
+          const receipt = receipts[0];
+          if (!receipt || receipt.personId !== run.personId || meta.revokedIds.includes(entry.recordId)) throw new SchemaError('Timeline annotation target is outside this run subject');
+          const path = receipt.storagePath ?? streamPath(receipt.personId), records = writes.jsonl[path] ?? await this.timeline.readPath(path);
+          const index = records.findIndex(row => row.id === entry.recordId);
+          if (index < 0 || meta.revokedSources.includes(sourceKey(records[index]))) throw new SchemaError('Timeline original is unavailable');
+          const row = unifiedRecord(records[index]);
+          const patch = entry.operation === 'remove' ? Object.fromEntries(TIMELINE_FIELDS.map(key => [key, ['indexCodes', 'relatedMemoryIds'].includes(key) ? [] : ''])) : validateTimelineAnnotation(entry.value);
+          assertRecordCapacity(patch, this.config.capacityLimits, 'timeline/' + row.id);
+          const dependencies = extractSourceDependencies({ chat: run.input.chat, hot: run.input.hot, context: run.input.context?.sourceDependencies });
+          if (!dependencies.complete || dependencies.refs.length > 128 || dependencies.recordIds.length > 256) throw capacityError('timelineProvenance', Math.max(dependencies.refs.length, dependencies.recordIds.length), 256);
+          const provenance = copy(row.timeline.provenance ?? {});
+          for (const [field, value] of Object.entries(patch)) {
+            if (value === '' || Array.isArray(value) && value.length === 0) delete provenance[field];
+            else provenance[field] = { refs: copy(dependencies.refs), recordIds: copy(dependencies.recordIds) };
+          }
+          records[index] = { ...row, timeline: { ...row.timeline, ...copy(patch), provenance } }; writes.jsonl[path] = records;
+          continue;
+        }
         if (entry.operation === 'upsert') {
           assertFiniteJson(entry.value);
           entry.value = this._normalizePatchReferences(entry.value, sourceCatalogue);
@@ -858,7 +959,7 @@ export class MemoryRepository {
         }
         const path = this._docPath(entry.documentKey); let document = changed.get(path);
         if (!document) {
-          document = await this.store.readJson(path, entry.documentKey === 'persona' ? emptyPersona(this.now()) : doc(this.now()));
+          document = entry.documentKey === 'persona' ? await this._persona() : await this.store.readJson(path, doc(this.now()));
           if (document.version !== run.inputVersions[entry.documentKey] || entry.expectedVersion !== document.version) throw conflict('Stale consolidation input: ' + entry.documentKey);
           writes.expectedVersions[path] = document.version; changed.set(path, document);
         } else if (entry.expectedVersion !== run.inputVersions[entry.documentKey]) throw conflict('Inconsistent patch version');
@@ -1098,10 +1199,8 @@ export class MemoryRepository {
         for (const item of [...document.signatures, ...document.events]) assertRecordCapacity(item, this.config.capacityLimits, path + '/' + item.id);
       }
     }
-    const current = await this._capacity(); let delta = 0;
-    for (const [path, value] of Object.entries(writes.json ?? {})) if (/^(self\/(persona|history|profile)\.json|global\/(index|codes|deep)\.json|people\/[^/]+\/(identity|index|codes|impression|pending)\.json)$/.test(path)) delta += strings(value) - strings(await this.store.readJson(path));
-    for (const [path, value] of Object.entries(writes.jsonl ?? {})) if (/stream\.jsonl$|staging\/events\.jsonl$/.test(path)) delta += strings(value) - strings(await this.store.readLines(path));
-    if (current.persistentChars + delta > this.config.longTermTargetChars) throw Object.assign(new Error('Patch exceeds total persistent memory target'), { code: 'CAPACITY_EXCEEDED' });
+    // Timeline rotation owns its text limit. Semantic documents retain independent
+    // item/document/store limits instead of competing with source records.
   }
   getOutbox() { return this._queue(() => this.store.readLines('global/outbox.jsonl')); }
   saveOutbox(records) {
@@ -1143,10 +1242,11 @@ export class MemoryRepository {
     return this._queue(async () => {
       const next = defaultConfig(mergeConfig(this.config, partial));
       const previous = { capacityLimits: this.store.capacityLimits, journalMaxBytes: this.store.journalMaxBytes, diskReserveBytes: this.store.diskReserveBytes };
+      const previousConfig = this.config, wasSemantic = previousConfig.retrieval?.semanticEnabled;
       Object.assign(this.store, { capacityLimits: next.capacityLimits, journalMaxBytes: next.retention.journalMaxBytes, diskReserveBytes: next.diskReserveBytes });
-      try { await this.store.transaction({ runId: newId('config'), json: { 'config.json': next } }); }
-      catch (error) { Object.assign(this.store, previous); throw error; }
-      const wasSemantic = this.config.retrieval?.semanticEnabled; this.config = next;
+      this.config = next;
+      try { await this._commit(await this._meta(), { runId: newId('config'), json: { 'config.json': next } }); }
+      catch (error) { Object.assign(this.store, previous); this.config = previousConfig; this.timeline.invalidate(); throw error; }
       if (wasSemantic && !next.retrieval?.semanticEnabled) this._retrieval.clearCache(); else this._retrieval.prune();
       return copy(next);
     });

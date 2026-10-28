@@ -125,12 +125,15 @@ test('a guessed context cursor and a request frame that cannot fit pause without
 });
 
 test('large source input is dynamically split to the full JSON request budget and one selected increment leaves the unread original tail', async t => {
-  const budget = 18000;
+  const budget = 22000;
   const f = await fixture(t, { config: { processingLimits: { consolidationInputChars: 16000, consolidationRequestTokens: budget } } });
   await f.runtime.accept(chat('large', 'a', 'Z'.repeat(22000)), env());
   await f.runtime.decide({ consolidationPlan: { action: 'run', targetPersonIds: ['a'] } }, { ...env(), personId: 'a' }); await f.runtime.idle();
   assert.ok(f.requests.length >= 2); assert.ok(f.requests.every(request => Array.from(JSON.stringify(request.messages)).length <= budget));
   assert.ok(f.requests.every(request => request.maxOutputTokens === 16384));
+  const completed = (await jobs(f.repository))[0];
+  assert.equal(completed.status, 'completed', JSON.stringify({ status: completed.status, pauseReason: completed.pauseReason,
+    requests: f.requests.length, children: completed.children, lastRequestChars: Array.from(JSON.stringify(f.requests.at(-1)?.messages)).length }));
   const next = await f.repository.prepareConsolidation({ personId: 'a' });
   assert.equal(next.input.chat[0].fragment.from, 16000); assert.equal(next.input.chat[0].text.length, 6000);
 });
@@ -404,7 +407,13 @@ test('actual bounded capacity facts reach snapshots and control as facts, respec
   await f.repository.captureHot({ personId: 'a', sourceRef: { sourceSessionId: 'session_a', sourceEventId: 'stored_process', available: true },
     sourceKind: 'reasoning', origin: 'ai_reply', kind: 'reasoning', content: { mode: 'cached', text: 'Actual local process memory', chars: 26 }, dependencyRefs: [], dependencyRecordIds: [] });
   await f.runtime.updateConfig({ longTermTargetChars: 1, tempTargetChars: 1 });
+  const checkCapacity = f.repository.store._checkCapacity.bind(f.repository.store);
+  f.repository.store._checkCapacity = async (entries, manifest) => {
+    if (entries.some(entry => entry.path === 'people/a/stream.jsonl' && entry.text?.includes('capacity_gap'))) throw Object.assign(new Error('injected actual storage capacity failure'), { code: 'CAPACITY_EXCEEDED', resource: 'storeBytes' });
+    return checkCapacity(entries, manifest);
+  };
   const gap = await f.runtime.accept(chat('capacity_gap'), env()); assert.ok(gap.gap);
+  f.repository.store._checkCapacity = checkCapacity;
   const actualCapacity = f.repository.getCapacity.bind(f.repository), observations = [];
   f.repository.getCapacity = async () => { const value = await actualCapacity(); observations.push(value); return value; };
   const resources = snapshot => JSON.parse(snapshot.segments.find(segment => segment.name === 'environment').text.split('\n')[1]).resources;
@@ -413,7 +422,7 @@ test('actual bounded capacity facts reach snapshots and control as facts, respec
   assert.deepEqual(facts.longTermChars, { used: observations[0].persistentChars, limit: 1 });
   assert.deepEqual(facts.tempChars, { used: observations[0].hotChars, limit: 1 });
   assert.deepEqual(facts.storeBytes, { used: observations[0].physicalBytes, limit: f.runtime.config.capacityLimits.storeBytes });
-  assert.equal(facts.unresolvedGaps, 1); assert.equal(facts.pressure.longTerm, true); assert.equal(facts.pressure.hot, true);
+  assert.equal(facts.unresolvedGaps, 1); assert.equal(facts.pressure.longTerm, observations[0].pressure.longTerm); assert.equal(facts.pressure.hot, true);
   assert.ok(snapshot.tokens <= 2970);
   f.runtime.model.maxInputTokens = 10000;
   await f.runtime.handleSignal('new_message', { ...env(), personId: 'a', pending: [] });

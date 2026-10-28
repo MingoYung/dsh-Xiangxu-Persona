@@ -103,6 +103,58 @@ const top=ui=>pagers(ui).find(n=>n.classList.contains('pagination-top'));
 const summary=ui=>top(ui).textContent;
 const move=async(ui,label)=>ui.button(top(ui),label).emit('click');
 const cards=ui=>ui.walk(content(ui)).filter(n=>n.tagName==='article'&&n.classList.contains('record'));
+
+const timelineStatus = { recent: { count: 29, chars: 290 }, long_term: { count: 2, chars: 20 }, archive: { count: 29, chars: 290 }, preferredDays: 3, longTermTargetChars: 1000000 };
+const timelineRows = Array.from({ length: 29 }, (_, i) => ({ id: 'timeline-' + i, recordType: 'chat', scope: 'staging', role: 'user', personId: null,
+  tier: 'recent', textPreview: '经历正文-' + i, sourceAt: 1000 + i, timeline: { title: '事件标题-' + i, occurredAt: 1000 + i, recordedAt: 2000 + i } }));
+
+test('unified timeline exposes every archive page and preserves explicit tier selection on previous navigation', async () => {
+  const ui = await frontend({ 'memory.timeline.status': () => timelineStatus, 'memory.timeline.list': args => page(timelineRows.map(row => ({ ...row, tier: args.tier })), args) });
+  await ui.evaluate("navigate('memory','timeline')");
+  assert.match(content(ui).textContent, /转存不重新概括.*不自动删除归档/);
+  ui.ids.get('timeline-tier').value = 'archive'; await ui.ids.get('timeline-tier').emit('change'); await tick();
+  const seen = new Set(cards(ui).map(row => row.textContent.match(/事件标题-\d+/)?.[0]));
+  await move(ui, '下一页 →'); cards(ui).forEach(row => seen.add(row.textContent.match(/事件标题-\d+/)?.[0]));
+  await move(ui, '下一页 →'); cards(ui).forEach(row => seen.add(row.textContent.match(/事件标题-\d+/)?.[0]));
+  assert.equal(seen.size, 29); assert.match(summary(ui), /第 3 页.*共 29 条/);
+  await move(ui, '上一页'); assert.match(summary(ui), /第 2 页/);
+  assert.equal(ui.calls.filter(call => call.action === 'memory.timeline.list').at(-1).args.tier, 'archive');
+  assert.equal(ui.calls.filter(call => call.action === 'memory.forget').length, 0);
+});
+
+test('timeline query resets paging and failed page reads leave the accepted page and cursor intact', async () => {
+  let fail = true;
+  const ui = await frontend({ 'memory.timeline.status': () => timelineStatus, 'memory.timeline.list': args => {
+    if (args.cursor && fail) { fail = false; throw new Error('temporary archive read error'); }
+    return page(timelineRows.filter(row => !args.query || row.textPreview.includes(args.query)), args);
+  } });
+  await ui.evaluate("navigate('memory','timeline')"); await move(ui, '下一页 →');
+  assert.match(summary(ui), /第 1 页/); await move(ui, '下一页 →'); assert.match(summary(ui), /第 2 页/);
+  ui.ids.get('timeline-query').value = '经历正文-28'; await ui.button(content(ui), '查找').emit('click');
+  assert.match(summary(ui), /第 1 页.*共 1 条/);
+  assert.equal(ui.calls.filter(call => call.action === 'memory.timeline.list').at(-1).args.cursor, undefined);
+});
+
+test('late timeline reads cannot overwrite a different persona instance', async () => {
+  let release, entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const ui = await frontend({ 'memory.timeline.status': () => timelineStatus, 'memory.timeline.list': args => {
+    if (args.instanceId === 'default') { entered(); return new Promise(resolve => { release = resolve; }); }
+    return page([{ ...timelineRows[0], timeline: { title: '新人格经历' } }], args);
+  } });
+  const old = ui.evaluate("navigate('memory','timeline')"); await waiting;
+  ui.evaluate("state.instanceId='other'"); await ui.evaluate("navigate('memory','timeline')");
+  release(page([{ ...timelineRows[0], timeline: { title: '旧人格经历' } }], { pageSize: 12 })); await old;
+  assert.match(content(ui).textContent, /新人格经历/); assert.doesNotMatch(content(ui).textContent, /旧人格经历/);
+});
+
+test('other social entry points separate untested acceptance from their actual connection state', async () => {
+  const ui = await frontend({ 'channels.status': () => ({ connections: [{ id: 'wechat', connected: true }] }), 'connections.status': () => ({ connections: [] }) });
+  await ui.evaluate("navigate('chat')");
+  const links = ui.walk(content(ui)).filter(node => node.classList.contains('destination'));
+  assert.match(links.find(node => node.getAttribute('aria-label') === '微信').textContent, /未测试 · 已连接/);
+  assert.match(links.find(node => node.getAttribute('aria-label') === 'B 站').textContent, /未测试/);
+});
 function memoryUi(overrides={}){const rows=records(34);return frontend({'memory.list':args=>page(rows.filter(row=>(!args.query||row.text.includes(args.query))&&(!args.recordType||row.recordType===args.recordType)),args),...overrides});}
 
 test('34 retained records expose top and bottom pagination and all entries are reachable in both directions',async()=>{

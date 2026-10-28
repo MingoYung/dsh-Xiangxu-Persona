@@ -3,7 +3,9 @@ export const retrievalRecordKey = item => JSON.stringify([item.recordType ?? nul
 
 export function retrievalText(item) {
   return [item.text, item.meaning, item.label, item.desc, item.if, item.then, item.title, item.reference,
-    item.experience, item.feltThen, item.meaningNow, ...(item.keys ?? []), ...(item.cues ?? [])].filter(value => typeof value === 'string').join(' ');
+    item.experience, item.feltThen, item.meaningNow, ...(item.keys ?? []), ...(item.cues ?? []),
+    ...['title', 'background', 'process', 'outcome', 'details', 'feltThen', 'meaningNow'].map(key => item.timeline?.[key]),
+    ...(item.timeline?.indexCodes ?? [])].filter(value => typeof value === 'string').join(' ');
 }
 export function retrievalTerms(input) {
   const value = String(input ?? '').toLocaleLowerCase(), terms = value.match(/[\p{L}\p{N}_]+/gu) ?? [];
@@ -54,7 +56,7 @@ export function lexicalCandidates(rows, query) {
       score: exact + (unique.length ? oldMatches.length / unique.length : 0), lexicalScore: bm25 + exact, matchedTerms };
   }).filter(row => !normalized || row.score > 0).sort((a, b) => b.lexicalScore - a.lexicalScore || b.score - a.score || b.at - a.at || a.key.localeCompare(b.key));
 }
-const fields = ['relatedMemoryIds', 'expandIds', 'supersedesIds', 'replacementIds'];
+const fields = ['relatedMemoryIds', 'expandIds', 'supersedesIds', 'replacementIds', 'timeline.relatedMemoryIds'];
 export function associationCandidates(rows, seeds, depth) {
   const counts = new Map(); for (const item of rows) counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
   const allowed = new Map(rows.filter(item => counts.get(item.id) === 1).map(item => [item.id, item])), edges = new Map(); let truncated = false, missingLinks = 0, edgeCount = 0;
@@ -62,11 +64,14 @@ export function associationCandidates(rows, seeds, depth) {
   outer: for (const item of rows) {
     if (!allowed.has(item.id)) continue;
     let links = 0;
-    for (const field of fields) for (const id of Array.isArray(item[field]) ? item[field] : []) {
+    for (const field of fields) {
+      const references = field === 'timeline.relatedMemoryIds' ? item.timeline?.relatedMemoryIds : item[field];
+      for (const id of Array.isArray(references) ? references : []) {
       if (++links > RETRIEVAL_LIMITS.linksPerRecord) { truncated = true; break; }
       if (typeof id !== 'string' || !allowed.has(id)) { missingLinks++; continue; }
       if (edgeCount + 2 > RETRIEVAL_LIMITS.associationEdges) { truncated = true; break outer; }
       put(item.id, id, field, 'forward'); put(id, item.id, field, 'reverse');
+      }
     }
   }
   const visited = new Set(seeds.filter(id => allowed.has(id))), queue = [...visited].map(id => ({ id, hops: 0, path: [] })), candidates = [];

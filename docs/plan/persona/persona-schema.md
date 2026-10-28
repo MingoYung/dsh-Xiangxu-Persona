@@ -1,10 +1,10 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.12.0兼容增量以第25节为权威：QQ账号自身操作、management／lastVerifiedQQ／recovery与一键重新连接。第20–24节既有自我档案、生命周期、检索、受管连接与原生好友工具按兼容范围继续有效；历史证据不提升为本轮验收。
+当前0.13.0兼容增量以第26节为权威：统一persona-timeline/1注释、短期／长期／归档转层与必要人格上下文。第20–25节自我档案、生命周期、检索、受管连接和账号工具按兼容范围继续有效；历史证据不提升为本轮验收。
 
-> 0.12.0当前维护：QQ账号自身操作、管理认证／限流与owned恢复以[persona-schema第25节](persona-schema.md#0120-account-and-recovery-contract)为字段权威，操作见[QQ账号工具](../../qq-account-operations.md)，平台实际边界与待验收见[当前能力及验收](../../account-capabilities.md#0120-current-acceptance)。persona-memory/3与人格自主判断保持兼容；0.11.0及更早结果保留历史范围，不能自动当作本版新增功能已实测。
+> 0.13.0当前维护：统一短期／长期／归档时间线与必需人格上下文以[persona-schema第26节](persona-schema.md#0130-memory-timeline-contract)为字段权威，[使用与实现说明](../../memory-timeline-and-context.md)说明保存、转层、回查和加载故障。本轮不运行真实模型或社交平台验收；QQ按用户安排自行验证，其他社交平台显示未测试。0.12.0及更早验收保留历史范围，不推定本版或当前账号状态。
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.11.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.13.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -54,7 +54,7 @@ interface Document<T> {
 - 根来源键为 `(sourceSessionId, sourceEventId)`。外部渠道由适配器提供稳定命名空间与事件键；同一消息重试、重放、摘要或转存均不生成第二个根来源。`eventId` 是插件接收顺序，和宿主的 `sourceEventId` 分开。
 - `sourceAt` 是来源事件发生时间，`observedAt` 是插件看到它的时间；不要用后者冒充前者，也不要用机器当前时间重写历史。显示与日界用 IANA 时区，不存固定偏移替代时区规则。
 - `epistemic` 说明材料性质。`user_statement` 不承诺陈述真实，`observed` 不承诺解释客观，`interpretation` 不构成禁用资格。来源角色在根事件里保留。主观印象可直接存在并参与人格判断。
-- 原文自然淘汰后可把对应 `SrcRef.available` 改为 `false`，保留有界来源摘要；可用性变化不等于语义撤回。引用不要求永久保存全部原文。尚存的宿主原件若仍可访问，`available` 可保持 `true`，实际读取需由适配器确认。
+- 短期→长期→归档转层保留同一原件，`SrcRef.available`不因转层变为false。实际来源在明确遗忘、人工清理或外部宿主不可用后才如实报告可用性；可用性变化与语义撤回分别表达，不伪造仍可展开的原文。
 
 ## 2. 原始聊天、临时完整过程与未归属事件
 
@@ -132,7 +132,7 @@ interface RecentEntry {
 
 `hot.jsonl` 是普通主人格对话供本次梳理的过程工作区：可以缓存可用的对话、思考与工具原件，也可用宿主 trace 指针分页读取。0.6.0独立任务的工程正文保存在任务档案；主会话任务控制／结果仅留可信导航元数据，不能通过trace自动展开原文；人格显式retain的实际选段仍可进入原有自主整理。`navigationSummary` 只是导航，不能冒称完整上下文。`host_trace.available:false` 时记录降级，不伪造当时的推理。未知对象的临时过程进入 `staging/hot.jsonl`。
 
-原始聊天活动段追加，梳理提交后可通过轮转/重写删除人格决定不再保留的原文；这不是永久事件溯源库。近期视图优先存引用，读取时再取正文，避免为了“10 万字视图”永久复制第二份全文。若实施选择缓存副本，副本也计入实例容量。
+原始聊天采用第26节统一时间线注释，原文text与实际来源是权威。同一条记录在短期、长期或归档只保留一份活动原件，WAL转层完整复制后在同一提交中移出原层；不因普通梳理提交或活动层容量达到上限就删除原文。近期模型参考优先使用有界片段与原件引用，不为每轮参考再维护一份独立日记。明确遗忘仍单独撤销，归档不是硬件备份保证。
 
 ## 3. 检索条目、默契编码与明确撤销
 
@@ -172,7 +172,7 @@ interface RevocationRecord {
 
 `kind` 只有 `fact|preference|decision|pattern`，不同类别可共享检索器，但结果必须说明真实主体与材料性质。`aboutPersonIds` 可以包含第三人，不能因当前对话对象变化而偷偷改写主体。全局编码、共同性格可来自具体对象的经历，也可保留必要的关系解释；不把共同成长视为跨租户泄漏。检索默认目标是当前已识别对象，显式查询可以指定已知他人或全部关系。
 
-编码必须同时有 `meaning` 和来源，`expandIds` 是可选细节的加速入口。自然裁剪掉细节后可减少展开指针、保留编码含义与重要概括，不级联抹掉全部关系记忆。是否继续保留由梳理决定。
+编码必须同时有 `meaning` 和来源，`expandIds` 是可选细节的加速入口。原件转入长期或归档后，已有展开指针仍可定位同一记录；不能因离开近期层就剪掉来源或关系解释。人格可自主修订编码和理解，明确遗忘按实际依赖撤销。
 
 **自然遗忘**是容量与意义取舍；**明确纠正/遗忘**是对指定内容的撤销。后者追加 `RevocationRecord`，所有重建、检索和梳理先应用未被 checkpoint 吸收的撤销记录，再消费材料；依赖它的条目更新 `retractedBy` 或按剩余材料重写。不能借恢复旧版本使明确撤销的内容重新生效。撤销记录不保存被要求忘掉的正文，只保存防止本地重建复活所需的有界标识；源回放区间也淘汰后可 checkpoint 压缩，不建立永久材料审计库。明确遗忘范围是本插件的记忆与派生内容，不假装能擦除宿主或外部软件独立保管的源日志。
 
@@ -538,6 +538,7 @@ interface PersonaConfig {
     retrievalTokens: number;
     deepMemoryTokens?: number; // 0.7.0兼容扩展，缺省600，仍受totalTokens约束
     selfProfileTokens?: number; // 0.9.0兼容扩展，缺省350，仍在totalTokens内
+    recentMemoryTokens?: number; // 0.13.0兼容扩展，缺省600，仍在totalTokens内
   };
   artifactLimits: {
     axes: number;
@@ -567,20 +568,20 @@ interface PersonaConfig {
 | `consolidationMode` | `sleep` | 人格自主选择睡眠及对应增量整理；可以只休息，也可清醒时显式run；on_write合并写后机会，由人格选择run/defer |
 | `conversationStyle` | `short_chat` | 表达偏好；另可选balanced/detailed，无硬字数、条数或频率 |
 | `timezone` | 部署时设置IANA名称，如`Asia/Shanghai` | 环境可提供本次真实时区，不能由目录名推测 |
-| `longTermTargetChars` | 1,000,000 | **整个实例**持久记忆正文总目标，含C1/C2/C3/印象/编码等，不按人数倍增 |
-| `recentTargetChars` | 100,000 | 当前对象的近期读取目标/物化视图候选容量，不是进prompt的字数 |
-| `recentPreferredDays` | 3 | 近期优先，不保证3天内任何量都100%保留 |
+| `longTermTargetChars` | 1,000,000 | 整个实例活动长期时间线原文与注释字符，超额最旧记录完整转归档，不按人数倍增 |
+| `recentTargetChars` | 100,000 | 整个实例短期时间线容量，超额转长期；模型仅取得当前对象的有界参考 |
+| `recentPreferredDays` | 3 | 近期存放跨度，和近期字符上限共同决定转入长期；转层不丢内容 |
 | `tempTargetChars` | 200,000 | 整个实例热区缓存候选总量；原件可用引用与分页读取 |
 | `diskReserveBytes` | 部署填写非负字节数并检查可用空间 | 物理资源保护，不能留一个假装普适的默认值 |
-| `contextBudget` | 总2,970；既有分段120/200/700/150/300/1,500，深刻参考600、自我资料350 | 参考段是局部分段帽，不增加总预算；合计仍受2,970最终约束，不要求填满 |
+| `contextBudget` | 总2,970；既有分段120/200/700/150/300/1,500，深刻参考600、自我资料350、近期参考600 | 参考段是局部分段帽，不增加总预算；合计仍受2,970最终约束，不要求填满 |
 | `artifactLimits` | 原类型5/12/20/24/8/8/80/12/30/80；深刻记忆128条／100000字符 | 按类型限制存储量；与单条、文档、实例帽同时成立，无必须达到的最小条数 |
 | `retention` | 快照50次、人格历史5版；journal/backup字节上限部署填写 | 有界恢复与诊断，不永久保存所有材料 |
 
 `sleep` 是默认的睡眠整理使用方式；人格仍需选择本次整理工作。`on_write` 合并呈现写入后的整理机会，复用正常对话让人格判断是否必要，不再每写一条自动发起付费整理。`consolidationPlan.run` 是一次性所选增量，`defer` 暂缓；清醒时也可整理。两模式沿用来源和提交游标，不重放旧经历。
 
-持久文本按Unicode code point计字符；物理空间另计UTF-8字节、JSON结构、索引、journal、快照、备份及副本。持久记忆的重复正文副本也计入总目标，不把增加文件当作绕过上限。`retired` 与旧版本同样受限；需要保留的精华可由人格合并为概括，不无限追加归档。
+时间线字符按Unicode code point计数；longTermTargetChars只约束活动长期层的原文与统一注释文本，默认1000000。超过时将最旧记录完整转入归档，不自动删除。人格、关系、索引、深刻记忆与有限旧版本仍受各自文档／条目／实例物理帽约束，不占该100万活动时间线配额。全部层、JSON结构、来源索引、journal、快照、备份及副本的UTF-8字节仍计入真实物理空间，归档不能绕过storeBytes与磁盘安全余量。
 
-人格决定记住什么、何时整理。接近目标先向它提供容量、积压和调用成本事实；达到真实安全容量边界时，程序可以暂停本插件新增冗余副本，保存有界源指针、`MemoryGap` 与回补游标并报告降级，保持正常聊天可用。它仍未决定睡觉时，不伪称它已经睡着，也不强迫它梳理；源日志不可读时如实报告无法回补的缺口，不承诺零损失。
+人格决定如何理解、补充注释、形成何种记忆及何时整理；短期／长期／归档的时间与容量转层是程序本地执行，不依赖一次模型整理成功。达到实例物理上限或真实磁盘安全边界时保留旧资料，拒绝无法安全提交的新副本，保存可用的有界源指针、MemoryGap与回补位置并明确报告；不自动删归档、不强迫梳理或睡觉。源不可用时如实报告缺口，不能把未保存说成已完整保存。
 
 token必须用实际模型对应的统一计数方法。S6宿主历史、工具定义、输出预留与本插件各段一起纳入请求预算；分段上限不能证明整个请求一定装得下。超预算先少取材料/分页；由人格判断是否需要检索及取什么，不用固定“输入短于30字禁止检索”替代。采集、队列、索引打分为本地过程；人格判断可复用正常轮次或必要独立调用，分别统计判断、梳理、重试和回复费用，不承诺每轮零额外调用或每天固定不超过6次。
 
@@ -590,7 +591,7 @@ token必须用实际模型对应的统一计数方法。S6宿主历史、工具�
 
 旧文件迁移须显式转换：旧`source`拆为根事件`origin`和材料`epistemic`；旧kind名称映射到四类；`traits`/旧签名自由转成描述；旧`boundary.type`转成`kind:"boundary"`与`policy`；旧固定偏移转时区只有知道真实时区时才转换，否则留空；旧假定`sd`清为`null`且`n:0`。不能把旧0.6或5次门槛带回新校验器。迁移输出使用`persona-memory/3`，保留有限可回退的改前版本；已存在的明确撤销仍优先于回滚版本。
 
-实现验收至少覆盖：对象归属与跨对象显式查询、未知事件后续assignment、源事件重放去重、主观解释从首次经历起可用、边界与承诺参与人格判断而不触发硬执行、共同人格跨关系成长、自然裁剪后重要概括仍可用、明确遗忘在重建后不复活、run中断恢复与新热区不误删、请求快照不串用、睡眠队列与醒来接收、两模式切换、outbox交付对账、容量降级及真实token/费用。人格条目数量、受欢迎程度、承诺是否按时履行、固定预测一致性均不是软件通过与否的硬门槛。
+实现验收至少覆盖：对象归属与跨对象显式查询、未知事件后续assignment、源事件重放去重、主观解释从首次经历起可用、边界与承诺参与人格判断而不触发硬执行、共同人格跨关系成长、短期／长期／归档转层后原件与重要概括仍可用、明确遗忘在重建后不复活、run中断恢复与新热区不误删、请求快照不串用、睡眠队列与醒来接收、两模式切换、outbox交付对账、容量降级及真实token/费用。人格条目数量、受欢迎程度、承诺是否按时履行、固定预测一致性均不是软件通过与否的硬门槛。
 
 研究出处保留在`research-persona.md`、`research-relation.md`、`external-research.md`及对应证据说明中。CAPS/Whole Trait Theory支持关注情境与变异，不直接给出本JSON结构、签名条数或禁用场景词的产品规则；锚定研究只支持其测试范围，不证明锚必须永远不变。上述schema、资源初值和控制接口是本项目的工程设计，须用插件实测验证。
 
@@ -621,6 +622,8 @@ token必须用实际模型对应的统一计数方法。S6宿主历史、工具�
 0.1.1轮真实 at_time 睡醒、主动、非空成长和 sleep/on_write 整理已有运行证据；当时其它唤醒枚举、跨月人格效果等边界见该轮复核报告，不把此前 fixture 充当当时真实模型结果。0.2.0补测与当前边界统一见第12节所链报告。
 
 ## 12. 自主整理与资源边界（0.2.0）
+
+> 本节保留0.2.0当时的资源与实测范围；0.13.0时间线活动容量、归档保真和必要上下文按第26节执行，不将本节旧的自然淘汰口径继续作为当前存储策略。
 
 consolidationPlan.run 是一次性决定，有稳定job/child-run和原件范围；省略目标取认人effect完成后的当前人物加null，显式[]无工作且不付费、不消费。defer不启动新工作、不要求证明不整理的理由，也不伪称取消已实际开始的单页。所有适用模块在本次增量中可更新或不变；没有单独模块选择却推进统一游标的问题。省略字段保留计划描述，不重复执行已完成作业。整理不以睡眠为前提，普通sleep可以仅休息；选择consolidation_complete表示选择对应整理，不能与明确defer或无工作范围矛盾。
 
@@ -791,7 +794,7 @@ interface DeepMemoryReferenceCard {
 
 写入使用现有ValidatedPatchEntry，documentKey为global:deep、recordId为稳定条目ID，upsert/remove均由人格所选整理提出。空模块和空patch有效，没有必须形成或治愈的条目。修改沿用版本、冻结run与有限journal；不保证每次历史变化永久保留。srcRefs追同一原件，feltThen和meaningNow分开表达，并不强制人格原谅、遗忘或采取固定情绪反应。
 
-artifactLimits.deepMemories默认128、deepMemoryChars默认100000；全部字符串值计入文本量，单条16,000字符／65,536序列化字节、业务JSON1MiB和实例物理64MiB等帽继续同时成立。深刻记忆纳入原长期文本目标，不能通过另增文件绕过容量。满容量时明确拒绝超限变更并保留旧内容，不按情绪、重要度分数或时间自动裁剪。
+artifactLimits.deepMemories默认128、deepMemoryChars默认100000；全部字符串值计入文本量，单条16,000字符／65,536序列化字节、业务JSON1MiB和实例物理64MiB等帽继续同时成立。0.13.0起深刻记忆受本模块字符／条目和实例物理帽约束，不占活动长期时间线的longTermTargetChars；不能通过另增文件绕过物理容量。满容量时明确拒绝超限变更并保留旧内容，不按情绪、重要度分数或时间自动裁剪。
 
 普通snapshot可含deep_memory_reference参考段。contextBudget.deepMemoryTokens默认600，总预算仍为2970；空模块不添加该段，非空时在实际剩余预算内优先保留完整参考卡；首张完整卡超限时可显式缩略为partial:true，附titleTotalChars、referenceTotalChars与omittedFields，不冒称全文。参考段给出referenceOnly:true、automaticRecall:false、total、shown、truncated、nextOffset和实际items。nextOffset只标记参考目录尚未显示的位置，不是人格回忆条件或通用工具cursor。snapshot.deepMemoryReference另保留实际显示ID与完整性元数据；参考进入本轮不代表已触发回忆。没有关键词命中、强制重播、固定频率、情绪比例或自动衰减。
 
@@ -828,7 +831,7 @@ applyConsolidation中的srcRefs须指向已接收的真实源根，存在的角�
 
 reviewState.assistantReceipt用材料指纹key登记in_flight、completed、unknown或unavailable等实际结果，并可在运行回执中查看。助手与人格共用consolidationCallsPerSegment；只有至少剩两次调用机会才尝试助手，保留人格最后一次机会。材料相同的已得报告复用，未知不自动付费重放；失败降低可选建议的可用性，不形成价值否决，不把建议写成validatedPatch。即使启用助手，最终记什么、怎样理解和是否改变仍由人格决定。
 
-提交后保留的sourceDependencies采用sha256-identities/1来源／记录摘要收据，追踪实际读入材料而不另存原话。明确遗忘会清除受影响已提交journal的patch、助手报告与可回读诊断正文，保留提交标记、调用数等技术回执；旧档缺完整依赖时在撤销后保守去诊断正文，不删除无关人格记录。自然原件淘汰保留人格解释和仍受容量约束的诊断。人格所选retain片段本身也是来源；明确遗忘命中task-material时按真实任务会话、文档ID、SHA与Unicode范围撤销该任务资料，不能换页重新保留；自然淘汰和无关新任务不受影响。
+提交后保留的sourceDependencies采用sha256-identities/1来源／记录摘要收据，追踪实际读入材料而不另存原话。明确遗忘会清除受影响已提交journal的patch、助手报告与可回读诊断正文，保留提交标记、调用数等技术回执；旧档缺完整依赖时在撤销后保守去诊断正文，不删除无关人格记录。时间线转入长期或归档保留原件、人格解释和仍受容量约束的诊断；转层本身不撤销来源。人格所选retain片段本身也是来源；明确遗忘命中task-material时按真实任务会话、文档ID、SHA与Unicode范围撤销该任务资料，不能换页重新保留；时间线转层和无关新任务不受影响。
 
 显式遗忘去正文后的journal只承诺提交／状态／调用等最小技术回执，不将已移除的正文视图字段冒充完整ConsolidationRun。助手调度前为建议或明确遗漏状态及真实共享调用数预留完整请求空间；主整理与助手使用同一实际源片段。空间不足时跳过未付费助手并说明原因，不通过丢源正文或隐去调用事实腾位置。
 
@@ -1190,3 +1193,75 @@ UI 出错停止2.5秒自动读取，仅本地倒数，到期由本人点“重�
 前阶段正式宿主加载后曾恢复同一个仍存活的在线受控QQ，无需新扫码；之后一次重启停止了旧受控进程，本次最终运行已启动新的受控QQ并取得verified归属证明，目前等待本人重新扫码，OneBot API尚不可用，主QQ保持运行。不能用前阶段在线事实代替当前登录，也不据此宣布优雅关闭通过。实际ownership残锁自动恢复、1289项完整回归及修后真实模型3次只读调用已有各自证据；登录后平台材料与未执行的写操作仍待验证，详见[阶段观测](../../account-capabilities.md#0120-stage-observations)，不改变上述字段契约。
 
 `launching`记录同时是未核实启动屏障：即使旧WebUI没有监听，也不能据此认定原QQ已经退出并spawn第二套。后台返回`NAPCAT_OWNED_LAUNCH_UNVERIFIED`与`manualCloseRequired`，请本人确认并关闭旧受管QQ后处理；不会按记录年龄自动回收，也不能用launching记录作为收养或授权stop进程的依据。此边界不代表新版真实recover或平台写入已经验收。
+
+<a id="0130-memory-timeline-contract"></a>
+
+## 26. 统一时间线与必要人格上下文（0.13.0）
+
+本节替代第2／3／8节中旧的“容量满自然删除原文”和“100万字符包含全部人格文本”的口径。外层仍为persona-memory/3；平台工具、主观人格成长、关系、深刻参考、睡眠和自主委派不变。格式和转层属于存储契约，不规定人格的观点、情绪、社交对象或成长频率。
+
+### 26.1 一份原件，同一格式
+
+每条真实交流记录继续保留原ChatRecord的id、eventId、sourceSessionId、sourceEventId、personId、speakerId、role、origin、sourceKind、text、sourceAt和observedAt，并增加：
+
+```ts
+interface TimelineAnnotation {
+  format: "persona-timeline/1";
+  title: string;
+  occurredAt: EpochMs;       // 等于原始sourceAt，不是整理时刻
+  recordedAt: EpochMs;       // 等于原始observedAt
+  background: string;
+  process: string;
+  outcome: string;
+  details: string;
+  feltThen: string;
+  meaningNow: string;
+  indexCodes: string[];
+  relatedMemoryIds: string[];
+  provenance: Record<string, {
+    refs: Array<{sourceSessionId: string; sourceEventId: string}>;
+    recordIds: string[];
+  }>; // 程序记录每个注释字段的来源，模型不能填写
+}
+type TimelineTier = "recent" | "long_term" | "archive";
+```
+
+实际原话text是权威；注释默认空字符串／空数组，不为填模板编造标题、经过或感受。原始事件时间与初次观察时间分开；注释不改原话、角色、来源或时间。相同sourceSessionId／sourceEventId始终是同一根事件，转层不增加一次经历。相同发生时间用原接收eventId与稳定id继续排序。
+
+人格可在既有自主整理中提出global:timeline补丁，expectedVersion取冻结inputVersions["global:timeline"]，recordId必须是实际交流原件id。upsert只修改title／background／process／outcome／details／feltThen／meaningNow／indexCodes／relatedMemoryIds；remove只清这些注释，不删除交流原件。数组每项最多200个Unicode字符、每数组最多128项，整次补丁仍受既有单条与请求帽。想明确遗忘原件时仍走独立撤销接口，不借remove注释伪装删源。索引编码和关联记忆继续服务检索，不自动触发某种回忆或情绪。
+
+timeline.provenance由宿主从实际run.input.chat／hot和冻结context.sourceDependencies记录到每个非空注释字段；不是模型声明的来源，也不改变原话。每字段最多128个refs和256个recordIds，超量或来源收集不完整时技术拒绝，不截掉依赖凑容量。明确遗忘B时，A原件中依赖B的注释字段会清空并移除相应provenance，A无关原话保留；从旧备份恢复也先应用现行撤销，重新计算归档分片SHA和count／chars，不借旧注释复活已忘内容。
+
+### 26.2 时间、容量与转层
+
+短期沿用people/<personId>/stream.jsonl与staging/events.jsonl；长期位于timeline/long/person-<personId>.jsonl或unknown.jsonl；归档为timeline/archive/八位数字.jsonl。timeline/catalog.json保存persona-timeline-catalog/1、版本、各层count／chars与归档分片path／count／chars／bytes／SHA256，来源收据记录实际storagePath。
+
+recentPreferredDays默认3，recentTargetChars默认100000，按同一实例的近期交流合计。超过时间或近期容量的记录进入长期；longTermTargetChars默认1000000，只计活动长期层text与标题／前因／过程／结果／细节／当时感受／当前理解的Unicode码点，超过时从最旧记录开始完整转归档。人格、关系、普通索引、编码与深刻参考另受各自业务条目／文档和实例物理帽约束，不抢活动长期层配额。
+
+转层在打开库、接收、读取近况、修改相关配置及时间线管理时本地维护，不新建固定模型定时整理。原文和注释值完整保留，同一WAL提交来源索引、原层、目标层与目录；中断重开恢复，不把半批转层当完成。归档分片通常不超过1MiB，并受journal预算约束；单条超分片目标可独占，但仍受真实单条／事务／物理硬帽，不能截断原文凑容量。已归档的旧记录不因时钟回退或调大近期范围自动复制回活动层，仍可回查。
+
+旧库迁移只为仍然存在的原件补统一格式并转存，保持原始编号、来源和文字。旧版本已自然裁剪、明确删除或未实际保存的原文不能凭空恢复；现存概括与来源引用不冒充找回了全部细节。
+
+归档不自动删除。全部层仍计入capacityLimits.storeBytes与磁盘安全余量；到真实硬边界保留旧资料并拒绝无法安全提交的新副本，报告MemoryGap和可回补来源，不伪称保存成功。用户可明确备份、增加容量或选择归档原件遗忘；此操作沿原撤销语义同时处理受影响派生，不能声称只删冷文件而完整保留对应依赖。转层保真不等于无限存储、异盘备份或硬件故障零损失。
+
+### 26.3 读取、检索和管理消费者
+
+getContext提供recentMemory={items,total,omitted,preferredDays,asOf,originalsRemainQueryable:true}，items来自同库当前对象的短期原件。普通近况组装不扫描长期／归档正文；详细搜索、sourceRefs原件回读、详情、关联更正、明确遗忘、校验、备份与恢复覆盖各层。检索可使用原文、统一注释和indexCodes，relatedMemoryIds保留真实关联；结果仍说明真实人物与角色。
+
+owner管理新增memory.timeline.status与memory.timeline.list。list接受tier=recent|long_term|archive|all、可选query（最多512字符）、可选personId（null选择未归属）、pageSize（最多100）与同次结果cursor，保持有界分页。详情和明确遗忘复用memory.detail／memory.forget。界面“记忆 → 短期、长期与归档”展示各层数量／字符、筛选与上下翻页，展开详情才读完整记录。数据变化或换人格使旧cursor失效时应重新查询，不能将某页结束称为整个记忆库结束。显式时间线浏览／搜索当前会扫描所选层的本地JSONL后形成有界结果；响应分页限制返回量，不等于磁盘索引按页读取，也不承诺大归档恒定I/O。
+
+### 26.4 每轮必要上下文和故障
+
+必要人格背景在模型请求前由程序加载，不依赖人格先主动调用读取工具。当前身份核心（name／pronouns／gender／ageDescription／birthday／selfDescription）、anchor与axes、当前对象身份与关系概要、有效计划／休息事实及有界近期参考必须成功组装；扩展人格、习惯、关系条目、初始用户想法与详细往事按实际预算提供完整条目，并列出省略信息或可读原件。深刻记忆仍为referenceOnly／automaticRecall:false，不强制激活或规定反应。
+
+contextBudget总动态默认2970计数单位，新增recentMemoryTokens局部默认600，仍包含在总额内。必要核心不按局部帽截成残片，超出原局部预算可在总帽内调整；必要内容连总帽也放不下时返回PERSONA_CONTEXT_BUDGET或ESSENTIAL_CONTEXT_BUDGET，不悄悄删核心。近期段保留真实来源和Unicode范围，超长记录标fragment、未显示数量和originalsRemainQueryable；当前来信尚待原始输入分页时，pendingInputReferences只记录该引用，不在近期段重复正文，也不表示整条或未读尾部已消费；参考不推进源消费游标。
+
+人格资料／必要近期读取失败返回PERSONA_CONTEXT_UNAVAILABLE并暂停本次人格生成，不退回缺少人格的普通模型请求。DSH assemble与middleware保留同一故障，不吞错继续next；控制、回复和唤醒通过同一核心组装。失败不消耗尚未处理消息，恢复后可以继续。tokenizer不可用时仍明确utf8_bytes_estimate，2970不是整个宿主请求帽；工具、历史和输出预留另计。
+
+新库合法的空人格和从未保存的自我档案可以为空；已保存自我档案由meta.requiredDocuments登记，缺文件不能退回空身份。已建立的人格／meta／runtime／config和timeline/catalog实际缺失时明确报错，不把损坏库当新人格初始化。
+
+DSH最终llm/stream还核对真实system消息中的protocol／conversation／live正文投影（字符串或text多part），以实际sessionId和本步AbortSignal固定准备结果；第三方后来覆盖完整提示导致缺人格时，在实际模型调用前抛PERSONA_CONTEXT_UNAVAILABLE，不能只凭快照元数据判定已注入。不同会话／信号和合法重试各核自己的冻结投影，不把本次失败扩展到其他会话；独立任务工作预设继续隔离。
+
+### 26.5 本轮验收边界
+
+本轮按用户自行验证QQ的安排，不运行真实模型或平台验收；QQ头像／资料／空间由用户自行操作，其他社交连接显示未测试；没有为了补覆盖而强迫人格修改资料。隔离持久化、故障和加载测试的实际结果以[0.13.0机器回执](../../verification/0.13.0-memory-timeline.json)为准，不预填通过数，也不以0.12.0的1289项替代。本节不新增人格判断、固定梳理频率、强制情绪或深刻回忆规则。

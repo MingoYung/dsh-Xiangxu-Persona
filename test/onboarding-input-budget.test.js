@@ -35,7 +35,7 @@ function actualEnvironment(snapshotText) {
 }
 
 test('small control requests fit actual framing while retaining full route, availability and unconsumed source tails', async t => {
-  const f = await fixture(t);
+  const f = await fixture(t, { inputBudget: 6000 });
   await f.repository.updateSelfProfile({ current: { name: '相续' } }, { actor: 'persona' });
   const source = await f.runtime.accept(original('long', 'BEGIN_TEXT_' + '很长的原始消息😀'.repeat(3000)), environment);
   await f.runtime.accept(original('unseen_tail', '这条尚未被这一页读取'), environment);
@@ -44,7 +44,7 @@ test('small control requests fit actual framing while retaining full route, avai
     wakeSummary: [{ personId: 'a', channelId: 'channel_a', sessionId: 'session_a', records: pending }] });
   assert.equal(f.requests.length, 1);
   const request = f.requests[0], serialized = JSON.stringify(request.messages);
-  assert.ok(Array.from(serialized).length <= 5000);
+  assert.ok(Array.from(serialized).length <= 6000);
   assert.equal(serialized.split('BEGIN_TEXT_').length - 1, 1);
   const payload = JSON.parse(request.messages.at(-1).content);
   assert.equal(payload.pending.length, 1); assert.equal(payload.pending[0].fragment.complete, false);
@@ -59,7 +59,19 @@ test('small control requests fit actual framing while retaining full route, avai
   assert.deepEqual(facts.target, target); assert.equal(facts.timezone, 'UTC'); assert.equal(facts.now, 1000);
   assert.equal(facts.memoryAvailability.retrieval, 'not_requested'); assert.equal(facts.memoryAvailability.storeContent, 'not_assessed');
   assert.ok(snapshot.injectedText.includes('相续')); assert.ok(snapshot.selfProfileReference.shown.includes('current.name'));
-  assert.ok(snapshot.budgetAdjustments.some(item => item.reason === 'preserve_request_framing_and_pending_source'));
+  assert.equal(snapshot.mandatoryContext.complete, true);
+});
+
+test('a tight control envelope cannot drop required identity and recent facts merely to admit a source fragment', async t => {
+  const f = await fixture(t, { inputBudget: 5000 });
+  await f.repository.updateSelfProfile({ current: { name: '相续' } }, { actor: 'persona' });
+  const source = await f.runtime.accept(original('tight-long', 'BEGIN_TEXT_' + '很长的原始消息😀'.repeat(3000)), environment);
+  await f.runtime.accept(original('tight-tail', '这条尚未被这一页读取'), environment);
+  const pending = await f.repository.getPending();
+  await assert.rejects(f.runtime.handleSignal('new_message', { personId: 'a', environment, incoming: source.record,
+    wakeSummary: [{ personId: 'a', channelId: 'channel_a', sessionId: 'session_a', records: pending }] }), { code: 'MODEL_INPUT_BUDGET' });
+  assert.equal(f.requests.length, 0); assert.equal((await f.repository.getSnapshots()).length, 0);
+  assert.equal((await f.repository.getPending()).length, 2);
 });
 
 test('reply requests count the actual outgoing framing and include a long incoming original only in the selected pending fragment', async t => {

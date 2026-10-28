@@ -65,6 +65,9 @@ function knownFile(name) {
     || /^staging\/(?:events|hot)\.jsonl$/.test(name)
     || /^people\/[A-Za-z0-9_-]{1,160}\/(?:identity|index|codes|impression|pending|state)\.json$/.test(name)
     || /^people\/[A-Za-z0-9_-]{1,160}\/(?:stream|hot)\.jsonl$/.test(name)
+    || name === 'timeline/catalog.json'
+    || /^timeline\/long\/(?:unknown|person-[A-Za-z0-9_-]{1,160})\.jsonl$/.test(name)
+    || /^timeline\/archive\/\d{8}\.jsonl$/.test(name)
     || /^journal\/runs\/[A-Za-z0-9_-]{1,160}\.json$/.test(name)
     || /^\.wal\/[a-f0-9]{64}\.json$/.test(name)
     || name === 'extensions/qq-account/index.json'
@@ -73,6 +76,7 @@ function knownFile(name) {
     || /^extensions\/qq-account\/receipts\/qqop-[a-f0-9]{32}\/(?:00000[0-9]|0000[1-5][0-9]|00006[0-4])\.json$/.test(name);
 }
 const knownDirectory = name => ['meta', 'self', 'global', 'identity', 'voice', 'ops', 'operator', 'staging', 'people', 'journal', 'journal/runs', '.wal', 'extensions', 'extensions/qq-social'].includes(name)
+  || ['timeline', 'timeline/long', 'timeline/archive'].includes(name)
   || /^people\/[A-Za-z0-9_-]{1,160}$/.test(name)
   || ['extensions/qq-account','extensions/qq-account/queries','extensions/qq-account/receipts','extensions/qq-account/.wal'].includes(name)
   || /^extensions\/qq-account\/receipts\/qqop-[a-f0-9]{32}$/.test(name);

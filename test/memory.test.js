@@ -73,14 +73,15 @@ test('correct cross-subject recall is supported without reassigning an A fact to
   assert.ok(explicit.items.length); assert.ok(explicit.items.every((r) => r.personId === 'a'));
   assert.ok((await repository.search({ query: '豆豆', scope: 'all' }, { personId: 'b' })).items.some((r) => r.personId === 'a'));
 });
-test('natural eviction keeps important summaries while explicit forgetting persists through replay/rebuild', async (t) => {
+test('natural eviction archives originals alongside summaries while explicit forgetting persists through replay/rebuild', async (t) => {
   const { repository } = await fixture(t); await repository.upsertPerson({ personId: 'a' });
   const original = await repository.ingest(chat('source', '豆豆是一只猫', 'a'));
   await memoryPatch(repository, 'a', '豆豆是一只很重要的猫');
   await repository.clearPending([original.record.eventId]);
   await repository.evictSources([original.record.id]);
   const summaries = (await repository.search({ query: '豆豆' }, { personId: 'a' })).items;
-  assert.equal(summaries.length, 1); assert.equal(summaries[0].srcRefs[0].available, false);
+  assert.equal(summaries.length, 2); assert.ok(summaries.every(row => row.srcRefs[0].available === true));
+  assert.equal(summaries.find(row => row.id === original.record.id).tier, 'archive');
   const before = await repository.prepareConsolidation({ personId: 'a' });
   await repository.forget({ ids: ['fact1'], reason: '明确忘掉豆豆' }, { personId: 'a' });
   assert.equal((await repository.search({ query: '豆豆' }, { personId: 'a' })).items.length, 0);
@@ -102,12 +103,14 @@ test('no selector does not delete a person; persona/relationship scalars obey ex
   assert.equal((await repository.getPersona()).anchor.text, '');
   assert.equal((await repository.getContext({ personId: 'a' })).impression.summary, '');
 });
-test('capacity degrades redundant copies, preserves conversation autonomy, and hot overflow uses truthful pointers', async (t) => {
+test('long-term target rotates source storage without blocking conversation, and hot overflow uses truthful pointers', async (t) => {
   const { repository } = await fixture(t, { tempTargetChars: 3 });
   await repository.upsertPerson({ personId: 'a' }); await repository.ingest(chat('1', '12345', 'a'));
   await repository.updateConfig({ longTermTargetChars: (await repository.getCapacity()).persistentChars });
   const exceeded = await repository.ingest({ ...chat('2', '6', 'a'), hostAvailable: true });
-  assert.ok(exceeded.gap); assert.equal(exceeded.record, null);
+  assert.equal(exceeded.gap, undefined); assert.ok(exceeded.record);
+  await repository.updateConfig({ recentTargetChars: 0 });
+  assert.equal((await repository.getTimelineStatus()).archive.count, 2);
   const captured = await repository.captureHot(hot('r', 'full reasoning too long', 'a'));
   assert.equal(captured.record.content.mode, 'host_trace');
   assert.equal(captured.record.content.available, false); assert.ok(captured.gap);
@@ -280,11 +283,15 @@ test('zero diagnostic retention means no snapshots or completed receipts are ret
 });
 test('source recovery resolves only matching gaps and reconciles pre-admission message IDs with final seq', async (t) => {
   const { repository } = await fixture(t); await repository.upsertPerson({ personId: 'a' });
-  await repository.updateConfig({ longTermTargetChars: (await repository.getCapacity()).persistentChars });
+  const checkCapacity = repository.store._checkCapacity.bind(repository.store);
+  repository.store._checkCapacity = async (entries, manifest) => {
+    if (entries.some(entry => entry.path === 'people/a/stream.jsonl' && entry.text?.includes('large'))) throw Object.assign(new Error('injected physical storage limit'), { code: 'CAPACITY_EXCEEDED', resource: 'storeBytes' });
+    return checkCapacity(entries, manifest);
+  };
   await repository.ingest({ ...chat('message-id', 'too large', 'a'), sourceCursor: 'message:message-id', hostAvailable: true });
   await repository.ingest({ ...chat('another-id', 'also large', 'a'), sourceCursor: 'message:another-id', hostAvailable: true });
   assert.equal((await repository.getRuntime()).memoryGaps.length, 2);
-  await repository.updateConfig({ longTermTargetChars: 1000 });
+  repository.store._checkCapacity = checkCapacity;
   await repository.ingest({ ...chat('message-id', 'too large', 'a'), sourceCursor: '42', hostAvailable: true });
   const result = await repository.resolveMemoryGaps({ sourceSessionId: 's1', sourceCursor: 42, sourceEventId: 'message-id', updateReceivedCursor: true });
   assert.equal(result.resolvedIds.length, 1);
@@ -345,13 +352,13 @@ test('first accepted source is immediately usable without evidence or role thres
   assert.deepEqual(await repository.validateSourceRefs([ref], { requireOriginal: true }), [ref]);
   assert.deepEqual(await repository.getRuntime(), before); assert.deepEqual(await repository.listPeople(), []);
 });
-test('source preflight distinguishes natural original unavailability from explicit revocation', async (t) => {
+test('source preflight retains naturally archived originals and distinguishes explicit revocation', async (t) => {
   const { repository } = await fixture(t); await repository.upsertPerson({ personId: 'a' });
   const original = await repository.ingest(chat('natural', '原话可以自然忘掉', 'a'));
   const ref = { sourceSessionId: 's1', sourceEventId: 'natural', available: false };
   await repository.clearPending([original.eventId]); await repository.evictSources([original.record.id]);
   assert.deepEqual(await repository.validateSourceRefs([ref]), [ref]);
-  await assert.rejects(repository.validateSourceRefs([ref], { requireOriginal: true }), { code: 'SOURCE_UNAVAILABLE' });
+  assert.deepEqual(await repository.validateSourceRefs([ref], { requireOriginal: true }), [ref]);
   const revoked = await repository.ingest(chat('revoked', '明确撤回', 'a'));
   await repository.forget({ ids: [revoked.record.id], reason: '明确撤回' }, { personId: 'a' });
   await assert.rejects(repository.validateSourceRefs([{ sourceSessionId: 's1', sourceEventId: 'revoked', available: true }]), { code: 'SOURCE_REVOKED' });
@@ -370,7 +377,7 @@ test('readSources retrieves acknowledged originals by stable root or event witho
   assert.deepEqual(await repository.readSources(), []);
   assert.deepEqual(await repository.readSources({ eventIds: ['unknown'] }), []);
   await repository.evictSources([first.record.id]);
-  assert.deepEqual(await repository.readSources({ eventIds: [first.eventId] }), []);
+  assert.equal((await repository.readSources({ eventIds: [first.eventId] }))[0].tier, 'archive');
   await repository.assign({ sourceSessionId: 's1', sourceEventId: 'staged', personId: 'a' });
   await repository.forget({ ids: [unknown.record.id], targetPersonId: 'a', reason: '明确撤回' });
   assert.deepEqual(await repository.readSources({ sourceRefs: [{ sourceSessionId: 's1', sourceEventId: 'staged' }] }), []);

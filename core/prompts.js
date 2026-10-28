@@ -1,7 +1,6 @@
 import { SCHEMA_VERSION, newId } from './schema.js';
-import { extractSourceDependencies } from './source-dependencies.js';
-import { fitDeepMemoryReferences } from './deep-memory.js';
-import { selfProfileContext, conversationOrientation } from './onboarding.js';
+import { buildContinuitySnapshot } from './request-snapshot.js';
+import { conversationOrientation } from './onboarding.js';
 
 export function detached(value) { return value === undefined ? undefined : structuredClone(value); }
 export function freeze(value) {
@@ -13,7 +12,6 @@ export function freeze(value) {
 }
 
 const stringify = value => JSON.stringify(value ?? null);
-const description = value => typeof value === 'string' ? value : value?.desc ?? value?.text ?? '';
 
 export function createTokenCounter({ model, host, counter } = {}) {
   const exact = counter ?? model?.countTokens?.bind(model) ?? host?.countTokens?.bind(host);
@@ -27,142 +25,8 @@ export function createTokenCounter({ model, host, counter } = {}) {
   return { method: 'utf8_bytes_estimate', count: async text => Buffer.byteLength(String(text), 'utf8') };
 }
 
-async function fit(text, limit, counter) {
-  if (limit <= 0) return '';
-  if (await counter.count(text) <= limit) return text;
-  const points = Array.from(text), marker = '\n[truncated; original available through source references]\n';
-  let low = 0, high = points.length, best = '';
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const candidate = points.slice(0, mid).join('') + marker;
-    if (await counter.count(candidate) <= limit) { best = candidate; low = mid + 1; }
-    else high = mid - 1;
-  }
-  if (best) return best;
-  low = 0; high = points.length;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2), candidate = points.slice(0, mid).join('');
-    if (await counter.count(candidate) <= limit) { best = candidate; low = mid + 1; }
-    else high = mid - 1;
-  }
-  return best;
-}
-
-/** No retrieval eligibility, taboo filter, evidence quorum or personality scoring is performed. */
-export async function buildSnapshot({ context = {}, material = {}, state = {}, config, now, counter }) {
-  const persona = material.persona ?? {}, relation = material.impression ?? {};
-  const facets = persona.facets ?? [], signatures = persona.signatures ?? [];
-  const budgets = config.contextBudget;
-  const ownId = context.personId ?? null;
-  const relevant = entries => entries.filter(x => x.scope !== 'person' || x.personId === ownId);
-  const memories = context.memories ?? [];
-  const target = { channelId: context.channelId ?? context.environment?.channelId ?? '',
-    sessionId: context.sessionId ?? context.environment?.sessionId ?? '', personId: ownId };
-  const capacity = context.capacity;
-  const resources = capacity && capacity.available !== false ? { available: true,
-    longTermChars: { used: capacity.persistentChars ?? null, limit: capacity.longTermTargetChars ?? null },
-    tempChars: { used: capacity.hotChars ?? null, limit: capacity.tempTargetChars ?? null },
-    storeBytes: { used: capacity.physicalBytes ?? null, limit: capacity.storeBytes ?? null },
-    pressure: capacity.pressure ?? null, unresolvedGaps: capacity.memoryGapCount ?? null }
-    : { available: false, errorCode: capacity?.errorCode ?? null };
-  const essential = { now, timezone: context.timezone ?? context.environment?.timezone ?? config.timezone,
-    target, sleep: state.sleep?.state ?? 'awake',
-    resources, memoryAvailability: context.memoryAvailability ?? material.memoryAvailability ?? { storeContent: 'not_assessed', retrieval: 'not_requested' },
-    consolidation: { mode: config.consolidationMode,
-      opportunity: state.execution?.consolidationOpportunity ?? null,
-      jobs: Object.values(state.execution?.consolidationJobs ?? {}).slice(-3).map(job => ({ jobId: job.jobId, status: job.status })) } };
-  const essentialText = `[environment]\n${stringify(essential)}\n`;
-  const essentialTokens = await counter.count(essentialText);
-  if (essentialTokens > budgets.totalTokens) throw Object.assign(new Error('The request budget cannot carry the complete current route/time facts; no incomplete target was injected'), { code: 'ESSENTIAL_CONTEXT_BUDGET' });
-  const environmentBudget = Math.min(budgets.totalTokens, Math.max(budgets.environmentTokens, essentialTokens));
-  const budgetAdjustments = environmentBudget > budgets.environmentTokens
-    ? [{ segment: 'environment', configured: budgets.environmentTokens, applied: environmentBudget, reason: 'preserve_complete_route_and_time' }] : [];
-  let selfProfile;
-  const segments = [
-    ['environment', environmentBudget, stringify(essential) + '\n' + stringify({ environment: context.environment ?? null,
-      activePlan: state.currentDecision ? { reply: state.currentDecision.replyPlan?.action, replyAt: state.currentDecision.replyPlan?.replyAt,
-        nextCheckAt: state.schedule?.nextCheckAt, recheckOn: state.schedule?.recheckOn } : null,
-      sleep: state.sleep, capacity: context.capacity ?? null })],
-    ['self_profile', budgets.selfProfileTokens ?? 350, null],
-    ['anchor', budgets.anchorTokens, persona.anchor?.text ?? ''],
-    ['persona', budgets.personaTokens, { axes: Object.values(persona.axes ?? {}).map(description),
-      facets: relevant(facets).map(x => ({ id: x.id, desc: description(x), epistemic: x.epistemic })),
-      signatures: relevant(signatures).map(x => ({ id: x.id, if: x.if, then: x.then, epistemic: x.epistemic })) }],
-    ['habits', budgets.habitTokens, relevant(persona.habits ?? []).map(x => ({ id: x.id, text: x.text }))],
-    ['relationship', budgets.relationTokens, { personId: ownId, identity: material.identity, summary: relation.summary,
-      signatures: relation.signatures, coordinates: relation.coordinates, events: relation.events,
-      interpretations: material.interpretations, codes: material.codes,
-      boundaries: relevant(facets).filter(x => x.kind === 'boundary') }],
-    ['recalled_material', budgets.retrievalTokens, memories.map(x => ({ ...x }))],
-  ];
-  let deepReferences = { text: '', shownIds: [], total: (material.deepMemories ?? []).length, shown: 0, truncated: (material.deepMemories ?? []).length > 0 };
-  const result = [];
-  for (const [name, budget, value] of segments) {
-    const raw = typeof value === 'string' ? value : stringify(value);
-    const prefix = result.map(segment => segment.text).join('');
-    const available = Math.max(0, budgets.totalTokens - await counter.count(prefix));
-    let effectiveBudget = Math.min(budget, available), text, truncated;
-    if (name === 'environment') {
-      // Fit only the optional tail. Mandatory routing facts are never cut mid-ID.
-      const tail = raw.slice(stringify(essential).length + 1);
-      const completeTail = tail ? tail + '\n' : '';
-      let optional = await fit(completeTail, Math.max(0, effectiveBudget - essentialTokens), counter);
-      while (optional && await counter.count(essentialText + optional) > effectiveBudget) optional = Array.from(optional).slice(0, -1).join('');
-      text = essentialText + optional;
-      truncated = optional !== completeTail;
-    } else if (name === 'self_profile') {
-      // The environment's actual text, including its optional tail, has already
-      // consumed budget. Select whole profile fields from the true remainder.
-      // Re-measure the concatenation because tokenizer counts are not additive.
-      selfProfile = await selfProfileContext(material.selfProfile, { counter, budget: effectiveBudget });
-      while (selfProfile.text && await counter.count(prefix + selfProfile.text) > budgets.totalTokens) {
-        effectiveBudget = Math.max(0, effectiveBudget - 1);
-        selfProfile = await selfProfileContext(material.selfProfile, { counter, budget: effectiveBudget });
-      }
-      text = selfProfile.text; truncated = selfProfile.omitted.length > 0;
-    } else {
-      const complete = raw ? `[${name}]\n${raw}\n` : '';
-      text = await fit(complete, effectiveBudget, counter);
-      while (text && await counter.count(prefix + text) > budgets.totalTokens) {
-        effectiveBudget = Math.max(0, effectiveBudget - 1);
-        text = await fit(complete, effectiveBudget, counter);
-      }
-      truncated = text !== complete;
-    }
-    result.push({ name, budget: effectiveBudget, text, tokens: await counter.count(text), truncated });
-    if (name === 'habits' && (material.deepMemories ?? []).length) {
-      const prefix = result.map(segment => segment.text).join('');
-      let referenceBudget = Math.min(budgets.deepMemoryTokens ?? 600, Math.max(0, budgets.totalTokens - await counter.count(prefix)));
-      deepReferences = await fitDeepMemoryReferences(material.deepMemories, { budget: referenceBudget, counter });
-      while (deepReferences.text && await counter.count(prefix + deepReferences.text) > budgets.totalTokens) {
-        referenceBudget = Math.max(0, referenceBudget - 1);
-        deepReferences = await fitDeepMemoryReferences(material.deepMemories, { budget: referenceBudget, counter });
-      }
-      if (deepReferences.text) result.push({ name: 'deep_memory_reference', budget: referenceBudget,
-        text: deepReferences.text, tokens: await counter.count(deepReferences.text), truncated: deepReferences.truncated,
-        referenceOnly: true, automaticRecall: false, total: deepReferences.total, shown: deepReferences.shown });
-    }
-  }
-  const text = result.map(x => x.text).join(''), tokens = await counter.count(text);
-  // Each segment was admitted against the actual concatenated prefix. Never
-  // repair an overflow by cutting an already admitted profile or deep card.
-  if (tokens > budgets.totalTokens) throw Object.assign(new Error('Context segment accounting exceeded the total budget; no partial structured profile was injected'), { code: 'CONTEXT_SEGMENT_BUDGET' });
-  const snapshot = {
-    schemaVersion: SCHEMA_VERSION, requestId: context.requestId ?? newId('req'), sessionId: context.sessionId ?? context.environment?.sessionId ?? '',
-    personId: ownId, conversationStyle: config.conversationStyle ?? 'short_chat', personaVersion: persona.version ?? 0, relationVersion: relation.version ?? null,
-    environmentVersion: context.environment?.version ?? context.environmentVersion ?? 0,
-    now, timezone: context.timezone ?? context.environment?.timezone ?? config.timezone,
-    selfProfileReference: { version: material.selfProfile?.version ?? 0, shown: selfProfile.shown, omitted: selfProfile.omitted, fullProfileAvailable: Boolean(material.selfProfile) },
-    deepMemoryReference: { referenceOnly: true, automaticRecall: false, total: deepReferences.total, shown: deepReferences.shown, truncated: deepReferences.truncated, ids: deepReferences.shownIds },
-    injectedIds: [...new Set([...memories, ...relevant(facets), ...relevant(signatures), ...(persona.habits ?? []), ...(material.deepMemories ?? []).filter(item => deepReferences.shownIds.includes(item.id))].map(x => x.id).filter(id => id && text.includes(JSON.stringify(id))))],
-    injectedText: text, tokens, tokenAccounting: counter.method, budgetAdjustments, routeFacts: target, segments: result,
-  };
-  const dependencies = extractSourceDependencies({ selfProfile: selfProfile.sourceDependencies, sourceDependencies: material.sourceDependencies,
-    persona: { anchor: persona.anchor, axes: persona.axes, facets: relevant(facets), signatures: relevant(signatures), habits: relevant(persona.habits ?? []) },
-    relationship: relation, interpretations: material.interpretations, codes: material.codes, memories, deepMemories: (material.deepMemories ?? []).filter(item => deepReferences.shownIds.includes(item.id)), injectedIds: snapshot.injectedIds });
-  snapshot.sourceDependencies = { refs: dependencies.refs, recordIds: dependencies.recordIds };
-  return freeze(snapshot);
-}
+/** A complete mandatory core and bounded references from the same memory store. */
+export async function buildSnapshot(input) { return buildContinuitySnapshot(input); }
 
 export function controlMessages(snapshot, context = {}) {
   return [
@@ -201,14 +65,19 @@ export async function conversationPage(snapshot, context, { purpose = 'control',
   if (await measure([]) > maxTokens) throw Object.assign(new Error('Context and control framing exceed the selected model input budget; pending input remains unconsumed'), { code: 'MODEL_INPUT_BUDGET' });
   for (const record of input) {
     const from = Math.min(offsets[record.eventId] ?? 0, Array.from(record.text ?? '').length), points = Array.from(record.text ?? '');
-    const whole = { ...record, text: points.slice(from).join(''), ...(from ? { fragment: { from, to: points.length, total: points.length, complete: true } } : {}) };
+    // Timeline annotations are separately queryable memory, not another copy
+    // of the incoming original. Keep its source/role/time and exact body here;
+    // a large optional annotation must not prevent even one source fragment.
+    const { timeline, ...sourceRecord } = record;
+    const visibleRecord = { ...sourceRecord, ...(timeline ? { timelineDetailsAvailable: true } : {}) };
+    const whole = { ...visibleRecord, text: points.slice(from).join(''), ...(from ? { fragment: { from, to: points.length, total: points.length, complete: true } } : {}) };
     if (await measure([...records, whole]) <= maxTokens) {
       records.push(whole); completeEventIds.push(record.eventId); progress[record.eventId] = null; continue;
     }
     if (records.length) break;
     let low = from + 1, high = points.length, best = null;
     while (low <= high) {
-      const to = Math.floor((low + high) / 2), candidate = { ...record, text: points.slice(from, to).join(''), fragment: { from, to, total: points.length, complete: to === points.length } };
+      const to = Math.floor((low + high) / 2), candidate = { ...visibleRecord, text: points.slice(from, to).join(''), fragment: { from, to, total: points.length, complete: to === points.length } };
       if (await measure([candidate]) <= maxTokens) { best = candidate; low = to + 1; } else high = to - 1;
     }
     if (!best) throw Object.assign(new Error('No pending source fragment fits the selected model input budget'), { code: 'MODEL_INPUT_BUDGET' });
@@ -279,7 +148,7 @@ export function consolidationMessages(run, context = {}) {
     ] : []),
   ].filter(entry => Object.hasOwn(run.inputVersions ?? {}, entry.documentKey));
   return [
-    { role: 'system', content: 'Organize this selected increment of your available experiences. You choose what matters, whether and how any personality, habit, impression, code or memory changes. No module must gain entries or change. Empty entries are valid. No evidence-count threshold, taboo blocklist, mandatory commitment execution or silence/source penalty is required. Return JSON {entries:[{documentKey,expectedVersion,operation:"upsert"|"remove",recordId,value}],evictSourceIds?:[],readContext?:{cursor}}. The memory context is a labelled JSON text fragment from the frozen run; a partial fragment is not the complete old document. If you want another page, copy its exact nextCursor into readContext.cursor. Only request context you need; do not invent cursor values or unavailable text. Entries from prior pages remain proposed until the final durable commit. Preserve old map entries you still want when replacing axes/coordinates; an unseen tail must not be assumed empty. Document keys: persona; person:<personId>:index|codes|impression|pending; global:index|codes|deep. Persona scalar recordId is anchor or axes, array entries use facets:<id>, signatures:<id>, habits:<id>, retired:<id>. Use schemaVersion persona-memory/3. Memory kind fact|preference|decision|pattern; scope global|person with personId; epistemic user_statement|observed|interpretation; srcRefs retain sourceSessionId/sourceEventId and availability. Source roles distinguish what was said from interpretations, not eligibility to form impressions. personId is the relationship partition, not the speaker. Assistant originals may belong to a relationship while role/sourceRole and speakerId preserve their actual source; assigning them does not make them human statements. Unknown assistant material remains assistant material, not proof that a known person said it. Natural raw eviction may preserve important summaries. Preserve actual subjects. Only this selected increment is consumed after a durable commit; do not request arbitrary paths.' },
+    { role: 'system', content: 'Organize this selected increment of your available experiences. You choose what matters, whether and how any personality, habit, impression, code or memory changes. No module must gain entries or change. Empty entries are valid. No evidence-count threshold, taboo blocklist, mandatory commitment execution or silence/source penalty is required. Return JSON {entries:[{documentKey,expectedVersion,operation:"upsert"|"remove",recordId,value}],evictSourceIds?:[],readContext?:{cursor}}. The memory context is a labelled JSON text fragment from the frozen run; a partial fragment is not the complete old document. If you want another page, copy its exact nextCursor into readContext.cursor. Only request context you need; do not invent cursor values or unavailable text. Entries from prior pages remain proposed until the final durable commit. Preserve old map entries you still want when replacing axes/coordinates; an unseen tail must not be assumed empty. Document keys: persona; person:<personId>:index|codes|impression|pending; global:index|codes|deep|timeline. global:timeline uses an actual original chat record ID and inputVersions["global:timeline"]. Upsert changes only title/background/process/outcome/details/feltThen/meaningNow/indexCodes/relatedMemoryIds, all optional. Remove clears annotations while retaining the original. Original text, speaker, source IDs, occurredAt and recordedAt cannot be changed by annotations. No field or feeling must be invented to fill a template. Time/capacity tier transitions preserve the same original and do not require a new summary. Persona scalar recordId is anchor or axes, array entries use facets:<id>, signatures:<id>, habits:<id>, retired:<id>. Use schemaVersion persona-memory/3. Memory kind fact|preference|decision|pattern; scope global|person with personId; epistemic user_statement|observed|interpretation; srcRefs retain sourceSessionId/sourceEventId and availability. Source roles distinguish what was said from interpretations, not eligibility to form impressions. personId is the relationship partition, not the speaker. Assistant originals may belong to a relationship while role/sourceRole and speakerId preserve their actual source; assigning them does not make them human statements. Unknown assistant material remains assistant material, not proof that a known person said it. Time/capacity transitions archive original records without deleting or rewriting them; explicit forgetting is separate. Preserve actual subjects. Only this selected increment is consumed after a durable commit; do not request arbitrary paths.' },
     { role: 'system', content: 'Value shape guide: ' + stringify(examples) },
     { role: 'user', content: stringify({ runId: run.runId, inputVersions: run.inputVersions, personId: context.personId ?? null,
       previousProposedPatch: context.previousProposedPatch ?? [],

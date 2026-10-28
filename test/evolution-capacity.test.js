@@ -115,11 +115,20 @@ test('progress is finite, bounded and detached; explicit revocation clears it an
   await assert.rejects(repository.recordConsolidationProgress(run.runId, { reviewState: {} }), { code: 'RUN_INVALIDATED' });
 });
 
-test('persona history text participates in the same instance total and cannot hide repeated retained text', async t => {
+test('persona history text is accounted as semantic storage and cannot bypass the physical store limit', async t => {
   const { repository } = await fixture(t); const before = await repository.getCapacity(), prior = await repository.getPersona();
   const run = await repository.prepareConsolidation({ personId: 'a' }); await repository.applyConsolidation(run, [entry(run, 'persona', 'anchor', { text: 'a'.repeat(1000) })]);
   const after = await repository.getCapacity(), current = await repository.getPersona(), history = await repository.store.readJson('self/history.json');
-  assert.equal(after.persistentChars - before.persistentChars, countStringValues(current) - countStringValues(prior) + countStringValues(history));
+  assert.equal(after.semanticChars - before.semanticChars, countStringValues(current) - countStringValues(prior) + countStringValues(history));
+  assert.equal(after.persistentChars, before.persistentChars);
+  const next = await repository.prepareConsolidation({ personId: 'a' });
+  const savedPersona = await fs.readFile(path.join(repository.root, 'self/persona.json'));
+  const savedHistory = await fs.readFile(path.join(repository.root, 'self/history.json'));
+  const limits = repository.store.capacityLimits; repository.store.capacityLimits = { ...limits, storeBytes: 1 };
+  try { await assert.rejects(repository.applyConsolidation(next, [entry(next, 'persona', 'anchor', { text: 'b'.repeat(1000) })]), { code: 'CAPACITY_EXCEEDED' }); }
+  finally { repository.store.capacityLimits = limits; }
+  assert.deepEqual(await fs.readFile(path.join(repository.root, 'self/persona.json')), savedPersona);
+  assert.deepEqual(await fs.readFile(path.join(repository.root, 'self/history.json')), savedHistory);
 });
 
 test('an unreviewed child refreshes shared context versions without admitting late sources or rebasing reviewed candidates', async t => {

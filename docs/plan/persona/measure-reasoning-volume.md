@@ -2,7 +2,7 @@
 
 本文原测量未重跑；0.10.0查询向量、文档索引与可选服务调用需要分别按真实回执计量，不能把工程预算或旧样本当作实际新增用量。
 
-> 0.12.0当前维护：QQ账号自身操作、管理认证／限流与owned恢复以[persona-schema第25节](persona-schema.md#0120-account-and-recovery-contract)为字段权威，操作见[QQ账号工具](../../qq-account-operations.md)，平台实际边界与待验收见[当前能力及验收](../../account-capabilities.md#0120-current-acceptance)。persona-memory/3与人格自主判断保持兼容；0.11.0及更早结果保留历史范围，不能自动当作本版新增功能已实测。
+> 0.13.0当前维护：统一短期／长期／归档时间线与必需人格上下文以[persona-schema第26节](persona-schema.md#0130-memory-timeline-contract)为字段权威，[使用与实现说明](../../memory-timeline-and-context.md)说明保存、转层、回查和加载故障。本轮不运行真实模型或社交平台验收；QQ按用户安排自行验证，其他社交平台显示未测试。0.12.0及更早验收保留历史范围，不推定本版或当前账号状态。
 
 > 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
@@ -91,7 +91,7 @@ export interface ReasoningBlock {
 | tool-call / tool-result | 不照单长期复制；人格在梳理时选择重要提炼物 | 原件或可回查指针，记录缺源降级 |
 | compaction/summary | 不进 C1 原始聊天流；可另存为 C2 来源明确的提炼物，不能冒充原始聊天 | 可作导航，原件可得时仍能回查 |
 
-人格自行决定重要性与整理时机；成功提交后只清已消费热区，不能清掉整理期间新到达的材料。容量、自然淘汰与明确遗忘按当前方案分别处理。
+人格自行决定重要性与整理时机；成功提交后只清已消费热区，不能清掉整理期间新到达的材料。容量转层、过程回收与明确遗忘按当前方案分别处理。
 
 ---
 
@@ -129,7 +129,7 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 
 整理冻结页增加memoryIndexes:{global,person}和deepMemories，保留实际版本、来源与未读位置。可选reviewAssistant默认关闭，只给本次有界材料的保真建议，使用当前DSH模型并共享原调用预算；它不写人格补丁、不决定记什么、不要求采纳，助手读取不计作人格已读。来源核对允许空引用的主观解释，不增加证据门槛。
 
-提交后保留的sourceDependencies采用sha256-identities/1来源／记录摘要收据，追踪实际读入材料而不另存原话。明确遗忘会清除受影响已提交journal的patch、助手报告与可回读诊断正文，保留提交标记、调用数等技术回执；旧档缺完整依赖时在撤销后保守去诊断正文，不删除无关人格记录。自然原件淘汰保留人格解释和仍受容量约束的诊断。人格所选retain片段本身也是来源；明确遗忘命中task-material时按真实任务会话、文档ID、SHA与Unicode范围撤销该任务资料，不能换页重新保留；自然淘汰和无关新任务不受影响。
+提交后保留的sourceDependencies采用sha256-identities/1来源／记录摘要收据，追踪实际读入材料而不另存原话。明确遗忘会清除受影响已提交journal的patch、助手报告与可回读诊断正文，保留提交标记、调用数等技术回执；旧档缺完整依赖时在撤销后保守去诊断正文，不删除无关人格记录。时间线转入长期或归档保留原件、人格解释和仍受容量约束的诊断；转层本身不撤销来源。人格所选retain片段本身也是来源；明确遗忘命中task-material时按真实任务会话、文档ID、SHA与Unicode范围撤销该任务资料，不能换页重新保留；时间线转层和无关新任务不受影响。
 
 账号与社交身份复用当前QQ／微信连接，可登记其它平台并注入适配器；身份、在线核验、支持、授权和实际可用分别呈现。QQ官方主动推送取消是驱动执行事实，不改变人格主动联系的自主判断；OneBot桥按实际能力处理。同平台多个档案不等于多个并发连接。具体字段以[persona-schema第17至19节](persona-schema.md)为准，功能与资源见[新增说明](../../memory-reflection-and-social-identities.md)。
 

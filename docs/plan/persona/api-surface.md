@@ -1,12 +1,12 @@
 # DSH 扩展点与 P0 接入验证
 
-当前0.12.0在八工具与owner桥补个人QQ受管连接和persona_platform独立账号作用域；新增字段以persona-schema第25节为准，第23／24节按兼容范围继续有效，支持、许可、在线、提交、收件和好友关系分别报告。
+当前0.13.0保留八工具与owner管理桥，增加同格式时间线的分层浏览和必要上下文加载保护。转层、来源回查、明确遗忘及请求故障分别报告，字段以persona-schema第26节为准。
 
-> 0.12.0当前维护：QQ账号自身操作、管理认证／限流与owned恢复以[persona-schema第25节](persona-schema.md#0120-account-and-recovery-contract)为字段权威，操作见[QQ账号工具](../../qq-account-operations.md)，平台实际边界与待验收见[当前能力及验收](../../account-capabilities.md#0120-current-acceptance)。persona-memory/3与人格自主判断保持兼容；0.11.0及更早结果保留历史范围，不能自动当作本版新增功能已实测。
+> 0.13.0当前维护：统一短期／长期／归档时间线与必需人格上下文以[persona-schema第26节](persona-schema.md#0130-memory-timeline-contract)为字段权威，[使用与实现说明](../../memory-timeline-and-context.md)说明保存、转层、回查和加载故障。本轮不运行真实模型或社交平台验收；QQ按用户安排自行验证，其他社交平台显示未测试。0.12.0及更早验收保留历史范围，不推定本版或当前账号状态。
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
-修订日期：2026-10-27。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
+修订日期：2026-10-28。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
 
 本文保留上一轮从本机安装包、官方 README 和既有插件读取的宿主出处，同时收回把“接口存在”直接写成“端到端行为成立”的结论。本次文档修订没有运行宿主探针，不能据此声称事件完整性、idle agent 自动启动、睡眠静默、请求作用域或最终送达已经实测。
 
@@ -148,7 +148,7 @@ agent/assistant-stream 与 tool/result 是否暴露完整原件、不同供应�
 - 人格控制决定、按其时间或 recheckOn/wakeCondition 事件条件调度、两种增量梳理模式。
 - runId/高水位/输入版本/validated patch/提交标记、单写者与崩溃恢复。
 - 有界 outbox、目标路由、停止未交付主动工作和交付对账。
-- 自然淘汰与明确撤销区分，重建不复活已忘材料。
+- 短期／长期／归档无损转层与明确撤销区分，重建不复活已忘材料。
 - 实例总容量、实际 bytes、缺口诊断、真实 token 与费用计量。
 
 这些机制保护执行正确性，不能顺带加入替人格决定性格、亲疏、主动频率、边界理解或履约优先级的规则。
@@ -169,7 +169,7 @@ agent/assistant-stream 与 tool/result 是否暴露完整原件、不同供应�
 | P0-H 完整临时源 | 读取对话、可用 reasoning、工具原件，验证缓存与 host-trace 分页 | 原件/摘要/缺失分清；源 ID 可查；容量边界不一次全量喂入 |
 | P0-I 提交与恢复 | 在接收、候选文件、commitMarker、游标、H1 清理各点中断 | 无重复根事件/半次提交；新到 H1 不误删；业务 sleep 与执行锁分离 |
 | P0-J 交付对账 | append 后崩溃、输出后回执前崩溃、目标通道不可用 | 同 deliveryId 对账，不明为 unknown，不盲目重发或假报收到 |
-| P0-K 容量与撤销 | 达目标量后自然淘汰，再明确遗忘并从宿主旧日志重建 | 重要概括可保留；撤销不复活；实际 bytes、缺口与回补路径可见 |
+| P0-K 容量与撤销 | 达近期／长期目标后转层，回查归档，再明确遗忘并重放旧源 | 原文及编号转层一致；撤销不复活；实际bytes、缺口与回补路径可见 |
 | P0-L 费用与缓存 | 统计判断/梳理/重试/生成的用量，覆盖实际路由更新模式 | 有真实调用、token、缓存与延迟数据，不用固定每日调用承诺代替 |
 
 P0 完成并不意味着整个人格效果已验收，只意味着实现路径和失败边界有依据。后续阶段完成记忆、人格演化、两模式切换、主动与睡眠等全部功能；不能用接口探针通过替代长期行为观察，也不能用人格数量、准确印象或始终讨喜作为强制达标条件。
@@ -212,7 +212,7 @@ status默认只返回紧凑任务卡和至多120字的导航摘要，不自动�
 
 整理冻结页增加memoryIndexes:{global,person}和deepMemories，保留实际版本、来源与未读位置。可选reviewAssistant默认关闭，只给本次有界材料的保真建议，使用当前DSH模型并共享原调用预算；它不写人格补丁、不决定记什么、不要求采纳，助手读取不计作人格已读。来源核对允许空引用的主观解释，不增加证据门槛。
 
-提交后保留的sourceDependencies采用sha256-identities/1来源／记录摘要收据，追踪实际读入材料而不另存原话。明确遗忘会清除受影响已提交journal的patch、助手报告与可回读诊断正文，保留提交标记、调用数等技术回执；旧档缺完整依赖时在撤销后保守去诊断正文，不删除无关人格记录。自然原件淘汰保留人格解释和仍受容量约束的诊断。人格所选retain片段本身也是来源；明确遗忘命中task-material时按真实任务会话、文档ID、SHA与Unicode范围撤销该任务资料，不能换页重新保留；自然淘汰和无关新任务不受影响。
+提交后保留的sourceDependencies采用sha256-identities/1来源／记录摘要收据，追踪实际读入材料而不另存原话。明确遗忘会清除受影响已提交journal的patch、助手报告与可回读诊断正文，保留提交标记、调用数等技术回执；旧档缺完整依赖时在撤销后保守去诊断正文，不删除无关人格记录。时间线转入长期或归档保留原件、人格解释和仍受容量约束的诊断；转层本身不撤销来源。人格所选retain片段本身也是来源；明确遗忘命中task-material时按真实任务会话、文档ID、SHA与Unicode范围撤销该任务资料，不能换页重新保留；时间线转层和无关新任务不受影响。
 
 账号与社交身份复用当前QQ／微信连接，可登记其它平台并注入适配器；身份、在线核验、支持、授权和实际可用分别呈现。QQ官方主动推送取消是驱动执行事实，不改变人格主动联系的自主判断；OneBot桥按实际能力处理。同平台多个档案不等于多个并发连接。具体字段以[persona-schema第17至19节](persona-schema.md)为准，功能与资源见[新增说明](../../memory-reflection-and-social-identities.md)。
 

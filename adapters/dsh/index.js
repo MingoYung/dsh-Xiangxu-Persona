@@ -454,6 +454,24 @@ export function createDshCoordinator(ctx, config = {}) {
     get taskInitializationError() { return taskInitializationError; },
     taskHost, taskIsolation,
     async readyState() { await coordinator.ready; await intake; return repository.getRuntime(); } };
+  // The native request envelope is authoritative. Another plugin's complete
+  // prompt may replace sections after the assembly waterfall; never pay for a
+  // personality turn whose required data disappeared at that final boundary.
+  const mandatoryStreamDisposer = typeof ctx.on === 'function' ? ctx.on('llm/stream', (options, next) => {
+    const state = [...agents.values()].find(item => item.agent?.session?.id === options.sessionId);
+    if (!state) return next();
+    const prepared = options.signal ? state.projectionsBySignal?.get(options.signal)
+      : { texts: state.personaPromptTexts, snapshot: state.latestSnapshot };
+    const expected = prepared?.texts;
+    const systemText = (options.messages ?? []).filter(message => message.role === 'system').map(message =>
+      typeof message.content === 'string' ? message.content : (message.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n')).join('\n');
+    if (closed || state.disposed || !prepared?.snapshot?.mandatoryContext?.complete ||
+      !expected || !['protocolText', 'conversationText', 'liveText'].every(key => expected[key] && systemText.includes(expected[key].trim()))) {
+      const failure = personaContextFailure(Object.assign(new Error('The actual native request is missing the current mandatory personality projection'), { code: 'PERSONA_CONTEXT_PROJECTION_MISSING' }));
+      report(failure); throw failure;
+    }
+    return next();
+  }) : null;
   coordinator.ready = (async () => {
     try {
       // Runtime.open can resume queued wake/control work immediately. Routing
@@ -664,22 +682,33 @@ export function createDshCoordinator(ctx, config = {}) {
     return { available: true, processed, remaining: Math.max(0, own.length - processed), blockedFromSeq: next ?? null };
   }
 
-  async function preparePersonaAssembly(agent, value) {
+  async function preparePersonaAssembly(agent, value, requestContext = {}) {
     await coordinator.ready; await intake;
     const state = agents.get(agent.id);
-    if (closed || initializationError || !state || state.disposed || taskIsolation.isWorkerSession(agent.session.id)) return value;
+    if (taskIsolation.isWorkerSession(agent.session.id)) return value;
+    if (closed || initializationError || !state || state.disposed) throw personaContextFailure(initializationError);
     const sections = value.sections ?? [];
-    if (sections.some(section => section.name === 'persona-memory:protocol') && sections.some(section => section.name === 'persona-memory:live')) return value;
     let snapshot;
-    try { snapshot = await runtime.compose(contextFor(agent, { requestId: 'dsh-' + agent.id + '-' + randomUUID() })); }
-    catch (error) { report(error); return value; }
+    try { snapshot = await runtime.compose(contextFor(agent, { requestId: 'dsh-' + agent.id + '-' + randomUUID(),
+      pending: state.claimedSourceRefs ?? [] })); }
+    catch (error) { const failure = personaContextFailure(error); report(failure); throw failure; }
     state.latestSnapshot = snapshot; state.snapshots.set(state.currentTurn, snapshot);
     const conversationText = conversationOrientation(repository.config.conversationStyle);
     state.personaPromptTexts = { protocolText: CONTROL_GUIDANCE, conversationText, liveText: snapshot.injectedText };
-    return { ...value, sections: [...sections.filter(section => !['persona-memory:protocol', 'persona-memory:live'].includes(section.name)),
+    if (requestContext.signal && typeof requestContext.signal === 'object') {
+      (state.projectionsBySignal ??= new WeakMap()).set(requestContext.signal, { texts: state.personaPromptTexts, snapshot });
+    }
+    return { ...value, sections: [...sections.filter(section => !['persona-memory:conversation', 'persona-memory:protocol', 'persona-memory:live'].includes(section.name)),
       { name: 'persona-memory:conversation', text: conversationText, interpolate: false },
       { name: 'persona-memory:protocol', text: CONTROL_GUIDANCE, interpolate: false },
       { name: 'persona-memory:live', text: snapshot.injectedText, interpolate: false }] };
+  }
+  function personaContextFailure(cause) {
+    const budget = ['PERSONA_CONTEXT_BUDGET', 'ESSENTIAL_CONTEXT_BUDGET', 'CONTEXT_SEGMENT_BUDGET'].includes(cause?.code);
+    const message = budget ? '人格核心与必要近况超出当前注入预算，本次未调用模型；请在相续人格设置中调整容量与模型预算后重试。'
+      : '人格资料加载失败，本次未调用模型；请检查记忆目录或运行诊断后重试。来信仍保留。';
+    return Object.assign(new Error(message, { cause }), { code: budget ? 'PERSONA_CONTEXT_BUDGET' : 'PERSONA_CONTEXT_UNAVAILABLE',
+      reason: cause?.reason ?? cause?.code ?? (closed ? 'INSTANCE_UNLOADED' : 'CONTEXT_LOAD_FAILED') });
   }
   async function attachAgent(agent) {
     if (closed) return { status: 'unloaded' };
@@ -716,20 +745,27 @@ export function createDshCoordinator(ctx, config = {}) {
       // Inherited coding/delegation tools remain available in other presets.
       keep(scope.tools.restrict({ allow: [] }));
       const on = (event, handler) => keep(scope.on(event, (...args) => {
-        if (closed || state.disposed) { const next = args.at(-1); return typeof next === 'function' ? next() : undefined; }
+        if (closed || state.disposed) {
+          if (['system-prompt/assemble', 'agent/pre-step'].includes(event)) throw personaContextFailure();
+          const next = args.at(-1); return typeof next === 'function' ? next() : undefined;
+        }
         return handler(...args);
       }));
       const onInserted = ({ message }) => { void enqueue(() => acceptMessage(agent, message)); };
       on('agent/inbox/inserted', onInserted);
       on('agent/inbox/claimed', ({ message, turn }) => {
         if (state.currentTurn !== turn) {
-          state.currentTurn = turn;
+          state.currentTurn = turn; state.claimedSourceRefs = [];
+        }
+        if (message.role === 'user' && sourceClassification(message.source?.kind, config.participantSourceKinds ?? ['user']) === 'participant_dialogue') {
+          const refs = state.claimedSourceRefs ??= [];
+          if (!refs.some(ref => ref.sourceEventId === message.id)) refs.push({ sourceSessionId: agent.session.id, sourceEventId: message.id });
         }
         if (message.source?.kind?.startsWith('persona-memory:')) state.activeByTurn.set(turn, { ...message.source, turn });
       });
       on('system-prompt/assemble', async (_assembly, context, next) => {
         const value = await next();
-        return context.agent === agent ? preparePersonaAssembly(agent, value) : value;
+        return context.agent === agent ? preparePersonaAssembly(agent, value, context) : value;
       });
       on('agent/pre-step', async (payload, next) => {
         // The first inbox claim may precede late preset attachment. Recover the
@@ -743,10 +779,10 @@ export function createDshCoordinator(ctx, config = {}) {
           const notice = (payload.messages ?? []).find(message => message.source?.kind?.startsWith('persona-memory:'));
           if (notice) state.activeByTurn.set(payload.turn, { ...notice.source, turn: payload.turn });
         }
-        let nextCalled = false, entered;
+        let entered;
         try {
         await coordinator.ready; await intake;
-        if (initializationError) return next();
+        if (initializationError) throw personaContextFailure(initializationError);
         await notifyEnvironment(agent);
         const current = await repository.getRuntime();
         const messages = payload.messages ?? [];
@@ -765,7 +801,7 @@ export function createDshCoordinator(ctx, config = {}) {
         const triggers = plan?.recheckOn ?? [];
         const mayReconsider = Boolean(notice) || hasNewParticipant && (!plan || plan.action === 'reply' || triggers.includes('new_message'));
         if (plan && !mayReconsider && (plan.action === 'wait' || plan.action === 'listen' || plan.replyAt > Date.now())) return { kind: 'reject' };
-        nextCalled = true; entered = await next();
+        entered = await next();
         if (entered.kind === 'enter') {
           entered = { ...entered, messages: entered.messages.filter(message => !excluded.has(message.id)) };
           if (entered.messages.some(message => message.role === 'user' && sourceClassification(message.source?.kind, config.participantSourceKinds ?? ['user']) === 'participant_dialogue')) state.nativeAdmittedTurns.add(payload.turn);
@@ -788,7 +824,7 @@ export function createDshCoordinator(ctx, config = {}) {
           if (!closed && !state.disposed && state.promptProjection.startsRequestSeries) entered = { ...entered, startsRequestSeries: true };
         }
         return entered;
-        } catch (error) { report(error); if (entered) return entered; if (nextCalled) throw error; return next(); }
+        } catch (error) { const failure = personaContextFailure(error); report(failure); throw failure; }
       });
       for (const toolName of Object.keys(TOOL_PARAMETERS)) keep(scope.tools.register({ name: toolName, description: DESCRIPTIONS[toolName],
         parameters: { type: 'object', properties: TOOL_PARAMETERS[toolName], ...(toolName === 'memory_search' ? { required: ['query'] } : toolName === 'memory_forget' ? { required: ['reason'] } : {}), additionalProperties: false },
@@ -1003,6 +1039,7 @@ export function createDshCoordinator(ctx, config = {}) {
       try { await coordinator.retrievalProvider?.close(); } catch (error) { report(error); }
       try { await runtime.close(); } catch (error) { writerError = error; report(error); }
       for (const handle of ownedHandles.values()) try { await handle.dispose?.(); } catch (error) { report(error); }
+      try { mandatoryStreamDisposer?.(); } catch (error) { report(error); }
       if (writerError) throw writerError;
     })();
     return closeTask;

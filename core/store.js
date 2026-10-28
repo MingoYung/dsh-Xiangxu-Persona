@@ -149,6 +149,29 @@ export class JsonStore {
   }
   readJson(relative, fallback = null) { return this._queue(async () => { this._check(); return this._json(relative, fallback); }); }
   readLines(relative) { return this._queue(async () => { this._check(); return this._lines(relative); }); }
+  readLinesVerified(relative, expected) {
+    return this._queue(async () => {
+      this._check();
+      const target = await this._path(relative), stat = await fs.stat(target);
+      if (!expected || stat.size !== expected.bytes) throw error('TIMELINE_ARCHIVE_CORRUPT', 'Archive shard byte count changed: ' + relative);
+      const raw = await fs.readFile(target);
+      if (hash(raw) !== expected.sha256) throw error('TIMELINE_ARCHIVE_CORRUPT', 'Archive shard checksum changed: ' + relative);
+      return raw.toString('utf8').split(/\r?\n/).filter(line => line.trim()).map((line, index) => {
+        try { return JSON.parse(line); } catch { throw error('CORRUPT_JSONL', relative + ':' + (index + 1) + ' is not valid JSON'); }
+      });
+    });
+  }
+  assertFileStates(files) {
+    return this._queue(async () => {
+      this._check();
+      for (const file of files) {
+        let stat;
+        try { stat = await fs.stat(await this._path(file.path)); }
+        catch (failure) { if (failure.code !== 'ENOENT') throw failure; }
+        if (!stat?.isFile() || file.bytes !== undefined && stat.size !== file.bytes) throw error('MEMORY_SOURCE_UNAVAILABLE', 'A known memory source file is missing or changed: ' + file.path);
+      }
+    });
+  }
   async _apply(entry) {
     if (entry.text === null) {
       const target = await this._path(entry.path);
@@ -188,7 +211,7 @@ export class JsonStore {
     const needed = Math.max(0, peakBytes - physicalBytes) + this.diskReserveBytes;
     if (freeBytes < needed) throw capacityError('diskReserveBytes', needed, freeBytes);
   }
-  transaction({ runId = randomUUID(), json = {}, jsonl = {}, expectedVersions = {}, remove = [] }) {
+  transaction({ runId = randomUUID(), json = {}, jsonl = {}, expectedVersions = {}, expectedAbsent = [], remove = [] }) {
     return this._queue(async () => {
       this._check();
       const entries = [...Object.entries(json).map(([name, value]) => {
@@ -197,7 +220,7 @@ export class JsonStore {
       }),
         ...Object.entries(jsonl).map(([name, values]) => {
           if (!Array.isArray(values)) throw error('INVALID_TRANSACTION', 'jsonl values must be arrays');
-          assertFiniteJson(values, { allowUndefined: !/^(people\/[^/]+\/(stream|hot)|staging\/(events|hot))\.jsonl$/.test(name) });
+          assertFiniteJson(values, { allowUndefined: !/^(people\/[^/]+\/(stream|hot)|staging\/(events|hot)|timeline\/(long\/(unknown|person-[^/]+)|archive\/\d{8}))\.jsonl$/.test(name) });
           return { path: name, text: values.map((value) => JSON.stringify(value)).join('\n') + (values.length ? '\n' : '') };
         }), ...remove.map((name) => ({ path: name, text: null }))].sort((a, b) => a.path.localeCompare(b.path));
       if (new Set(entries.map((e) => e.path)).size !== entries.length) throw error('INVALID_TRANSACTION', 'Duplicate transaction path');
@@ -215,6 +238,10 @@ export class JsonStore {
       for (const [name, expected] of Object.entries(expectedVersions)) {
         const current = await this._json(name);
         if ((current?.version ?? 0) !== expected) throw error('VERSION_CONFLICT', name + ' changed since input was prepared');
+      }
+      for (const name of expectedAbsent) {
+        let occupied = true; try { await fs.lstat(await this._path(name)); } catch (failure) { if (failure.code === 'ENOENT') occupied = false; else throw failure; }
+        if (occupied) throw error('TIMELINE_ARCHIVE_COLLISION', 'A new archive shard path is already occupied: ' + name);
       }
       const manifest = { runId, digest, entries, state: 'prepared' };
       await this._checkCapacity(entries, manifest);

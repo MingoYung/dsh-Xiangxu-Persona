@@ -40,7 +40,9 @@ test('actual coordinator mount/unload/reload releases all scoped tools and liste
     assert.equal(value.sections.filter(section => section.name === 'persona-memory:protocol').length, 1);
     await manager.unload(); assert.equal(surface.tools.size, 0); assert.equal(surface.handlerCount(), 0);
     const unloaded = await oldTool.execute({ query: '不会执行' }, { agent }); assert.equal(unloaded.code, 'INSTANCE_UNLOADED');
-    const stale = await assemble({}, { agent }, async () => ({ sections: [] })); assert.equal(stale.sections.length, 0);
+    let staleNextCalls = 0;
+    await assert.rejects(async () => assemble({}, { agent }, async () => { staleNextCalls++; return { sections: [] }; }), { code: 'PERSONA_CONTEXT_UNAVAILABLE', reason: 'INSTANCE_UNLOADED' });
+    assert.equal(staleNextCalls, 0);
     await manager.load(); assert.equal(surface.tools.size, 8); assert.equal(surface.handlerCount(), initialCount);
   }
 });

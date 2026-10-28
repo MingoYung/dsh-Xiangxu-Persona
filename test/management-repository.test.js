@@ -70,6 +70,9 @@ test('common-personality projection defaults omitted shared scope without rewrit
   assert.deepEqual((await repo.browseMemory({ scope: 'person', targetPersonId: 'a', recordType: 'habit' })).items.map(row => row.id), ['personal-habit']);
   assert.deepEqual((await repo.browseMemory({ scope: 'unknown' })).items.map(row => row.id), [original.id]);
   assert.equal(await readFile(join(root, 'self/persona.json'), 'utf8'), before);
+  await repo.close(); await repo.open();
+  assert.deepEqual((await repo.browseMemory({ scope: 'global', recordType: 'habit' })).items.map(row => row.id), ['shared-habit']);
+  assert.equal(await readFile(join(root, 'self/persona.json'), 'utf8'), before);
   await repo.forget({ ids: ['shared-habit'], scope: 'global', reason: '用户明确遗忘共同习惯' });
   assert.equal((await repo.browseMemory({ scope: 'global', recordType: 'habit' })).total, 0);
   assert.deepEqual((await repo.getPersona()).habits.map(row => row.id), ['personal-habit']);
