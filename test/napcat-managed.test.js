@@ -9,6 +9,8 @@ import {createNapcatManagedService} from '../adapters/dsh/connections/napcat-man
 import {inspectNapcatZip,NAPCAT_ZIP_LIMITS} from '../adapters/dsh/connections/napcat-zip.js';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
+// Fixture paths live on the actual test host; Linux must retain QQ.exe casing.
+const hostPath=value=>process.platform==='win32'?path.resolve(value).toLowerCase():path.resolve(value);
 const tick=()=>new Promise(resolve=>setTimeout(resolve,2));
 function crc32(bytes){let value=0xffffffff;for(const byte of bytes){value^=byte;for(let i=0;i<8;i++)value=value&1?0xedb88320^(value>>>1):value>>>1;}return(value^0xffffffff)>>>0;}
 function zip(members){
@@ -26,7 +28,7 @@ const members=['napcat.mjs','loadNapCat.js','qqnt.json','NapCatWinBootMain.exe',
 async function fixture(t,options={}){
   const base=await fs.mkdtemp(path.join(tmpdir(),'xiangxu-managed-qq-')),installRoot=path.join(base,'managed'),qqPath=path.join(base,'qq','QQ.exe'),archive=zip(members);
   await fs.mkdir(path.dirname(qqPath));await fs.writeFile(qqPath,'isolated fixture, never executed');
-  let nativeRuntime=null,nativeOwned=true,nativeInspectHook=null,nativeInspectPatch={},nativePortHeld=false,nativeRestoreAllowed=true;const nativeRestoreCalls=[];
+  let nativeRuntime=null,nativeOwned=true,nativeInspectHook=null,nativeInspectPatch={},nativePortHeld=false,nativeRestoreAllowed=true,nativeProofPath=options.nativeProofPath?options.nativeProofPath(qqPath):hostPath(qqPath);const nativeRestoreCalls=[];
   const nativeCounts={reserve:0,release:0,inspect:0,owned:0},nativeOwnership=[];
   if(options.native){
     const assetRoot=path.join(base,'original-native-assets'),loaderPath=path.join(assetRoot,'loader.cjs'),wrapperRelativePath='versions/9.9.36-53644/resources/app/wrapper.node',wrapperPath=path.join(path.dirname(qqPath),...wrapperRelativePath.split('/'));
@@ -74,8 +76,8 @@ async function fixture(t,options={}){
   if(options.native){
     runtimePorts.reserveNativePort=async()=>{nativeCounts.reserve++;nativePortHeld=true;let released=false;return{port:3001,async release(){if(released)return;released=true;nativeCounts.release++;nativePortHeld=false;}};};
     runtimePorts.isOwnedNativeProcess=async(pid,context)=>{nativeCounts.owned++;nativeOwnership.push({pid,...context});return nativeOwned;};
-    runtimePorts.getOwnedProcessProof=async(pid,context)=>nativeOwned?{schemaVersion:'xiangxu-owned-qq-process/1',bootId:context.bootId,pid,launcherPid:context.launcher.pid,path:path.resolve(qqPath).toLowerCase(),createdAt:new Date(context.startedAt+1).toISOString(),startedAt:context.startedAt}:null;
-    runtimePorts.restoreOwnedProcess=async(proof,context)=>{nativeRestoreCalls.push({proof:structuredClone(proof),context});return nativeRestoreAllowed&&proof.schemaVersion==='xiangxu-owned-qq-process/1'&&proof.bootId===context.bootId&&proof.launcherPid===context.launcherPid&&proof.startedAt===context.startedAt&&proof.path===path.resolve(qqPath).toLowerCase();};
+    runtimePorts.getOwnedProcessProof=async(pid,context)=>nativeOwned?{schemaVersion:'xiangxu-owned-qq-process/1',bootId:context.bootId,pid,launcherPid:context.launcher.pid,path:nativeProofPath,createdAt:new Date(context.startedAt+1).toISOString(),startedAt:context.startedAt}:null;
+    runtimePorts.restoreOwnedProcess=async(proof,context)=>{nativeRestoreCalls.push({proof:structuredClone(proof),context});return nativeRestoreAllowed&&proof.schemaVersion==='xiangxu-owned-qq-process/1'&&proof.bootId===context.bootId&&proof.launcherPid===context.launcherPid&&proof.startedAt===context.startedAt&&hostPath(proof.path)===hostPath(qqPath);};
     runtimePorts.inspectNativeRuntime=async descriptor=>{nativeCounts.inspect++;if(nativeInspectHook)await nativeInspectHook(descriptor);return{protocol:descriptor.protocol,bootId:descriptor.bootId,abiVersion:descriptor.abiVersion,accountId:descriptor.expectedAccountId,ready:true,capabilities:{query:{supported:true,available:true},request:{supported:true,available:true},respond:{supported:false,available:false}},...nativeInspectPatch};};
   }
   if(options.nativeClientReal)delete runtimePorts.inspectNativeRuntime;
@@ -386,6 +388,16 @@ test('explicit recovery cannot bypass a management authentication cooldown or st
 async function keepQqRunningAcrossServiceRestart(f){f.setStopOwnedHook(async()=>false);await f.service.close();assert.equal(f.spawned.child.killed,false);f.service=f.make();}
 async function verifiedLaunch(f){const receipt=JSON.parse(await fs.readFile(path.join(f.installRoot,'owned-launch.json'),'utf8'));assert.equal(receipt.state,'verified');return receipt;}
 async function waitResume(f){await f.service.resume();for(let i=0;i<5000;i++){const value=await f.service.inspect();if(['connected','waiting_login','authorized','failed'].includes(value.phase))return value;await tick();}throw Error('isolated resume did not settle');}
+
+for(const variant of ['actual-host-path','case-only','different-executable'])test('owned launch proof preserves host path identity: '+variant,async t=>{
+ const nativeProofPath=qq=>variant==='actual-host-path'?hostPath(qq):path.join(path.dirname(qq),variant==='case-only'?'qq.exe':'Other.exe');
+ const f=await fixture(t,{native:true,nativeProofPath});await connect(f);await nativeMarker(f);assert.ok(await f.service.getNativeRuntime());
+ const receipt=JSON.parse(await fs.readFile(path.join(f.installRoot,'owned-launch.json'),'utf8'));
+ const accepted=variant==='actual-host-path'||variant==='case-only'&&process.platform==='win32';
+ assert.equal(receipt.state,accepted?'verified':'launching');assert.equal(f.counts.spawn,1);
+ if(accepted){assert.equal(receipt.processProof.path,nativeProofPath(f.qqPath));await keepQqRunningAcrossServiceRestart(f);const result=await waitResume(f);assert.equal(result.phase,'connected');assert.equal(f.nativeRestoreCalls.length,1);assert.equal(f.counts.spawn,1);}
+ else assert.equal(receipt.processProof,null,'A mismatched executable cannot become durable ownership evidence');
+});
 
 test('a verified boot receipt restores a surviving QQ generation in a new service without spawning or altering account scope',async t=>{
  const f=await fixture(t,{native:true});await connect(f);const cfg=await nativeMarker(f);assert.ok(await f.service.getNativeRuntime());const receipt=await verifiedLaunch(f),profile=structuredClone(f.profile),before={...f.counts};assert.equal(receipt.configSha256,sha(await fs.readFile(cfg.markerPath.replace('marker.json','config.json'))));assert.equal(receipt.processProof.createdAt,new Date(receipt.startedAt+1).toISOString());await keepQqRunningAcrossServiceRestart(f);const result=await waitResume(f);assert.equal(result.phase,'connected');assert.equal(f.counts.spawn,before.spawn);assert.equal(f.counts.configure,before.configure);assert.equal(f.counts.rotate,before.rotate);assert.deepEqual(f.profile.config,profile.config);assert.equal(f.nativeRestoreCalls.length,1);assert.deepEqual(f.nativeRestoreCalls[0].proof,receipt.processProof);assert.equal((await f.service.getNativeRuntime()).bootId,cfg.bootId);const visible=JSON.stringify(await f.service.inspect());assert.equal(visible.includes('owned-launch'),false);assert.equal(visible.includes(receipt.configPath),false);assert.equal(visible.includes(cfg.token),false);

@@ -2,6 +2,8 @@
 
 > 当前版本入口：0.13.0的[统一时间线与必需上下文](memory-timeline-and-context.md)及[本版验证收据](verification/0.13.0-memory-timeline.json)。下文只保留对应旧版历史数字、SHA、路径与失败，不作为本版新增功能、当前账号或真实模型效果的验收。
 
+0.13.0的[CI跨平台修复记录](verification/0.13.0-ci-portability.json)另记Ubuntu测试路径大小写问题、同版本Linux复现和修后验证；原0.13.0收据保留当时Windows本地验证范围。此次只修测试模拟与CI调度，不修改人格或平台生产逻辑。
+
 ## 0.2.0历史结果入口
 
 0.2.0历史结果见[自主整理、容量与补充唤醒验证](evolution-and-wake-validation.md)。本文件下文保留 **0.1.0 首次交付历史**，通过数及 fixture 范围不覆盖新结果。0.1.1 的真实全流程、97次 provider 派发、最终155/155本地回归、实际修复及未覆盖项统一见[真实模型复核](real-model-validation.md)与[宿主证据](real-model-host-evidence.md)。
