@@ -92,9 +92,20 @@
       "linkedSourceMatches": true,
       "sourceFilesChecked": 5
     },
-    "qqConnectionAfterReload": "awaiting_phone_confirmation",
-    "qqConnectionCheckedAt": "2026-10-28T11:37:07.269Z",
-    "newRealModelAcceptanceCalls": 0
+    "qqConnectionAfterReload": "connected_to_formal_persona",
+    "qqConnectionCheckedAt": "2026-10-28T11:42:33.926Z",
+    "newRealModelAcceptanceCalls": 0,
+    "qqReconnection": {
+      "bridgeOnline": true,
+      "bridgeHealthy": true,
+      "accountMatchesExpected": true,
+      "formalPersonaMatches": true,
+      "privateBindingActive": true,
+      "groupBindingActive": true,
+      "callbackMatches": true,
+      "uiFormalPersonaConnected": true,
+      "scope": "Read-only identity, binding and callback confirmation; no new model call, message round trip or profile mutation was performed"
+    }
   },
   "presentationLimits": [
     "Unknown, damaged or graphical-only components use an explicit display limitation; complete graphical rendering is not claimed",
