@@ -1,7 +1,7 @@
 {
   "schema": "xiangxu-verification/1",
   "version": "0.13.2",
-  "generatedAt": "2026-10-28T10:38:06.027Z",
+  "generatedAt": "2026-10-28T10:55:30.739Z",
   "problem": {
     "code": "PERSONA_CONTEXT_PROJECTION_MISSING",
     "diagnostic": "live_missing",
@@ -135,9 +135,20 @@
       "group": 1
     },
     "scope": "The two user-requested acceptance messages only; subsequent normal conversation is excluded",
-    "currentConnectionAfterAuxReload": "awaiting_phone_confirmation",
-    "currentConnectionCheckedAt": "2026-10-28T10:37:32.694Z",
-    "supplementalCompactionIssueObservedBeforeFix": true
+    "currentConnectionAfterAuxReload": "connected_to_formal_persona",
+    "currentConnectionCheckedAt": "2026-10-28T10:54:41.087Z",
+    "supplementalCompactionIssueObservedBeforeFix": true,
+    "postReloadConnection": {
+      "bridgeOnline": true,
+      "bridgeHealthy": true,
+      "accountMatchesExpected": true,
+      "formalPersonaMatches": true,
+      "privateBindingActive": true,
+      "groupBindingActive": true,
+      "callbackMatches": true,
+      "uiFormalPersonaConnected": true
+    },
+    "postReloadMessageRoundTripRetested": false
   },
   "notClaimed": [
     "Historical incomplete process dependencies have all been recovered",
@@ -153,5 +164,27 @@
     "ui/app.js": "9e8f592cc49e0f463335b673d3859ba2d536ebbdb71452c50e85f4f29b71c627",
     "ui/client.js": "8796b0eabf633e935e92b4a149cc21a621ed25af17d2a73cb2517f3ee30c6932",
     "test/dsh-projection-and-gap-regressions.test.js": "aaa28db155ac12098d709af2703d1f1c7e10673cf02149a1b4faa802aa1df46d"
+  },
+  "remoteSourceCi": {
+    "sourceCommit": "aaa2067c955f6ee2d271d6c29ffe3efd5dcd2bbd",
+    "status": "passed",
+    "url": "https://github.com/MingoYung/dsh-Xiangxu-Persona/actions/runs/40673806526",
+    "platforms": {
+      "validate (windows-latest)": {
+        "tests": 1366,
+        "pass": 1366,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      },
+      "validate (ubuntu-latest)": {
+        "tests": 1366,
+        "pass": 1365,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1
+      }
+    },
+    "scope": "The auxiliary compaction source commit; the later recovery-status update changes documentation only"
   }
 }
