@@ -22,6 +22,30 @@ async function fixture(t) {
 }
 const chat = (id, text) => ({ personId: null, sourceSessionId: 's', sourceEventId: id, sourceKind: 'assistant', contentClass: 'participant_dialogue', channelId: 'c', role: 'assistant', text, sourceAt: 1000, observedAt: 1000 });
 
+test('management carries exact memory identity through browse, search and paged detail without cross-person reads', async t => {
+  const { repository, service } = await fixture(t);
+  for (const personId of ['a', 'b']) {
+    if (personId !== 'a') await repository.upsertPerson({ personId });
+    const run = await repository.prepareConsolidation({ personId }), key = `person:${personId}:index`;
+    await repository.applyConsolidation(run, [{ documentKey: key, expectedVersion: run.inputVersions[key], operation: 'upsert', recordId: 'shared-id', value: { kind: 'fact', text: `${personId} independent detail`, srcRefs: [] } }]);
+  }
+  const page = await service.dispatch('memory.list', { scope: 'person', personId: 'b' }), selected = page.items[0];
+  assert.equal(selected.personId, 'b'); assert.equal(typeof selected.recordKey, 'string');
+  const search = await service.dispatch('memory.search', { query: 'independent', scope: 'all', associationDepth: 0 });
+  assert.equal(search.items.length, 2); assert.equal(new Set(search.items.map(row => row.recordKey)).size, 2);
+  await assert.rejects(service.dispatch('memory.detail', { id: selected.id }), { code: 'MEMORY_RECORD_AMBIGUOUS' });
+  let cursor, assembled = '';
+  do {
+    const result = await service.dispatch('memory.detail', { id: selected.id, recordKey: selected.recordKey, personId: 'b', scope: selected.scope, recordType: selected.recordType, pageChars: 60, cursor });
+    assembled += result.text; cursor = result.nextCursor;
+  } while (cursor);
+  const detail = JSON.parse(assembled); assert.equal(detail.personId, 'b'); assert.equal(detail.text, 'b independent detail');
+  await assert.rejects(service.dispatch('memory.detail', { id: selected.id, recordKey: selected.recordKey, personId: 'a' }), { code: 'MEMORY_UNAVAILABLE' });
+  await assert.rejects(service.dispatch('memory.detail', { id: selected.id, recordKey: {} }), { code: 'BAD_MANAGEMENT_REQUEST' });
+  await assert.rejects(service.dispatch('memory.forget', { ids: [selected.id], targetPersonId: 'b', scope: 'person' }), { code: 'MEMORY_RECORD_AMBIGUOUS' });
+  assert.equal((await service.dispatch('memory.list')).total, 2);
+});
+
 test('status separates process provenance gaps from dialogue copying failures using only safe aggregate counts', async t => {
   const { service, repository, calls } = await fixture(t), runtime = await repository.getRuntime();
   const secret = 'PRIVATE_GAP_ACCOUNT_0000000000_PATH_TOKEN';

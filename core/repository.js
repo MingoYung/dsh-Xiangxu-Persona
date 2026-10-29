@@ -4,7 +4,7 @@ import { JsonStore } from './store.js';
 import { extractSourceDependencies, hotSourceDependencies, dependenciesRevoked, temporaryCleanupPlan, runReferencesRevocation } from './source-dependencies.js';
 import { countStringValues, serializedBytes, assertRecordCapacity, assertDocumentCapacity, assertFiniteReviewState, assertFiniteJson, capacityError } from './capacity.js';
 import { SELF_PROFILE_PATH, emptySelfProfile, validateSelfProfile, validateSelfProfilePatch, applySelfProfilePatch, selfProfileLinks, redactSelfProfile } from './self-profile.js';
-import { validateRetrievalInput, temporalReference, lexicalCandidates, associationCandidates, mergeCandidates } from './retrieval.js';
+import { validateRetrievalInput, temporalReference, lexicalCandidates, associationCandidates, mergeCandidates, retrievalRecordKey } from './retrieval.js';
 import { RetrievalState } from './retrieval-semantic.js';
 import { TimelineStorage, TIMELINE_CATALOG, TIMELINE_FIELDS, unifiedRecord, timelineChars, timelineOrder, isTimelinePath, validateTimelineAnnotation, redactTimelineRecord } from './timeline.js';
 import {
@@ -46,6 +46,24 @@ const sourceReceiptRevoked = (receipt, meta, removedHotIds) => {
   const sources = new Set((meta.revokedSources ?? []).map(digest)), ids = new Set([...(meta.revokedIds ?? []), ...removedHotIds].map(digest));
   return receipt.sourceHashes.some(value => sources.has(value)) || receipt.recordHashes.some(value => ids.has(value));
 };
+function memoryRecordAmbiguous(id) {
+  return Object.assign(new Error('More than one memory record has this ID; no record was selected or forgotten'), { code: 'MEMORY_RECORD_AMBIGUOUS', recordId: id });
+}
+function memoryRecordSelector(id, selector) {
+  if (!selector || typeof selector !== 'object' || Array.isArray(selector) || Object.keys(selector).some(key => !['recordKey', 'personId', 'scope', 'recordType'].includes(key))) throw new SchemaError('Invalid memory record selector');
+  if (selector.personId !== undefined && selector.personId !== null) safeId(selector.personId);
+  if (selector.scope !== undefined && !['global', 'person', 'staging'].includes(selector.scope)) throw new SchemaError('Invalid memory record scope');
+  if (selector.recordType !== undefined && (typeof selector.recordType !== 'string' || !selector.recordType || countChars(selector.recordType) > 40)) throw new SchemaError('Invalid memory record type');
+  if (selector.recordKey !== undefined) {
+    if (typeof selector.recordKey !== 'string' || countChars(selector.recordKey) > 2000) throw new SchemaError('Invalid bounded memory record key');
+    let key; try { key = JSON.parse(selector.recordKey); } catch { throw new SchemaError('Invalid memory record key'); }
+    if (!Array.isArray(key) || key.length !== 4 || key[3] !== id || JSON.stringify(key) !== selector.recordKey ||
+      typeof key[0] !== 'string' || !key[0] || countChars(key[0]) > 40 || !['global', 'person', 'staging'].includes(key[1]) ||
+      key[2] !== null && (typeof key[2] !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(key[2]))) throw new SchemaError('Memory record key must identify this record');
+  }
+  return row => ['personId', 'scope', 'recordType'].every(field => selector[field] === undefined || selector[field] === row[field]) &&
+    (selector.recordKey === undefined || selector.recordKey === retrievalRecordKey(row));
+}
 function keywords(query) {
   const value = String(query ?? '').toLocaleLowerCase();
   const terms = new Set(value.match(/[\p{L}\p{N}_]+/gu) ?? []);
@@ -503,7 +521,7 @@ export class MemoryRepository {
   listPeople() {
     return this._queue(async () => { const meta = await this._meta(); return Promise.all(meta.personIds.map((id) => this.store.readJson(personPath(id, 'identity.json')))); });
   }
-  async _allMemory(meta) {
+  async _allMemory(meta, { chatPaths } = {}) {
     const rows = [];
     for (const id of [null, ...meta.personIds]) {
       const prefix = id ? 'people/' + id : 'global';
@@ -513,7 +531,7 @@ export class MemoryRepository {
       }
     }
     for (const item of (await this._document('global/deep.json')).items) rows.push({ ...item, recordType: 'deep' });
-    for (const record of await this._records(meta)) rows.push({ ...record, scope: record.personId ? 'person' : 'staging', epistemic: record.role === 'user' ? 'user_statement' : 'observed',
+    for (const record of await this._records(meta, { paths: chatPaths })) rows.push({ ...record, scope: record.personId ? 'person' : 'staging', epistemic: record.role === 'user' ? 'user_statement' : 'observed',
       srcRefs: [sourceRef(record)], aboutPersonIds: record.personId ? [record.personId] : [], recordType: 'chat' });
     const persona = await this._persona();
     for (const [field, type] of [['facets', 'facet'], ['signatures', 'signature'], ['habits', 'habit']]) for (const entry of persona[field]) rows.push({ ...entry, scope: entry.scope ?? 'global', personId: entry.personId ?? null, recordType: type });
@@ -524,7 +542,8 @@ export class MemoryRepository {
         for (const entry of impression.events) rows.push({ ...entry, recordType: 'relation_event' });
       }
     }
-    return rows.filter((item) => !item.retractedBy && !meta.revokedIds.includes(item.id) && !(item.srcRefs?.length && item.srcRefs.every((ref) => meta.revokedSources.includes(sourceKey(ref)))));
+    return rows.filter((item) => !item.retractedBy && !meta.revokedIds.includes(item.id) && !(item.srcRefs?.length && item.srcRefs.every((ref) => meta.revokedSources.includes(sourceKey(ref)))))
+      .map(item => ({ ...item, recordKey: retrievalRecordKey(item) }));
   }
   async _search(input, context = {}) {
     input = validateRetrievalInput(input);
@@ -593,16 +612,15 @@ export class MemoryRepository {
       return { items: copy(rows.slice(offset, offset + limit)), total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null, revision };
     });
   }
-  getMemoryRecord(id) {
+  getMemoryRecord(id, selector = {}) {
     return this._queue(async () => {
       if (typeof id !== 'string' || !id || countChars(id) > 200) throw new SchemaError('A bounded memory record ID is required');
-      const meta = await this._meta(), receipt = Object.values(meta.sources).find(row => row.id === id);
-      if (receipt) {
-        const row = (await this._records(meta, { paths: [receipt.storagePath ?? streamPath(receipt.personId)] })).find(item => item.id === id);
-        if (row) return copy({ ...row, scope: row.personId ? 'person' : 'staging', recordType: 'chat', srcRefs: [sourceRef(row)] });
-        return null;
-      }
-      return copy((await this._allMemory(meta)).find(item => item.id === id) ?? null);
+      const matches = memoryRecordSelector(id, selector), meta = await this._meta();
+      // Inspect matching source shards and semantic documents, not unrelated archive bodies.
+      const chatPaths = [...new Set(Object.values(meta.sources).filter(row => row.id === id).map(row => row.storagePath ?? streamPath(row.personId)))];
+      const rows = (await this._allMemory(meta, { chatPaths })).filter(item => item.id === id && matches(item));
+      if (rows.length > 1) throw memoryRecordAmbiguous(id);
+      return copy(rows[0] ?? null);
     });
   }
   getTimelineStatus() {
@@ -628,8 +646,10 @@ export class MemoryRepository {
       if (personId !== undefined) rows = rows.filter(row => row.personId === personId);
       if (query) { const normalized = query.toLocaleLowerCase(); rows = rows.filter(row => [row.text, ...Object.values(row.timeline).filter(value => typeof value === 'string'), ...row.timeline.indexCodes].join(' ').toLocaleLowerCase().includes(normalized)); }
       rows.sort(timelineOrder);
-      return { items: copy(rows.slice(offset, offset + limit).map(row => ({ ...row, scope: row.personId ? 'person' : 'staging',
-        recordType: 'chat', srcRefs: [sourceRef(row)] }))), total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null,
+      return { items: copy(rows.slice(offset, offset + limit).map(row => {
+        const item = { ...row, scope: row.personId ? 'person' : 'staging', recordType: 'chat', srcRefs: [sourceRef(row)] };
+        return { ...item, recordKey: retrievalRecordKey(item) };
+      })), total: rows.length, offset, nextOffset: offset + limit < rows.length ? offset + limit : null,
         revision: String(catalog.version) + ':' + String(meta.version), chronological: true, tier };
     });
   }
@@ -764,6 +784,10 @@ export class MemoryRepository {
       const meta = await this._meta(); const all = await this._allMemory(meta); const ids = new Set(input.ids ?? []);
       const chosen = all.filter((r) => (nullScope ? r.scope === (nullScope === 'unknown' ? 'staging' : 'global') : r.personId === personId) && (ids.has(r.id) || ids.has(r.eventId) || (input.before !== undefined && (r.createdAt ?? r.sourceAt) < input.before)));
       const refs = chosen.flatMap((r) => r.srcRefs ?? []); const refKeys = new Set(refs.map(sourceKey)); const affected = new Set(chosen.map((r) => r.id));
+      // Legacy revocations and dependency receipts identify records by bare ID. A
+      // qualified selection cannot make such a destructive receipt unambiguous.
+      const counts = new Map(); for (const row of all) counts.set(row.id, (counts.get(row.id) ?? 0) + 1);
+      for (const row of all) if ((affected.has(row.id) || row.srcRefs?.some(ref => refKeys.has(sourceKey(ref)))) && counts.get(row.id) > 1) throw memoryRecordAmbiguous(row.id);
       const revocation = { schemaVersion: SCHEMA_VERSION, id: newId('rv'), eventId: this._event(meta), action: input.action ?? 'forget', personId: nullScope ? null : personId,
         ...(nullScope ? { scope: nullScope } : {}),
         targetIds: [...affected], targetSrcRefs: [...new Map(refs.map((r) => [sourceKey(r), { ...r, summary: undefined }])).values()],

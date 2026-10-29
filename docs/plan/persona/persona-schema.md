@@ -1,10 +1,10 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.13.4兼容增量以第26节为权威：统一persona-timeline/1注释、短期／长期／归档转层与必要人格上下文。第20–25节自我档案、生命周期、检索、受管连接和账号工具按兼容范围继续有效；历史证据不提升为本轮验收。
+当前0.13.5兼容增量以第26节为权威：统一persona-timeline/1注释、短期／长期／归档转层与必要人格上下文。第20–25节自我档案、生命周期、检索、受管连接和账号工具按兼容范围继续有效；历史证据不提升为本轮验收。
 
-> 0.13.4当前维护：受管QQ恢复仅在已保存恢复意愿、人格归属、启用桥账号与API端口全部匹配的新启动中传递单一快登账号；普通UI／状态查询不反复触发。相处页单列QQ等待登录、未核实和失败，清醒不冒充账号在线，见[QQ登录恢复](../../qq-login-recovery.md)。本轮仍待本人扫码，源码及定向验证不等于正式重载或新QQ往返通过；旧0.13.3验收保留原范围。开源复用与真实记忆关联图见[研究建议](../../open-source-reuse-and-memory-visualization.md)，图功能尚未实现。人格记忆、判断、成长、资料选择与社交时机均不变，其他社交平台仍未测试。
+> 0.13.5当前维护：复合recordKey定位记忆，裸ID歧义时不猜选；旧撤销依赖无法分清碰撞编号时，遗忘在写入前整次拒绝。渠道在最后驱动提交前复核当前实例／根／账号／连接／许可；关闭先同步取消模型，再排空已接纳写入，最后释放writer。机制与未测边界见[技术补修](../../0.13.5-technical-safety-fixes.md)。本轮不重启DSH、不访问正式记忆正文、不调用生产模型或QQ实测，不将这些问题认定为此前DSH Host启动超时根因。数据schema和人格自主判断不变，旧版验收保持原范围。
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.13.4 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.13.5 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -1265,3 +1265,13 @@ DSH最终llm/stream还核对真实system消息中的protocol／conversation／li
 ### 26.5 本轮验收边界
 
 本轮按用户自行验证QQ的安排，不运行真实模型或平台验收；QQ头像／资料／空间由用户自行操作，其他社交连接显示未测试；没有为了补覆盖而强迫人格修改资料。隔离持久化、故障和加载测试的实际结果以[0.13.0机器回执](../../verification/0.13.0-memory-timeline.json)为准，不预填通过数，也不以0.12.0的1289项替代。本节不新增人格判断、固定梳理频率、强制情绪或深刻回忆规则。
+
+### 26.6 0.13.5：复合读取、撤销歧义与关闭边界
+
+读取投影新增recordKey=JSON.stringify([recordType,scope,personId,id])，不改原始id或存储schema。getMemoryRecord(id,selector={recordKey?,personId?,scope?,recordType?})接受实际scope=person|global|staging；未传／undefined字段不约束，personId:null明确选择空归属。候选仍多条时返回MEMORY_RECORD_AMBIGUOUS，不find第一条；列表、搜索、时间线、管理详情和原文后续分页保持同一选择。
+
+forget沿原ids／targetPersonId／scope接口。现有revokedIds和来源依赖仍是裸ID，本版不迁移；当选中项或受来源撤销影响的条目编号有碰撞时，在任何写入前返回MEMORY_RECORD_AMBIGUOUS并保留全部资料，不声称已支持碰撞情况下精准遗忘。无碰撞的原有撤销继续有效。
+
+渠道最后调用驱动前重新核对当前coordinator、memoryRoot、实际账号、连接与许可；stop／suspend／close使等待中旧任务失效。进入外部驱动后的真实结果仍按delivered／unknown等回执处理，不能保证取消或撤回。runtime.beginClose()同步标记closing、清理调度并中止模型，适配层在此后排空已接纳入站与operator写入，最终close才释放仓库与writer。此顺序不定义人格睡眠或回应规则。
+
+机制、限制与本轮不重启／无生产实测范围见[0.13.5说明](../../0.13.5-technical-safety-fixes.md)。

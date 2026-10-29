@@ -1,12 +1,16 @@
 # dsh-Xiangxu-Persona · 相续人格
 
-当前版本0.13.4补受管QQ重新启动时的已保存账号快登参数，并在“相处”页明确区分人格清醒与QQ连接状态。恢复只沿用已保存且作用域匹配的账号；平台要求重新登录时仍需本人扫码，不把快登尝试当作成功。本轮状态、定向验证与未测边界见[QQ登录恢复](docs/qq-login-recovery.md)。0.13.3的[资料与文字输出修复](docs/qq-profile-output-recovery.md)、0.13.2的[QQ无回复修复](docs/qq-reply-recovery.md)和问题反馈通道保留历史范围；见[问题申报](docs/support.md)与[收录记录](docs/market-submission.md)。
+当前版本0.13.5修复三处已在隔离环境复现的技术缺陷：同编号记忆的详情错人及跨对象误删、人格或连接失效后旧请求仍可能发送、关闭时整理任务等不到取消信号。详情使用复合记录身份；旧撤销引用不足以区分同编号时原子拒绝遗忘并保留资料。本轮不重启DSH、不访问正式记忆或发送平台消息，不把这些缺陷当作此前启动超时的已确认原因。机制、兼容限制与验收边界见[0.13.5技术修复](docs/0.13.5-technical-safety-fixes.md)。
 
-0.13.0引入的统一短期、长期与归档记忆继续兼容：同一格式按时间线转层，长期活动正文默认100万字符，最旧内容超额时完整转入可回查归档；每轮人格请求必须取得当前人格及必要近况，加载故障明确报错。说明见[时间线记忆与上下文](docs/memory-timeline-and-context.md)，唯一字段见[第26节](docs/plan/persona/persona-schema.md#0130-memory-timeline-contract)。0.13.0的原始验收范围保留历史含义；本轮QQ连接恢复状态以[本轮说明](docs/qq-login-recovery.md)为准，其他社交连接仍显示未测试。此前账号功能与0.12.0实测保留其[历史范围](docs/account-capabilities.md#0120-current-acceptance)。
+0.13.5最终本机完整隔离回归1463/1463通过，新增42项，失败／取消／跳过均为0，运行期间源码哈希未变；构建、225份JavaScript语法、14份方案镜像、文档与打包检查通过。机器记录见[本轮回执](docs/verification/0.13.5-technical-safety.json)。这不是正式QQ或真实模型验收；远程CI按对应提交独立核实。
+
+[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)已于北京时间2026-10-29 01:23:08合并，上游主分支已有[目录条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/MingoYung__dsh-Xiangxu-Persona.yml)。客户端市场列表是否刷新由其更新机制决定。问题反馈仍通过[中文申报表单](https://github.com/MingoYung/dsh-Xiangxu-Persona/issues/new?template=bug_report.yml)跟进。
+
+0.13.0引入的统一短期、长期与归档记忆继续兼容：同一格式按时间线转层，长期活动正文默认100万字符，最旧内容超额时完整转入可回查归档；每轮人格请求必须取得当前人格及必要近况，加载故障明确报错。说明见[时间线记忆与上下文](docs/memory-timeline-and-context.md)，唯一字段见[第26节](docs/plan/persona/persona-schema.md#0130-memory-timeline-contract)。0.13.0的原始验收范围保留历史含义；0.13.4的QQ连接恢复记录见[登录恢复](docs/qq-login-recovery.md)，其他社交连接仍显示未测试。此前账号功能与0.12.0实测保留其[历史范围](docs/account-capabilities.md#0120-current-acceptance)。
 
 0.8.1历史补丁增强透明主题下的操作提示：主导航和内容分类的选中项有常驻下划线，功能入口有“打开 →”轮廓标记，状态单独显示；悬停与键盘焦点可见。颜色继续取自DSH主题，0.8系列操作流程及后台契约不变。 相关55项回归与三种主题检查已通过，范围见[本补丁回执](docs/verification/0.8.1-affordance.json)。
 
-相续人格是面向DSH的长期人格与记忆插件，版本 **0.13.4**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供五个主入口和任务式子页，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
+相续人格是面向DSH的长期人格与记忆插件，版本 **0.13.5**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供五个主入口和任务式子页，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
 
 这是同一个跨关系成长的人格。它自己判断认出谁、注意谁、记什么、回不回复、何时主动、是否有必要整理、何时睡和怎样醒。软件保存来源与归属、执行选择、控制资源并恢复故障，没有每日主动额度、最短交流间隔、沉默惩罚、印象证据门槛、强制睡眠、话题硬拦截或承诺履约器。
 

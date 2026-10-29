@@ -1,6 +1,6 @@
 # DSH Market 收录申请
 
-当前发布补丁：**0.13.4**。本补丁补已保存匹配账号的受管启动快登参数和相处页QQ状态提示，范围与未测边界见[QQ登录恢复](qq-login-recovery.md)；0.13.3的[QQ资料与文字输出修复](qq-profile-output-recovery.md)、0.13.2的[QQ恢复记录](qq-reply-recovery.md)与0.13.1的申请验收仍保留原范围。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28已按用户决定提交[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，**自动检查已通过，当前开放且未合并，待维护者审核，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
+当前发布补丁：**0.13.5**。记忆定位、渠道发送前复核与关闭顺序的范围和未测边界见[技术补修](0.13.5-technical-safety-fixes.md)；0.13.4及更早验收保留原范围。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。[收录PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)已于2026-10-28T17:23:08Z合并，即北京时间2026-10-29 01:23:08；上游main已包含[目录条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/MingoYung__dsh-Xiangxu-Persona.yml)。这证明目录收录已合并，不表示所有市场客户端缓存均已刷新。
 
 ## 本轮材料与反馈入口
 
@@ -9,11 +9,17 @@
 - 目录条目为[market/MingoYung__dsh-Xiangxu-Persona.yml](../market/MingoYung__dsh-Xiangxu-Persona.yml)，使用memory分类。申请只在收录仓库data/plugins/增加同名文件，不修改自动生成的README。描述须区分已实现、可选服务与真实账号未测范围。
 - 2026-10-28核对仓库管理权限、启用Issues、dsh-plugin topic与至少一天仓库年龄均符合当时要求。贡献指南仍以[上游当前指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)为准，最终收录由上游维护者审查。
 
-## 0.13.4当前验证范围
+## 0.13.5当前验证边界
+
+本轮只做隔离复现、回归和文档／交付检查，测试汇总以实际回执为准，不借旧版数字充当本版通过数。本轮不访问正式记忆正文、不重启DSH、不调用生产模型或QQ实测；不把三处技术问题说成此前DSH Host启动超时的已证原因。人格自主判断保持，未测社交平台仍标未测试。
+
+最终本机全量1463/1463通过，新增42项且失败／取消／跳过为0，运行前后源码哈希一致；构建、语法、方案镜像、文档与打包预检通过，见[0.13.5回执](verification/0.13.5-technical-safety.json)。远程CI、正式加载与生产往返仍分别报告。
+
+## 0.13.4历史验证范围
 
 本轮快速登录定向隔离测试140/140通过，新增14项；最终首页顺序调整后全部ui-*.test.js重新运行201/201通过，新增相处页连接提示7项；渠道／进程回归38/38及管理宿主模块回归5/5通过，以上失败／取消／跳过均为0，各组分别报告，不当作完整回归。构建、语法、文档与打包检查通过。2026-10-29 13:12:06（北京时间）本补丁已通过普通desktop Host重启加载，实机首页显示等待登录并可直接进入扫码页；当前尚无新的登录成功或QQ私群往返验收。平台一次快登明确拒绝旧身份后仍需本人扫码，不能宣称免扫码成功。0.13.3的1400/1400只属于上一版完整回归，不能改称0.13.4全量通过；见[本轮回执](verification/0.13.4-qq-login-recovery.json)。
 
-开源复用与记忆关联图仅为[研究建议](open-source-reuse-and-memory-visualization.md)，本补丁没有安装第二套机器人、替换人格记忆或交付图功能。收录PR进度沿用下述2026-10-28已核记录，本轮未另查上游状态、未提交新PR。
+开源复用与记忆关联图仅为[研究建议](open-source-reuse-and-memory-visualization.md)，本补丁没有安装第二套机器人、替换人格记忆或交付图功能。该段保留0.13.4当时尚未另查PR的范围；当前合并事实见本文开头，不需要重复提交收录PR。
 
 ## 历史验证与未测边界
 
@@ -21,7 +27,7 @@
 
 本轮报错通道、文档与收录材料不运行真实模型或社交账号测试，不因申请收录宣称QQ、B站或其他社交平台已全部验证。QQ按用户安排自行验证；其他社交连接继续显示未测试，旧版真实验收仍保留原范围。问题反馈不会自动上传记忆库，也不承诺持续调用付费模型来监控工单。
 
-## 申请进度
+## 历史申请进度（2026-10-28复核）
 
 本轮申请为[awesome-dsh-plugin/awesome-dsh-plugin#10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，创建于2026-10-28T04:28:39Z。2026-10-28（北京时间）复核时，[上游PR check](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/actions/runs/40632538658)与[Submission gate](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/runs/122677392329)均已通过，之前的action_required已解除。PR仍为开放、非草稿、未合并，未发现合并冲突；只新增一条目录记录，等待上游维护者审核与合并。当前MingoYung账号对上游只有读取权限，不能代替上游维护者批准或合并。申请目标为main，提交头为d6e56096044211a0db9e8b791efe54b5c2514b65；插件0.13.1源码提交为86f0677，后续申请材料已同步。CI通过不表示已获收录；后续以PR检查、维护者意见与最终合并状态为准。
 

@@ -1,5 +1,7 @@
 # Portable runtime API
 
+0.13.5技术补修见[记忆定位、发送前复核与关闭顺序](0.13.5-technical-safety-fixes.md)。本轮不重启DSH、不访问正式记忆正文、不调用生产模型或QQ实测；不把这些修复当作此前DSH Host启动超时的已证根因。旧版验收保留原范围，人格自主判断不变。
+
 The implementation is ESM on Node >=22, has no external dependency, DSH imports, provider credentials or installed application paths. `core/index.js` exports `PersonaRuntime`, `MemoryRepository`, `JsonStore`, schema utilities and prompt snapshot helpers. The current product authority remains `plan/persona/persona-schema.md`; `identityPlan` is an additive expression of the already requested autonomous recognition, not an authentication system.
 
 ```js
@@ -41,7 +43,8 @@ Host control and wake messages are runtime instructions, not participant dialogu
 
 | Method | Behavior |
 |---|---|
-| `open()/close()` | Open/close repository, restore complete current decision and selected timers/listeners, reconcile outbox; replay durable queued control/wake work with stable identifiers. Clear actual timers on close. |
+| `open()/close()` | Open/close repository, restore complete current decision and selected timers/listeners, reconcile outbox; replay durable queued control/wake work with stable identifiers. Final close drains tracked work before closing the repository. |
+| `beginClose()` | Synchronously mark closing, clear timers and abort model work so no new model call starts. Adapters invoke this before draining admitted inbound/operator work, then finish close and release the store/writer. It does not itself close the store, erase pending input or choose personality sleep. |
 | `accept(input,environment,options?)` | Record participant dialogue inside an explicitly selected attention range, independently of replying. Does not authenticate by session. `options.decide:true` also signals new_message; native host loops normally leave it false to avoid duplicate generation. In on_write mode, merges a bounded opportunity fact for the normal personality turn; no separate paid consolidation starts until selected. |
 | `decide(input,context)` | Validate executable structure, merge omitted top-level fields, replace supplied subplans, persist complete `currentDecision` and sleep/schedule together. Context includes personId, environment, source refs, controlId, proactive and executeReply. |
 | `compose(context)` | Build a deeply frozen, independently attributed request snapshot, save bounded diagnostics and source IDs present in injected text. Explicit `personId:null` never means another person from the last context. |

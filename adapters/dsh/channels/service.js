@@ -110,9 +110,11 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   if (typeof getCoordinator !== 'function' || typeof channelPort?.create !== 'function' || typeof channelPort?.send !== 'function' || typeof channelPort?.close !== 'function' || !storage && !registryPath || typeof clientFactory !== 'function') throw new TypeError('Channels need a coordinator, native port and external registry');
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) fail('CHANNEL_BAD_CONFIG', '渠道监听端口无效');
   const persistence = storage ?? createChannelRegistryStorage(registryPath), clients = new Map(), probes = new Map(), sockets = new Set();
-  let registry, listener = null, livePort = null, closed = false, suspended = false, boundRoot = null, tail = Promise.resolve(), queued = 0;
+  let registry, listener = null, livePort = null, closed = false, closing = false, suspended = false, boundRoot = null, tail = Promise.resolve(), queued = 0;
+  const stopIntents = new Map();
   const report = error => { const safe = cleanError(error); try { onError(Object.assign(new Error(safe.message), { code: safe.code })); } catch {} return safe; };
-  const queue = work => { if (queued >= CHANNEL_LIMITS.queued) return Promise.reject(failure('CHANNEL_QUEUE_CAPACITY', '渠道操作队列已满，请稍后重试')); queued++; const result = tail.then(async () => { if (closed) fail('CHANNEL_CLOSED', '渠道服务已关闭'); return work(); }); tail = result.catch(() => {}); return result.finally(() => { queued--; }); };
+  const queue = work => { if (closing || closed) return Promise.reject(failure('CHANNEL_CLOSED', '渠道服务已关闭')); if (queued >= CHANNEL_LIMITS.queued) return Promise.reject(failure('CHANNEL_QUEUE_CAPACITY', '渠道操作队列已满，请稍后重试')); queued++; const result = tail.then(async () => { if (closed) fail('CHANNEL_CLOSED', '渠道服务已关闭'); return work(); }); tail = result.catch(() => {}); return result.finally(() => { queued--; }); };
+  const stopping = (id, work) => { stopIntents.set(id, (stopIntents.get(id) ?? 0) + 1); return queue(work).finally(() => { const left = stopIntents.get(id) - 1; if (left) stopIntents.set(id, left); else stopIntents.delete(id); }); };
   const ready = (async () => {
     const stored = await persistence.read(); registry = stored ? validateRegistry(clone(stored)) : { schemaVersion: SCHEMA, port, profiles: IDS.map(profileDefaults), generations: [], bindings: [], receipts: [] };
     const interrupted = registry.receipts.some(receipt => receipt.status === 'prepared');
@@ -247,7 +249,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     if (selected.config.mode === 'official') try { await connectionPort.listen({ id }); } catch (error) { await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, enabled: false } : value) }); report(error); throw error; }
     return status();
   }); }
-  async function stop({ id } = {}) { return queue(async () => {
+  async function stop({ id } = {}) { if (!IDS.includes(id)) fail('CHANNEL_NOT_FOUND', '未找到这个聊天渠道'); return stopping(id, async () => {
     await ready; profile(id); await ensureIdle(id);
     await save({ ...registry, profiles: registry.profiles.map(value => value.id === id ? { ...value, enabled: false } : value) });
     if (profile(id).config.mode === 'official') await connectionPort?.stop({ id });
@@ -327,9 +329,24 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   }
   const confirmedDelivery = value => value?.status === 'delivered' && typeof value.messageId === 'string' && typeof value.receiptId === 'string';
   const ackFields = value => ({ platformMessageId: value.messageId, platformReceiptId: value.receiptId, ...(value.messageIdKind ? { messageIdKind: value.messageIdKind } : {}), deliveredAt: value.deliveredAt ?? clock(), confirmedBy: value.confirmedBy ?? 'platform-receipt' });
-  async function authorize(binding, capability) { await authorizeAction({ memoryRoot: binding.memoryRoot, platform: binding.facts.platform, accountId: binding.facts.accountId, capability }); }
+  async function authorize(binding, capability) {
+    const result = await authorizeAction({ memoryRoot: binding.memoryRoot, platform: binding.facts.platform, accountId: binding.facts.accountId, capability, dispatchFence: true });
+    if (result === false) fail('CAPABILITY_PERMISSION_DENIED', '当前渠道操作未获授权');
+    return result;
+  }
+  function assertDispatch(binding, selected, entry, sourceCoordinator, permission) {
+    const live = getCoordinator(), currentProfile = profile(binding.profileId), known = probes.get(binding.profileId);
+    if (live && typeof live.then === 'function') { Promise.resolve(live).catch(() => {}); fail('CHANNEL_INSTANCE_CHANGED', '派发前无法同步确认人格实例'); }
+    if (!live || live !== sourceCoordinator || !sameRoot(live.memoryRoot, binding.memoryRoot) || !sameRoot(boundRoot, binding.memoryRoot)) fail('CHANNEL_INSTANCE_CHANGED', '人格实例已停用或切换');
+    if (closed || closing || suspended || stopIntents.has('*') || stopIntents.has(binding.profileId) || binding.retired || !currentProfile.enabled || !allowed(currentProfile, binding.facts)) fail('CHANNEL_DISABLED', '此渠道或目标已停止接入');
+    if (currentProfile.config.accountId !== binding.facts.accountId || currentProfile.config.accountId !== selected.config.accountId || client(currentProfile) !== entry || entry.verified !== true || known?.connected !== true || known.accountId !== undefined && known.accountId !== binding.facts.accountId) fail('CHANNEL_ACCOUNT_MISMATCH', '派发前QQ账号或连接已变化');
+    if (permission?.assertCurrent) {
+      const checked = permission.assertCurrent();
+      if (checked === false || checked && typeof checked.then === 'function') { if (checked?.then) Promise.resolve(checked).catch(() => {}); fail('CAPABILITY_PERMISSION_DENIED', '派发前权限尚未同步确认'); }
+    }
+  }
   async function voiceDelivery(entry, binding, text, deliveryId) {
-    await authorize(binding, 'chat.voice');
+    const permission = await authorize(binding, 'chat.voice');
     if (!speechPort?.synthesize || !entry.value.sendVoice || entry.value.capabilities?.voice !== true) return { status: 'failed', code: 'CHANNEL_VOICE_UNAVAILABLE' };
     const coordinator = await current(), preferences = await coordinator.voice?.inspect?.('channel-voice');
     if (!preferences?.effective?.available) return { status: 'failed', code: 'CHANNEL_VOICE_UNAVAILABLE' };
@@ -348,6 +365,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       if (binding.retired || suspended || !sameRoot(binding.memoryRoot, activeRoot())) return { status: 'failed', code: 'CHANNEL_VOICE_CANCELLED' };
       await runProbe(profile(binding.profileId));
       if (!entry.verified || entry.value.capabilities?.voice !== true) return { status: 'failed', code: 'CHANNEL_VOICE_ACCOUNT_UNCONFIRMED' };
+      assertDispatch(binding, profile(binding.profileId), entry, coordinator, permission);
       deliveredResult = await entry.value.sendVoice(binding.facts, bytes, { deliveryId });
       return deliveredResult;
     } finally {
@@ -371,11 +389,13 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     if (binding.retired || suspended || !selected.enabled || !sameRoot(binding.memoryRoot, activeRoot()) || !allowed(selected, binding.facts)) outcome = { status: 'unknown', code: binding.retired ? 'CHANNEL_BINDING_RETIRED' : 'CHANNEL_DISABLED' };
     else {
       try {
-        const entry = client(selected); await runProbe(selected);
+        const sourceCoordinator = await current(), entry = client(selected); await runProbe(selected);
         if (!entry.verified) outcome = { status: 'unknown', code: 'CHANNEL_BRIDGE_UNAVAILABLE' };
         else if (selected.config.voiceMode === 'voice') outcome = audioOutcome = await voiceDelivery(entry, binding, text, deliveryId + '-voice');
         else {
-          await authorize(binding, 'chat.text');
+          const permission = await authorize(binding, 'chat.text');
+          await runProbe(selected);
+          assertDispatch(binding, selected, entry, sourceCoordinator, permission);
           outcome = await entry.value.sendText(binding.facts, text, { deliveryId });
           if (selected.config.voiceMode === 'both' && confirmedDelivery(outcome)) {
             const checkpoint = clone(registry), partial = { ...receipt, status: 'delivered', ...ackFields(outcome), voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_NOT_CONFIRMED' } };
@@ -456,14 +476,14 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     if (previous) { if (previous.textHash !== textHash) fail('CHANNEL_OUTPUT_CONFLICT', '同一操作编号不能替换动作或内容'); return resultFor(previous, true); }
     const selected = profile(binding.profileId);
     if (binding.retired || suspended || !selected.enabled || !sameRoot(binding.memoryRoot, activeRoot()) || !allowed(selected, binding.facts)) fail('CHANNEL_DISABLED', '此目标当前未接入');
-    const checked = await runProbe(selected); if (!checked.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '平台连接尚未确认');
+    const sourceCoordinator = await current(), checked = await runProbe(selected); if (!checked.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '平台连接尚未确认');
     const entry = client(selected), available = await capabilities({ id: selected.id }); if (!available.items.find(item => item.id === capability)?.supported) fail('CAPABILITY_UNSUPPORTED', '当前连接器没有实现这个能力');
-    await authorize(binding, capability);
-    if (['contacts.read', 'groups.read', 'message.read', 'message.forward.read'].includes(capability)) { const read = await entry.value.execute(binding.facts, capability, payload, { deliveryId: 'im-read-' + id.slice(0, 48) }); if (Buffer.byteLength(JSON.stringify(read)) > 32768) fail('CHANNEL_READ_CAPACITY', '读取结果超过单次技术容量'); return read; }
+    const permission = await authorize(binding, capability);
+    if (['contacts.read', 'groups.read', 'message.read', 'message.forward.read'].includes(capability)) { await runProbe(selected); assertDispatch(binding, selected, entry, sourceCoordinator, permission); const read = await entry.value.execute(binding.facts, capability, payload, { deliveryId: 'im-read-' + id.slice(0, 48) }); if (Buffer.byteLength(JSON.stringify(read)) > 32768) fail('CHANNEL_READ_CAPACITY', '读取结果超过单次技术容量'); return read; }
     const deliveryId = 'im-cap-' + id.slice(0, 48), receipt = { id, kind: 'outbound', sessionId, sourceEventId: 'capability:' + requestId, textHash, deliveryId, capability, status: 'prepared', at: clock() };
     const next = compact(clone(registry)); next.receipts.push(receipt); await save(next);
     let outcome;
-    try { if (entry.value.execute) outcome = await entry.value.execute(binding.facts, capability, payload, { deliveryId }); else if (capability === 'chat.text') outcome = await entry.value.sendText(binding.facts, payload.text, { deliveryId }); else if (capability === 'chat.voice') outcome = await entry.value.sendVoice(binding.facts, payload.bytes, { deliveryId }); else outcome = { status: 'unsupported', code: 'CAPABILITY_UNSUPPORTED' }; }
+    try { await runProbe(selected); assertDispatch(binding, selected, entry, sourceCoordinator, permission); if (entry.value.execute) outcome = await entry.value.execute(binding.facts, capability, payload, { deliveryId }); else if (capability === 'chat.text') outcome = await entry.value.sendText(binding.facts, payload.text, { deliveryId }); else if (capability === 'chat.voice') outcome = await entry.value.sendVoice(binding.facts, payload.bytes, { deliveryId }); else outcome = { status: 'unsupported', code: 'CAPABILITY_UNSUPPORTED' }; }
     catch (error) { outcome = { status: 'unknown', code: report(error).code }; }
     const result = Object.fromEntries(Object.entries(outcome ?? { status: 'unknown' }).filter(([key]) => ['status', 'deliveryId', 'messageId', 'messageIdKind', 'receiptId', 'deliveredAt', 'confirmedBy', 'affectedMessageId', 'code'].includes(key)));
     const accepted = confirmedDelivery(result) || result.status === 'completed' && typeof result.receiptId === 'string';
@@ -471,7 +491,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     const final = { ...receipt, status: accepted ? 'delivered' : result.status === 'unknown' ? 'unknown' : 'failed', ...(accepted && result.messageId ? ackFields(result) : {}), operationResult: result };
     await save({ ...registry, receipts: registry.receipts.map(value => value.id === id ? final : value) }); return result;
   }); }
-  async function suspend() { return queue(async () => { await ready; await ensureIdle(); suspended = true; await connectionPort?.stop(); await closeListener(); await channelPort.close(); return status(); }); }
+  async function suspend() { return stopping('*', async () => { await ready; await ensureIdle(); suspended = true; await connectionPort?.stop(); await closeListener(); await channelPort.close(); return status(); }); }
   async function resume() { return queue(async () => {
     await ready; const coordinator = await getCoordinator(); if (!coordinator) { suspended = true; return status(); }
     await coordinator.ready; boundRoot = coordinator.memoryRoot; suspended = false;
@@ -490,6 +510,6 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     await save(next); if (affectsActive) { await connectionPort?.stop(); await closeListener(); await channelPort.close(); suspended = true; }
     return { invalidated: true, profiles: [...affected], stopped: affectsActive };
   }); }
-  async function close() { if (closed) return; await tail; closed = true; suspended = true; await connectionPort?.stop(); await closeListener(); await channelPort.close(); }
+  async function close() { if (closed) return; closing = true; await tail; closed = true; suspended = true; await connectionPort?.stop(); await closeListener(); await channelPort.close(); }
   return { ready, status, configure, start, stop, probe, rotateIngress, suspend, resume, invalidateForRoot, close, output, reconcile, handles, receive, capabilities, execute, getAccountBridge };
 }

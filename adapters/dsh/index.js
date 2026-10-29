@@ -1063,6 +1063,9 @@ export function createDshCoordinator(ctx, config = {}) {
     if (closeTask) return closeTask; closed = true;
     closeTask = (async () => {
       await coordinator.ready;
+      // Operator commands may be waiting on cancellable model work. Cancel
+      // before draining them, while retaining the writer for final input/receipts.
+      runtime.beginClose();
       await Promise.allSettled([...attaching.values(), ...[...detaching.values()].map(value => value.task), intake, routeWrites]);
       for (const state of agents.values()) { state.disposed = true; for (const dispose of state.disposers ?? []) try { await dispose(); } catch (error) { report(error); } }
       agents.clear();

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "xiangxu-verification/1",
+  "version": "0.13.5",
+  "checkedDate": "2026-10-29",
+  "scope": "Isolated bug reproduction, source fixes, frozen full regression, documentation consistency and package validation; no production model, platform or desktop reload acceptance",
+  "issues": [
+    {
+      "id": "compound-memory-identity",
+      "reproduced": true,
+      "fixed": true,
+      "remainingLimit": "Legacy bare-ID revocation cannot safely delete colliding records; reject atomically without mutation"
+    },
+    {
+      "id": "stale-channel-dispatch",
+      "reproduced": true,
+      "fixed": true,
+      "remainingLimit": "Cannot cancel an operation already submitted to a platform driver; retain actual or unknown receipt"
+    },
+    {
+      "id": "operator-shutdown-deadlock",
+      "reproduced": true,
+      "fixed": true,
+      "remainingLimit": "Model ports must respond to AbortSignal; non-cooperative external calls cannot be forcibly ended by this fix"
+    }
+  ],
+  "baseline": {
+    "sourceCommit": "d718c6cd74ba14d9f2a0ef20f29274cb7f9fd4ce",
+    "counts": {
+      "tests": 1421,
+      "pass": 1421,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "durationMs": 187744,
+    "logSha256": "4bad208044d36dcb84700333583e68e399a3e2123b529c3127aecbe8208e189c",
+    "changedDuringRun": []
+  },
+  "finalFullSuite": {
+    "startedAt": "2026-10-29T12:33:16.599Z",
+    "finishedAt": "2026-10-29T12:36:23.833Z",
+    "durationMs": 187234,
+    "counts": {
+      "tests": 1463,
+      "pass": 1463,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "exitCode": 0,
+    "logSha256": "eabb8632d6f1ba8f8aaac57eda03b86af40f17e62ccb11a2d9ac2d7aa7284c62",
+    "changedDuringRun": [],
+    "newTestsComparedToBaseline": 42
+  },
+  "sourceHashes": {
+    "package.json": "851b955de856beb6209d70977a8196aebe8a598891b0ead3af070f9f419e883d",
+    "core/repository.js": "18883b434bb32e6207f024c18bd4d0415df807f00cd0374a9e29b4252cff4eb3",
+    "core/runtime.js": "b8604745940787e60b3cf82418ddd65a223cb7b5d89bf466fb6e74d3bf1a8648",
+    "adapters/dsh/index.js": "e16ffd76d8e9a56e36be1cc1ad9dd51da1f9fae775c0435b7ba1180f7a13e31c",
+    "adapters/dsh/management.js": "197052637afe6745b042abe52b2874b03e685c0db8da10301341739dda9701dd",
+    "adapters/dsh/tool-output.js": "f8f8142b551deee89bfe46dd09c59059752e65a3f6b6d05761a371e043a3ad8b",
+    "adapters/dsh/permissions.js": "4e2b77a94a623f80aa56b707e2d37b10d1863eb2ad5e15b2337d7c77ea0e132d",
+    "adapters/dsh/channels/service.js": "cc53218654c13f6485f3cfe9511386cd34ced8fd747a092438a36fafce09541d",
+    "ui/app.js": "918655740ff99bcfc3f23e839baa594ae53351ddac722e832c582b0ecf76cfc7",
+    "ui/client.js": "ac0b0267e6c0ec034139844c7a1fc49f68bc0f48d605d9cb02281a20d747fb50",
+    "test/memory-record-identity.test.js": "3c982ecb78a9e67c799d7894013f2358225c228f2623d04d7b42d8a44930c1dc",
+    "test/channel-dispatch-fence.test.js": "20279f1f2147ca670f01db3eaf5b0f40c20b14fb130690b94ab807ab329b0cc0",
+    "test/dsh-shutdown.test.js": "daf9d83d3a8a42826c3f1179ce98ccd3b2f435d1a2453235041bad1b78682a56",
+    "test/management.test.js": "ad3b55cf9c4e258eb9efccc26566ce714069674f56dcea9460e18e214481139e",
+    "test/ui-pagination.test.js": "0a2bd3e380d97c771f11f367acc779850c37575740835f82f8be8a5377103b33"
+  },
+  "checks": {
+    "frontendBuild": true,
+    "javascriptSyntaxFiles": 225,
+    "portableCore": true,
+    "packageTargets": true,
+    "planMirrorsMatched": 14,
+    "documentationLinks": true,
+    "npmPackDryRun": true
+  },
+  "runtime": {
+    "desktopReloadedForThisPatch": false,
+    "formalMemoryBodyAccessed": false,
+    "formalMemoryClearedOrMigrated": false,
+    "newRealModelCalls": 0,
+    "newLivePlatformOperations": 0,
+    "newLoginOrQr": 0
+  },
+  "personalityAutonomy": {
+    "newJudgmentRulesAdded": false,
+    "technicalIdentityAndLifecycleChecksOnly": true
+  },
+  "market": {
+    "pullRequest": "https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004",
+    "merged": true,
+    "mergedAt": "2026-10-28T17:23:08Z",
+    "entryOnUpstreamMain": true,
+    "allMarketClientCachesVerified": false
+  },
+  "unresolved": [
+    "Prior approximately 60-second DSH desktop Host startup timeout has no confirmed root cause; these isolated defects do not establish causation.",
+    "Production QQ/model behavior for this patch and longitudinal personality quality were not retested."
+  ],
+  "remoteCI": "Current-commit remote CI must be checked independently after push; the local result does not establish it."
+}

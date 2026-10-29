@@ -56,7 +56,7 @@ function pageDetail(action, args, value) {
     fragment: { from, to, total: characters.length, complete: to === characters.length }, nextCursor: to < characters.length ? encodeCursor(action, fingerprint, to) : null };
 }
 function memorySummary(row) {
-  return { id: row.id, recordType: row.recordType, personId: row.personId ?? null, scope: row.scope ?? null,
+  return { id: row.id, recordKey: row.recordKey ?? null, recordType: row.recordType, personId: row.personId ?? null, scope: row.scope ?? null,
     role: row.role ?? null, speakerId: row.speakerId ?? null, createdAt: row.createdAt ?? row.sourceAt ?? null, updatedAt: row.updatedAt ?? null,
     title: row.title ?? null, reference: row.reference == null ? null : short(row.reference), textPreview: short(row.text ?? row.reference ?? row.experience ?? row.meaning ?? row.desc ?? row.label ?? row.if ?? ''), chars: row.chars ?? points(row.text ?? '').length,
     ...(row.tier ? { tier: row.tier } : {}),
@@ -266,7 +266,16 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
       const fingerprint = hash({ selection: selection(args), revision: result.revision }); decodeCursor(args.cursor, action, fingerprint);
       return { items: result.items.map(memorySummary), total: result.total, offset: result.offset, pageSize: size, revision: result.revision, nextCursor: result.nextOffset === null ? null : encodeCursor(action, fingerprint, result.nextOffset) };
     }
-    if (action === 'memory.detail') { const row = await repo.getMemoryRecord(boundedString(args.id, 'id', 200)); if (!row) throw error('MEMORY_UNAVAILABLE', 'The selected record is no longer retained'); return pageDetail(action, args, row); }
+    if (action === 'memory.detail') {
+      const selector = {};
+      if (args.recordKey !== undefined) selector.recordKey = boundedString(args.recordKey, 'recordKey', 2048);
+      if (Object.hasOwn(args, 'personId')) selector.personId = args.personId === null ? null : boundedString(args.personId, 'personId', 200);
+      if (args.scope !== undefined) selector.scope = boundedString(args.scope, 'scope', 40);
+      if (args.recordType !== undefined) selector.recordType = boundedString(args.recordType, 'recordType', 40);
+      const row = await repo.getMemoryRecord(boundedString(args.id, 'id', 200), selector);
+      if (!row) throw error('MEMORY_UNAVAILABLE', 'The selected record is no longer retained');
+      return pageDetail(action, args, row);
+    }
     if (action === 'sources.read') {
       const refs = args.sourceRefs ?? [], ids = args.eventIds ?? [];
       if (!Array.isArray(refs) || refs.length > 50 || !Array.isArray(ids) || ids.length > 50) throw error('BAD_MANAGEMENT_REQUEST', 'Select at most 50 source roots');

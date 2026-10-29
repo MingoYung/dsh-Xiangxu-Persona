@@ -39,7 +39,29 @@ export function createPermissionService({file,getCoordinator,getCapabilities,clo
   function allowedFor(root,id,accountId,raw){return state.entries.find(x=>x.key===key(root,id,accountId))?.allowed??defaultAllowed(raw);}
   async function inspect(args={}){await ready;if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');const {c,raw,id,accountId,items}=await context(args.id,args.instanceId);const allowed=safeId(accountId)?allowedFor(c.memoryRoot,id,accountId,raw):[];return{id,platform:id,accountId,connected:raw.connected===true,items:items.map(x=>({...x,allowed:allowed.includes(x.id),available:Boolean(x.supported&&x.driverAvailable&&allowed.includes(x.id)&&safeId(accountId)),reason:!safeId(accountId)?'先连接一个账号':!x.supported?x.reason:!x.driverAvailable?'当前连接未就绪':!allowed.includes(x.id)?'尚未获用户授权':null}))};}
   function configure(args={}){return queue(async()=>{const {c,raw,id,accountId,items}=await context(args.id,args.instanceId);if(!safeId(accountId))fail('PERMISSION_ACCOUNT','先连接实际账号再设置权限');if(!Array.isArray(args.allowed)||args.allowed.length>IDS.size||args.allowed.some(x=>!IDS.has(x))||new Set(args.allowed).size!==args.allowed.length)fail('PERMISSION_SELECTION','能力授权列表无效');const prior=allowedFor(c.memoryRoot,id,accountId,raw);for(const capability of args.allowed)if(!prior.includes(capability)&&!items.find(x=>x.id===capability)?.supported)fail('PERMISSION_UNSUPPORTED','当前连接器未提供：'+CAPABILITY_CATALOG.find(x=>x.id===capability).label);const entry={key:key(c.memoryRoot,id,accountId),memoryRoot:c.memoryRoot,platform:id,accountId,allowed:[...args.allowed],updatedAt:clock()},next={...state,entries:[...state.entries.filter(x=>x.key!==entry.key),entry]};validate(next);if(Buffer.byteLength(JSON.stringify(next))>LIMIT)fail('PERMISSION_CAPACITY','权限登记已满，请先移除不用的账号记录');await write(next);state=next;return inspect(args);});}
-  async function authorize({memoryRoot,platform,accountId,capability}={}){await ready;if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');if(!IDS.has(capability)||!safeId(accountId)||!path.isAbsolute(memoryRoot??''))fail('CAPABILITY_PERMISSION_DENIED','能力或实际调用对象无效');const c=await getCoordinator();if(!c||rootKey(c.memoryRoot)!==rootKey(memoryRoot))fail('CAPABILITY_PERMISSION_DENIED','人格实例已经切换');const raw=await getCapabilities(platform);if(raw.accountId!==accountId)fail('CAPABILITY_PERMISSION_DENIED','账号已经切换');const item=normalizedCaps(raw).find(x=>x.id===capability);if(!item?.supported)fail('CAPABILITY_UNSUPPORTED',item?.reason??'连接器不支持此能力');if(!item.driverAvailable)fail('CAPABILITY_UNAVAILABLE','当前渠道未就绪');if(!allowedFor(memoryRoot,platform,accountId,raw).includes(capability))fail('CAPABILITY_PERMISSION_DENIED','未获用户授权：'+item.label);return true;}
+  async function authorize({memoryRoot,platform,accountId,capability,dispatchFence=false}={}){
+    await ready;if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');
+    if(!IDS.has(capability)||!safeId(accountId)||!path.isAbsolute(memoryRoot??''))fail('CAPABILITY_PERMISSION_DENIED','能力或实际调用对象无效');
+    const c=await getCoordinator(),sourceRoot=rootKey(memoryRoot),identity=c?.coordinator??c;
+    if(!c||rootKey(c.memoryRoot)!==sourceRoot)fail('CAPABILITY_PERMISSION_DENIED','人格实例已经切换');
+    const raw=await getCapabilities(platform),latest=await getCoordinator();
+    if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');
+    if(!latest||(latest.coordinator??latest)!==identity||rootKey(latest.memoryRoot)!==sourceRoot)fail('CAPABILITY_PERMISSION_DENIED','人格实例已经切换');
+    if(raw.accountId!==accountId)fail('CAPABILITY_PERMISSION_DENIED','账号已经切换');
+    const item=normalizedCaps(raw).find(x=>x.id===capability);
+    if(!item?.supported)fail('CAPABILITY_UNSUPPORTED',item?.reason??'连接器不支持此能力');
+    if(!item.driverAvailable)fail('CAPABILITY_UNAVAILABLE','当前渠道未就绪');
+    const checkGrant=()=>{if(!allowedFor(memoryRoot,platform,accountId,raw).includes(capability))fail('CAPABILITY_PERMISSION_DENIED','未获用户授权：'+item.label);};
+    checkGrant();
+    if(!dispatchFence)return true;
+    return{assertCurrent(){
+      if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');
+      const live=getCoordinator();
+      if(live&&typeof live.then==='function'){Promise.resolve(live).catch(()=>{});fail('CAPABILITY_PERMISSION_DENIED','派发前无法同步确认人格实例');}
+      if(!live||(live.coordinator??live)!==identity||rootKey(live.memoryRoot)!==sourceRoot)fail('CAPABILITY_PERMISSION_DENIED','人格实例已经切换');
+      checkGrant();return true;
+    }};
+  }
   async function list(args={}){await ready;if(closed)fail('PERMISSION_CLOSED','权限服务已关闭');const{c,id}=await context(args.id,args.instanceId);return{items:state.entries.filter(e=>rootKey(e.memoryRoot)===rootKey(c.memoryRoot)&&e.platform===id).map(({accountId,allowed,updatedAt})=>({accountId,allowed:[...allowed],updatedAt}))};}
   function reset(args={}){return queue(async()=>{const{c,id,accountId,raw}=await context(args.id,args.instanceId),selected=args.accountId??accountId;if(!safeId(selected))fail('PERMISSION_ACCOUNT','需要明确的已保存账号');const selectedKey=key(c.memoryRoot,id,selected),next={...state,entries:state.entries.filter(e=>e.key!==selectedKey)};const removed=next.entries.length!==state.entries.length;if(removed){await write(next);state=next;}return{resetAccountId:selected,removed,defaults:defaultAllowed(raw),current:await inspect(args)};});}
   async function close(){await tail;closed=true;}

@@ -17,7 +17,15 @@ const pretty = value => typeof value === 'string' ? value : JSON.stringify(value
 const number = value => typeof value === 'number' && Number.isFinite(value) ? new Intl.NumberFormat('zh-CN').format(value) : '—';
 const date = value => typeof value === 'number' && Number.isFinite(value) ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '未选择时间';
 const short = (value, max = 230) => { const text = typeof value === 'string' ? value : pretty(value) ?? ''; const chars = Array.from(text); return chars.length > max ? chars.slice(0, max).join('') + '…' : text; };
-const errorText = error => `${error?.code ? error.code + ' · ' : ''}${error?.message ?? String(error)}`;
+const errorText = error => error?.code === 'MEMORY_RECORD_AMBIGUOUS'
+  ? '发现多条记忆使用同一编号，当前无法安全区分操作范围。此次操作未删除资料；请从列表重新打开具体记忆，遗忘冲突记录需要先修复来源编号。'
+  : `${error?.code ? error.code + ' · ' : ''}${error?.message ?? String(error)}`;
+function memorySelection(item) {
+  return { id: item.id ?? item.recordId,
+    ...(item.recordKey ? { recordKey: item.recordKey } : {}),
+    ...(Object.hasOwn(item, 'personId') ? { personId: item.personId } : {}),
+    ...(item.scope ? { scope: item.scope } : {}), ...(item.recordType ? { recordType: item.recordType } : {}) };
+}
 const personName = id => id == null ? '未知归属' : state.people.find(p => p.personId === id || p.id === id)?.displayName || id;
 const memoryScopeLabel = record => record.scope === 'global'
   ? (record.recordType === 'deep' ? '深刻记忆 · 共同参考' : ['facet', 'signature', 'habit'].includes(record.recordType) ? '共同人格' : '共同记忆')
@@ -580,7 +588,7 @@ async function retrievalPage() {
         paginator(result, next => search(next, { pageIndex: searchPage + 1 }), { ...paging, position: 'top' }),
         getItems(result).length ? element('div', { class: 'record-list' }, ...getItems(result).map(item => element('article', { class: 'record' }, element('h3', {}, item.title || item.textPreview || item.id),
           element('p', { class: 'record-meta' }, memoryScopeLabel(item) + ' · ' + (item.retrieval?.channels ?? []).join(' / ')),
-          button('查看完整记忆与来源', () => inspectDocument('memory.detail', { id: item.id }, '记忆详情'), 'link'),
+          button('查看完整记忆与来源', () => inspectDocument('memory.detail', memorySelection(item), '记忆详情'), 'link'),
           disclosure({}, element('summary', {}, '为什么找到这一条'), data(item.retrieval))))) : empty('没有匹配的候选参考', '可以调整线索或范围后再次查找；没有结果不代表记忆库为空。'),
         paginator(result, next => search(next, { pageIndex: searchPage + 1 }), paging),
         disclosure({}, element('summary', {}, '本次检索覆盖与限制'), data(result.diagnostics)));
@@ -607,7 +615,7 @@ async function timelinePage() {
   const query = field('timeline-query', '搜索这部分记忆', '', { placeholder: '标题、原话、经历或感受', class: 'search' });
   let selection = {}, cursors = [null], pageNumber = 1, readGeneration = 0, readError = null, rendered = false;
   async function openRecord(item) {
-    await inspectDocument('memory.detail', { id: item.id }, item.timeline?.title || timelineTierNames[item.tier] || '经历详情', { eyebrow: 'MEMORY / TIMELINE', actions: [{
+    await inspectDocument('memory.detail', memorySelection(item), item.timeline?.title || timelineTierNames[item.tier] || '经历详情', { eyebrow: 'MEMORY / TIMELINE', actions: [{
       label: item.tier === 'archive' ? '明确遗忘这条归档…' : '明确遗忘这条记忆…', kind: 'danger', run: async () => {
         if (!alive()) return;
         const result = await mutate('memory.forget', { ids: [item.id], ...(item.personId ? { targetPersonId: item.personId, scope: 'person' } : { scope: 'unknown' }) }, {
@@ -665,7 +673,7 @@ async function memoryPage() {
   let args = {}, pageNumber = 1, listGeneration = 0, pageCursors = [null], listReadError = null, memoryRendered = false;
   async function openRecord(item) {
     const id = item.id ?? item.recordId;
-    await inspectDocument('memory.detail', { id }, '记忆详情', { eyebrow: 'MEMORY / SOURCE', actions: [
+    await inspectDocument('memory.detail', memorySelection(item), '记忆详情', { eyebrow: 'MEMORY / SOURCE', actions: [
       { label: '明确遗忘此条目', kind: 'danger', run: async () => { const result = await mutate('memory.forget', { ids: [id], ...(item.personId ? { targetPersonId: item.personId, scope: 'person' } : { scope: item.scope === 'global' ? 'global' : 'unknown' }) }, { title: '明确遗忘所选条目', description: '撤销选定记录及必要派生，并清理相关临时副本与未提交候选。明确撤销不会因回滚或重建而复活；宿主独立日志与外部备份不由此删除。', preview: { ids: [id], relationship: memoryScopeLabel(item), role: item.role ?? item.sourceRole }, reason: true, danger: true, accept: '确认遗忘' }); if (result) { startDetail('明确遗忘的实际结果', 'REVOCATION / RECEIPT'); replace($('detail-content'), notice(`实际影响 ${number(result.affectedCount ?? result.affectedIds?.length)} 条；是否完整列出以回执字段为准。`), data(result)); replace($('detail-footer'), button('关闭', () => $('detail-dialog').close(), 'secondary')); } } },
       ...(item.sourceSessionId && item.sourceEventId ? [{ label: '关联到关系…', run: async () => {
         const generation = startDetail('为原件选择关系归属', 'RELATIONSHIP'), choice = field('assign-person', '关系人物', '', { choices: [['', '请选择关系人物'], ...state.people.map(p => [p.personId ?? p.id, p.displayName ?? p.personId ?? p.id])] }), lookup = field('assign-person-query', '查找更多已知人物', '', { placeholder: '姓名、别名或人物 ID' }), reason = field('assign-reason', '操作说明', '', { multiline: true });

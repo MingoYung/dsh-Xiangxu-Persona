@@ -23,7 +23,7 @@ export class PersonaRuntime {
     if (!repository) throw new TypeError('repository is required');
     this.repository = repository; this.clock = clock; this.model = model; this.host = host;
     this.config = defaultConfig(config); this.tokenCounter = createTokenCounter({ model, host, counter: tokenCounter });
-    this.autoSchedule = autoSchedule; this.opened = false; this.closed = false;
+    this.autoSchedule = autoSchedule; this.opened = false; this.closed = false; this.closing = false;
     this._serial = Promise.resolve(); this._work = Promise.resolve(); this._tasks = new Set();
     this._controllers = new Map(); this._sending = new Set(); this._effectTasks = new Map(); this._jobTasks = new Map(); this._timer = null; this.errors = [];
   }
@@ -49,7 +49,7 @@ export class PersonaRuntime {
   }
   async open() {
     if (this.opened && !this.closed) return this;
-    await this.repository.open(); this.closed = false; this.opened = true;
+    await this.repository.open(); this.closed = false; this.closing = false; this.opened = true;
     if (this.repository.config) this.config = defaultConfig(this.repository.config);
     await this._refresh(); await this.reconcileOutbox(); this._schedule();
     for (const record of await this.repository.getOutbox()) if (record.status === 'pending') this._track(this.retryDelivery(record.deliveryId));
@@ -77,9 +77,14 @@ export class PersonaRuntime {
     }
     return this;
   }
-  async close() {
-    this.closed = true; this._clearTimer();
+  // Cancel model work before an adapter drains commands which may be awaiting
+  // that work. Keep the writer open so admitted input and command receipts drain.
+  beginClose() {
+    this.closing = true; this._clearTimer();
     for (const { controller } of this._controllers.values()) controller.abort();
+  }
+  async close() {
+    this.beginClose(); this.closed = true;
     await Promise.allSettled([...this._tasks]); await this._serial; await this._work;
     await this.repository.close(); this.opened = false;
   }
@@ -89,7 +94,7 @@ export class PersonaRuntime {
     this._timer = null;
   }
   _schedule() {
-    this._clearTimer(); if (!this.autoSchedule || !this.opened || this.closed) return;
+    this._clearTimer(); if (!this.autoSchedule || !this.opened || this.closed || this.closing) return;
     const state = this.state, decision = state?.currentDecision;
     if (!state) return;
     const candidates = state.sleep?.state === 'sleeping'
@@ -381,6 +386,7 @@ export class PersonaRuntime {
       memoryGapCount: number('memoryGapCount') ?? (state.memoryGaps ?? []).filter(gap => gap.resolvedAt == null).length };
   }
   async _call(purpose, messages, extra = {}) {
+    if (this.closed || this.closing) throw Object.assign(new Error('Runtime is closing; no new model call was started'), { code: 'RUNTIME_CLOSED' });
     const startedAt = this.now(), requestId = newId('model');
     const controller = new AbortController(); this._controllers.set(requestId, { controller, proactive: Boolean(extra.context?.proactive) });
     try {
@@ -393,6 +399,7 @@ export class PersonaRuntime {
         error.code = 'MODEL_INPUT_BUDGET'; throw error;
       }
       const maxOutputTokens = purpose === 'memory_assistant' ? this.config.reviewAssistant.maxOutputTokens : purpose === 'consolidation' ? limits.consolidationOutputTokens : purpose === 'control' ? limits.controlOutputTokens : limits.replyOutputTokens;
+      controller.signal.throwIfAborted();
       const response = await call({ purpose, messages, ...extra, requestId, signal: controller.signal, maxOutputTokens });
       await this.repository.recordUsage({ requestId, purpose, startedAt, finishedAt: this.now(), model: response?.model ?? null,
         usage: detached(response?.usage ?? null), observed: response?.usage != null, error: null });
@@ -404,7 +411,7 @@ export class PersonaRuntime {
     } finally { this._controllers.delete(requestId); }
   }
   async _requestControl(context = {}) {
-    if (this.closed) return { status: 'closed' };
+    if (this.closed || this.closing) return { status: 'closed' };
     const state = await this.repository.getRuntime();
     const selectedTarget = own(context, 'target') ? context.target
       : ['reply_due', 'recheck_due'].includes(context.reason) ? state.currentDecision?.replyPlan?.target : null;
@@ -452,6 +459,7 @@ export class PersonaRuntime {
   }
   async handleDue(context = {}) {
     this._requireOpen();
+    if (this.closing) return { status: 'closed' };
     const action = await this._lock(async () => {
       const state = await this._refresh(), now = this.now();
       if (state.sleep.state === 'sleeping') return state.sleep.wakeCondition === 'at_time' && state.sleep.wakeAt != null && state.sleep.wakeAt <= now ? 'wake' : null;
@@ -472,7 +480,7 @@ export class PersonaRuntime {
     } finally { this._schedule(); }
   }
   async handleSignal(signal, context = {}) {
-    this._requireOpen(); const type = typeof signal === 'string' ? signal : signal.type;
+    this._requireOpen(); if (this.closing) return { status: 'closed' }; const type = typeof signal === 'string' ? signal : signal.type;
     await this._lock(async () => { await this._refresh(); });
     if (this.state.sleep.state === 'sleeping') {
       if (type === 'explicit_wake') return this._wake({ ...context, reason: type });
@@ -503,7 +511,7 @@ export class PersonaRuntime {
     this._schedule(); return this._deliverWake(wake);
   }
   async _deliverWake(wake) {
-    if (this.closed) return { status: 'closed' };
+    if (this.closed || this.closing) return { status: 'closed' };
     const accepted = await this.host.onWake?.(detached(wake));
     if (!accepted?.accepted && wake.context.deferControl) return { status: 'pending_wake', wakeId: wake.wakeId, groups: detached(wake.groups) };
     const result = accepted?.accepted ? accepted : await this._requestControl({ ...wake.context, reason: 'wake', wakeSummary: wake.groups, pending: wake.groups.flatMap(x => x.records), proactive: false });
@@ -873,7 +881,7 @@ export class PersonaRuntime {
         traceMaterial.push(...page.traceMaterial.map(x => ({ sourceRef: x.sourceRef, locator: x.locator, available: x.available, cursor: x.cursor, nextCursor: x.nextCursor, reason: x.reason })));
         let complete = false;
         while (!complete) {
-          if (this.closed) return pause('RUNTIME_CLOSED');
+          if (this.closed || this.closing) return pause('RUNTIME_CLOSED');
           if (budget.used >= budget.limit) return pause('CONSOLIDATION_CALL_BUDGET');
           const memoryContext = consolidationContextPage(run, { cursor: review.contextCursor, maxChars: limits.consolidationContextChars });
           let chars = Math.max(0, total - review.dataPartOffset), selected, messages, assemblyContext;
@@ -970,7 +978,7 @@ export class PersonaRuntime {
             if (await this.tokenCounter.count(JSON.stringify(messages)) > requestBudget) { await pause('MODEL_INPUT_BUDGET'); throw Object.assign(new Error('The actual advice status and shared call budget cannot fit; source progress remains unconsumed'), { code: 'MODEL_INPUT_BUDGET' }); }
 
           }
-          if (this.closed) return pause('RUNTIME_CLOSED');
+          if (this.closed || this.closing) return pause('RUNTIME_CLOSED');
           if (budget.used >= budget.limit) return pause('CONSOLIDATION_CALL_BUDGET');
           review.callInFlight = true; review.status = 'running'; review.modelCalls += 1; budget.used += 1;
           await persist();

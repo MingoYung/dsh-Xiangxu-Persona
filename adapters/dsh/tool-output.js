@@ -41,7 +41,7 @@ function sourceRefs(item) {
 }
 function memoryHeader(item) {
   const refs = sourceRefs(item);
-  return { schemaVersion: item.schemaVersion ?? 'persona-memory/3', id: item.id ?? null, personId: item.personId ?? null,
+  return { schemaVersion: item.schemaVersion ?? 'persona-memory/3', id: item.id ?? null, ...(item.recordKey ? { recordKey: item.recordKey } : {}), personId: item.personId ?? null,
     ...(item.recordType ? { recordType: item.recordType } : {}), ...(item.kind ? { kind: item.kind } : {}),
     ...(item.scope != null ? { scope: item.scope } : {}), ...(item.role != null ? { role: item.role } : {}),
     ...(item.origin != null ? { origin: item.origin } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}),

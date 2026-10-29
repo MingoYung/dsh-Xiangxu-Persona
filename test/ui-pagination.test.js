@@ -108,6 +108,30 @@ const timelineStatus = { recent: { count: 29, chars: 290 }, long_term: { count: 
 const timelineRows = Array.from({ length: 29 }, (_, i) => ({ id: 'timeline-' + i, recordType: 'chat', scope: 'staging', role: 'user', personId: null,
   tier: 'recent', textPreview: '经历正文-' + i, sourceAt: 1000 + i, timeline: { title: '事件标题-' + i, occurredAt: 1000 + i, recordedAt: 2000 + i } }));
 
+test('memory, timeline and retrieval detail buttons retain the selected compound identity on every detail page', async () => {
+  const row = { ...timelineRows[0], id: 'same', personId: 'b', scope: 'person', recordKey: '["chat","person","b","same"]' };
+  for (const view of ['', 'timeline', 'retrieval']) {
+    const ui = await frontend({ 'memory.list': () => ({ items: [row], total: 1 }), 'memory.timeline.status': () => timelineStatus,
+      'memory.timeline.list': () => ({ items: [row], total: 1 }), 'memory.search': () => ({ items: [row], total: 1 }),
+      'memory.detail': args => args.cursor ? { format: 'json_text_fragment', text: '}', fragment: { from: 1, total: 2, complete: true }, nextCursor: null }
+        : { format: 'json_text_fragment', text: '{', fragment: { from: 0, total: 2, complete: false }, nextCursor: 'second-fragment' } });
+    await ui.evaluate(`navigate('memory',${JSON.stringify(view)})`);
+    if (view === 'retrieval') await ui.button(content(ui), '查找记忆').emit('click');
+    await ui.button(content(ui), view === 'retrieval' ? '查看完整记忆与来源' : '查看详情 →').emit('click');
+    await ui.button(ui.ids.get('detail-footer'), '继续读取下一页').emit('click');
+    const requests = ui.calls.filter(call => call.action === 'memory.detail'); assert.equal(requests.length, 2);
+    for (const request of requests) assert.deepEqual({ id: request.args.id, recordKey: request.args.recordKey, personId: request.args.personId, scope: request.args.scope, recordType: request.args.recordType },
+      { id: row.id, recordKey: row.recordKey, personId: 'b', scope: 'person', recordType: 'chat' });
+  }
+});
+
+test('ambiguous memory errors explain that the attempted operation did not remove data', async () => {
+  const ui = await frontend();
+  ui.evaluate("showError(Object.assign(new Error('ambiguous record'), {code:'MEMORY_RECORD_AMBIGUOUS'}))");
+  assert.match(ui.ids.get('global-error').textContent, /同一编号.*未删除资料/);
+  assert.doesNotMatch(ui.ids.get('global-error').textContent, /ambiguous record/);
+});
+
 test('unified timeline exposes every archive page and preserves explicit tier selection on previous navigation', async () => {
   const ui = await frontend({ 'memory.timeline.status': () => timelineStatus, 'memory.timeline.list': args => page(timelineRows.map(row => ({ ...row, tier: args.tier })), args) });
   await ui.evaluate("navigate('memory','timeline')");
