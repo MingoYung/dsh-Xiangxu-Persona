@@ -181,6 +181,15 @@ export function createNapcatManagedService({installRoot,qqPath,fetchImpl=fetch,f
     const script="$x=Get-AuthenticodeSignature -LiteralPath '"+qqPath.replaceAll("'","''")+"'; if($x.Status -eq 'Valid' -and $x.SignerCertificate.Subject -match 'Tencent|腾讯'){exit 0}else{exit 3}";
     const probe=spawnPort('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,stdio:'ignore'});await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{probe.kill();reject(Object.assign(new Error('QQ签名检查超时'),{code:'NAPCAT_QQ_SIGNATURE'}));},15000);probe.once('error',()=>{clearTimeout(timer);reject(Object.assign(new Error('QQ签名无法检查'),{code:'NAPCAT_QQ_SIGNATURE'}));});probe.once('exit',code=>{clearTimeout(timer);code===0?resolve():reject(Object.assign(new Error('QQ签名未确认'),{code:'NAPCAT_QQ_SIGNATURE'}));});});
   }
+  async function resumeQuickAccount(f){
+    const intent=f.resumeIntent,desired=saved.desired;
+    const matches=()=>live(f)&&f.resumeIntent===intent&&saved.desired===desired&&object(intent)&&object(desired)&&intent.instanceId===f.instanceId&&desired.instanceId===f.instanceId&&typeof intent.memoryRoot==='string'&&typeof desired.memoryRoot==='string'&&rootKey(intent.memoryRoot)===rootKey(f.memoryRoot)&&rootKey(desired.memoryRoot)===rootKey(f.memoryRoot)&&typeof desired.accountId==='string'&&/^[1-9]\d{0,15}$/.test(desired.accountId)&&Number.isSafeInteger(Number(desired.accountId))&&intent.accountId===desired.accountId;
+    if(!matches())return null;
+    const profile=(await channels?.status?.())?.connections?.find(value=>value.id==='qq');
+    if(!matches()||!profile?.enabled||profile.config?.mode!=='bridge'||profile.config.accountId!==desired.accountId||profile.config.apiUrl!=='http://127.0.0.1:'+saved.ports.api)return null;
+    const current=await owner({instanceId:f.instanceId});
+    return matches()&&current.instanceId===f.instanceId&&rootKey(current.memoryRoot)===rootKey(f.memoryRoot)?desired.accountId:null;
+  }
   async function launch(f,{download=true,reuse=false}={}){if(!live(f))return;f.phase='installing';await install(f,{download});if(!live(f))return;await verifyQq(f);if(!live(f))return;
     if(!saved.ports||!reuse){const ports=await(runtimePorts.choosePorts??choosePorts)();if(!live(f))return;saved.ports=ports;}if(![saved.ports.web,saved.ports.api].every(p=>Number.isInteger(p)&&p>0&&p<=65535)||saved.ports.web===saved.ports.api)fail('NAPCAT_PORT_INVALID','本机端口无效');await persist();if(!live(f))return;
     await restoreOwnedLaunch(f);if(!live(f))return;invalidateCredential();try{await web('/QQLogin/CheckLoginStatus',{},f);if(!live(f))return;f.reachable=true;f.phase='waiting_login';return;}catch(e){if(['NAPCAT_WEBUI_AUTH','NAPCAT_WEBUI_AUTH_EXPIRED','NAPCAT_WEBUI_RATE_LIMITED'].includes(e?.code)){if(live(f)){f.phase='starting';f.startedAt=clock();f.error=safeError(e);}return;}}if(!live(f))return;
@@ -192,7 +201,12 @@ export function createNapcatManagedService({installRoot,qqPath,fetchImpl=fetch,f
     const preparedNative=await prepareNative(f);if(!live(f)){await preparedNative?.reservation.release();return;}nativeState=null;
     if(preparedNative)Object.assign(environment,{XIANGXU_QQ_NATIVE_CONFIG:preparedNative.configPath,NAPCAT_DISABLE_MULTI_PROCESS:'1',NAPCAT_LOAD_PATH:preparedNative.loaderPath});
     invalidateCredential({resetCooldown:true});management={status:'unknown',lastVerifiedAt:null,errorCode:null};f.phase='starting';f.startedAt=clock();
-    try{if(preparedNative)await preparedNative.reservation.release();if(!live(f))return;child=spawnPort(environment.NAPCAT_LAUNCHER_PATH,[qqPath,environment.NAPCAT_INJECT_PATH],{cwd:versionRoot,env:environment,windowsHide:true,stdio:['ignore','pipe','pipe']});f.spawnedHereAt=f.startedAt;if(preparedNative){preparedNative.launcher=child;preparedNative.startedAt=f.startedAt;nativeState=preparedNative;}}
+    try{if(preparedNative)await preparedNative.reservation.release();if(!live(f))return;
+      // NapCat v4.18.41 consumes this once at startup. It may reuse its own QQ
+      // login ticket; rejection still follows NapCat's existing QR/error path.
+      // Never inherit another application's account/password or choose a new one.
+      const quickAccount=await resumeQuickAccount(f);if(!live(f))return;if(quickAccount)environment.NAPCAT_QUICK_ACCOUNT=quickAccount;
+      child=spawnPort(environment.NAPCAT_LAUNCHER_PATH,[qqPath,environment.NAPCAT_INJECT_PATH],{cwd:versionRoot,env:environment,windowsHide:true,stdio:['ignore','pipe','pipe']});f.spawnedHereAt=f.startedAt;if(preparedNative){preparedNative.launcher=child;preparedNative.startedAt=f.startedAt;nativeState=preparedNative;}}
     finally{await preparedNative?.reservation.release();}const own=child;own.stdout?.on('data',()=>{});own.stderr?.on('data',()=>{});own.once?.('error',e=>{if(nativeState?.launcher===own)nativeState=null;if(child===own&&!Number.isInteger(own.pid))child=null;if(live(f)){f.phase='failed';f.error=safeError({code:'NAPCAT_LAUNCH_FAILED'});}});own.once?.('exit',code=>{f.launcherExited=true;if(live(f)&&code!==0&&!f.reachable){f.phase='failed';f.error=safeError({code:'NAPCAT_LAUNCH_FAILED'});}});if(preparedNative){preparedNative.launchRecordTask=recordOwnedLaunch(f,preparedNative);await preparedNative.launchRecordTask;preparedNative.launchRecordTask=null;await rememberOwnedLaunch(f);}
   }
   function startupNetworkError(e){const code=typeof e?.code==='string'?e.code:e?.cause?.code;if(typeof e?.code==='string'&&e.code.startsWith('NAPCAT_'))return false;return ['ECONNREFUSED','ECONNRESET','EHOSTUNREACH','ENETUNREACH','ETIMEDOUT','UND_ERR_CONNECT_TIMEOUT','UND_ERR_SOCKET'].includes(code)||e?.name==='TimeoutError';}

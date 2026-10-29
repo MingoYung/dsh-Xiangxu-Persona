@@ -287,6 +287,57 @@ function stat(label, value, sub, icon, usage) {
   if (usage) { const ratio = usage.limit > 0 ? Math.min(100, usage.used / usage.limit * 100) : 0; node.append(element('div', { class: `progress${ratio >= 90 ? ' warning' : ''}`, role: 'meter', 'aria-label': label, 'aria-valuemin': 0, 'aria-valuemax': usage.limit, 'aria-valuenow': usage.used }, element('span', { style: `width:${ratio}%` }))); }
   return node;
 }
+function overviewQqConnection(instanceId, alive) {
+  const area = element('div', { role: 'status', 'aria-live': 'polite' });
+  const paint = (heading, detail, checkedAt, kind = '') => {
+    if (!alive()) return;
+    replace(area, notice(element('div', {}, element('strong', {}, heading), element('p', {}, detail),
+      element('p', { class: 'small muted' }, typeof checkedAt === 'number' && Number.isFinite(checkedAt) ? '上次核查：' + date(checkedAt) : '上次核查时间未提供；打开连接页可进一步核对。'),
+      button('检查 QQ 连接', () => { if (alive()) return navigate('chat', 'qq'); }, 'secondary compact')), kind));
+  };
+  // Read existing snapshots only. A slow or unavailable connection service must not
+  // block the daily controls, start a bridge, rotate a QR code or poll in the background.
+  void (async () => {
+    let qq;
+    try {
+      const snapshot = await request('channels.status', { instanceId });
+      if (!alive()) return;
+      qq = snapshot?.connections?.find(connection => connection.id === 'qq');
+    } catch {
+      if (alive()) replace(area, element('p', { class: 'small muted' }, '聊天软件的连接状态暂未读取；可在“连接”中查看。'));
+      return;
+    }
+    if (!qq?.configured) return;
+    let managed = null;
+    if (qq.mode === 'bridge') {
+      try { managed = await request('qqBridgeSetup.inspect', { instanceId }); }
+      catch { paint('QQ 连接：状态尚未核实', 'QQ 已保存接入配置，但暂未读到本机连接状态。请打开连接页检查；这与相续是否休息或允许主动聊天是两回事。', null); return; }
+      if (!alive()) return;
+      if (managed?.instanceId && managed.instanceId !== instanceId) {
+        paint('QQ 连接：当前人格尚未核实', '本机 QQ 准备流程属于另一人格。请在连接页核对当前人格的接入。', null);
+        return;
+      }
+    }
+    const relevant = managed?.instanceId === instanceId, checked = relevant ? managed.lastVerifiedQQ : null;
+    const checkedAt = checked?.at ?? (relevant ? managed.management?.lastVerifiedAt : null);
+    if (relevant && managed.management?.status !== 'ready') {
+      paint('QQ 连接：登录状态尚未核实', '本机管理连接尚未确认。已保存配置不等于 QQ 当前在线，请打开连接页查看实际状态。', checkedAt, 'warning');
+    } else if (relevant && managed.phase === 'waiting_login') {
+      paint('QQ 连接：等待登录', 'QQ 尚未完成登录，暂不能通过 QQ 收发消息。请打开连接页查看下一步，出现二维码后用手机 QQ 扫码。', checkedAt, 'warning');
+    } else if (relevant && managed.phase === 'failed') {
+      paint('QQ 连接：准备未完成', '本次 QQ 连接遇到技术问题。请打开连接页查看原因和恢复操作。', checkedAt, 'warning');
+    } else if (!qq.enabled || relevant && managed.phase === 'stopped') {
+      paint('QQ 连接：已停止', 'QQ 接入当前未启用。需要使用时，可在连接页检查并恢复。', checkedAt);
+    } else if (relevant && ['installing', 'starting', 'configuring', 'authorized'].includes(managed.phase)) {
+      paint('QQ 连接：尚未完成接入', 'QQ 正在准备、启动或等待完成接入。请打开连接页查看实际进度。', checkedAt);
+    } else if (qq.connected === true && (!relevant || managed.phase === 'connected' && checked?.online === true && (!checked.accountId || checked.accountId === qq.config?.accountId))) {
+      paint('QQ 连接：上次核查已连接', '这是已有连接快照，不代表每条消息已完成回复。是否回应仍由相续决定；收发异常时可打开连接页检查。', checkedAt);
+    } else {
+      paint('QQ 连接：当前在线尚未确认', 'QQ 已保存配置，但现有快照不足以确认当前可收发。请打开连接页进一步检查。', checkedAt, 'warning');
+    }
+  })();
+  return area;
+}
 async function overviewPage() {
   const status = state.status, runtime = status.runtime ?? {}, capacity = status.capacity ?? {}, jobs = runtime.jobCounts ?? {};
   const instanceId = state.instanceId, generation = state.generation;
@@ -319,10 +370,10 @@ async function overviewPage() {
   } });
   const daily = element('section', { class: 'daily-controls', 'aria-label': '日常交流设置' },
     element('div', { class: 'setting-row' }, element('div', { class: 'setting-copy' }, element('h2', {}, '当前状态：' + (labels[runtime.sleep?.state] ?? '尚未读取')),
-      element('p', {}, sleeping ? '相续正在休息，期间的来信会保留。叫醒后，由它决定如何回应。' : '可以接收来信，是否回应由相续决定。')),
+      element('p', {}, sleeping ? '相续正在休息，已连接渠道的来信会保留。叫醒后，由它决定如何回应。' : '已连接的渠道可以接收来信；是否回应由相续决定。')),
       sleeping ? button('现在叫醒', () => control('wake'), 'secondary') : null),
     element('div', { class: 'setting-row' }, element('div', { class: 'setting-copy' }, element('label', { class: 'setting-title', for: 'proactive-allowed' }, '允许主动找我聊天'),
-      element('p', {}, '允许相续自主选择时机开口；关闭后仍可接收来信。')), proactive),
+      element('p', {}, '允许相续自主选择时机开口；关闭后，已连接渠道仍可接收来信。')), proactive),
     element('div', { class: 'setting-row' }, element('div', { class: 'setting-copy' }, element('label', { class: 'setting-title', for: 'conversation-style' }, '交流节奏'),
       element('p', {}, '这是表达偏好，复杂内容仍可展开。分次补充可能增加模型调用，不保证每次发多条。')), conversationStyle));
   replace($('page-actions'));
@@ -331,7 +382,7 @@ async function overviewPage() {
     kv({ '当前状态': labels[runtime.sleep?.state] ?? '未知', '唤醒方式': ({ at_time: '相续选择的时间', consolidation_complete: '所选整理完成后', explicit_wake: '等你叫醒' })[runtime.sleep?.wakeCondition] ?? '尚未选择', '计划唤醒': date(runtime.sleep?.wakeAt), '下次判断': date(runtime.schedule?.nextCheckAt), '未解决来源记录': number(gaps), ...(classifiedGaps ? { '过程资料待核查': number(processGaps.sources) + ' 个来源 / ' + number(processGaps.records) + ' 条记录', '原始交流待回补': number(dialogueGaps.sources) + ' 个来源 / ' + number(dialogueGaps.records) + ' 条记录', '其他待核查': number(otherGaps.sources) + ' 个来源 / ' + number(otherGaps.records) + ' 条记录' } : {}), '接入会话': number(status.agents?.length), '排队整理': number(jobs.queued ?? 0), '物理占用': number(capacity.physicalBytes) + ' bytes' }),
     gaps > 0 ? card('来源状态说明', gapText, element('p', { class: 'small muted' }, '同一来源可能对应多个过程片段或重复记录。已有原件和历史缺口会保留；回补仅处理实际可用的来源。'), button('查看来源诊断', () => navigate('maintenance', 'source-diagnostics'), 'secondary compact')) : null, controls,
     status.agents?.length ? card('已接入的会话', '', status.agents.map(agent => kv({ '会话': agent.sessionId, '关系': personName(agent.personId), '渠道': agent.channelId }))) : empty('还没有接入人格会话', '回到 DSH 对话，选择“相续人格”预设即可开始。'));
-  return element('div', {}, onboardingHint(), daily,
+  return element('div', {}, overviewQqConnection(instanceId, alive), onboardingHint(), daily,
     gaps > 0 ? notice(element('div', {}, element('p', {}, gapText), button('查看来源状态', () => openSection('runtime'), 'secondary compact')), 'warning') : null,
     !status.agents?.length ? element('p', { class: 'getting-started' }, '在 DSH 对话中选择“相续人格”预设，即可开始聊天。') : null,
     destinations(destination('了解相续', '它如何描述自己，以及留下的性格与习惯。', () => navigate('persona')),

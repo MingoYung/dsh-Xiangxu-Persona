@@ -1,6 +1,6 @@
 # DSH Market 收录申请
 
-当前发布补丁：**0.13.3**。本补丁修复自我档案来源容量及文字渠道的卡片显示，范围见[QQ资料与文字输出修复](qq-profile-output-recovery.md)；0.13.2的[QQ恢复记录](qq-reply-recovery.md)与0.13.1的申请验收仍保留原范围。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28已按用户决定提交[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，**自动检查已通过，当前开放且未合并，待维护者审核，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
+当前发布补丁：**0.13.4**。本补丁补已保存匹配账号的受管启动快登参数和相处页QQ状态提示，范围与未测边界见[QQ登录恢复](qq-login-recovery.md)；0.13.3的[QQ资料与文字输出修复](qq-profile-output-recovery.md)、0.13.2的[QQ恢复记录](qq-reply-recovery.md)与0.13.1的申请验收仍保留原范围。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。2026-10-28已按用户决定提交[收录申请PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)，**自动检查已通过，当前开放且未合并，待维护者审核，尚未获收录**。旧版关于暂缓申请的文字仅记录当时状态，不覆盖本轮决定。
 
 ## 本轮材料与反馈入口
 
@@ -9,7 +9,13 @@
 - 目录条目为[market/MingoYung__dsh-Xiangxu-Persona.yml](../market/MingoYung__dsh-Xiangxu-Persona.yml)，使用memory分类。申请只在收录仓库data/plugins/增加同名文件，不修改自动生成的README。描述须区分已实现、可选服务与真实账号未测范围。
 - 2026-10-28核对仓库管理权限、启用Issues、dsh-plugin topic与至少一天仓库年龄均符合当时要求。贡献指南仍以[上游当前指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)为准，最终收录由上游维护者审查。
 
-## 验证与未测边界
+## 0.13.4当前验证范围
+
+本轮快速登录定向隔离测试140/140通过，新增14项；最终首页顺序调整后全部ui-*.test.js重新运行201/201通过，新增相处页连接提示7项；渠道／进程回归38/38及管理宿主模块回归5/5通过，以上失败／取消／跳过均为0，各组分别报告，不当作完整回归。构建、语法、文档与打包检查通过。2026-10-29 13:12:06（北京时间）本补丁已通过普通desktop Host重启加载，实机首页显示等待登录并可直接进入扫码页；当前尚无新的登录成功或QQ私群往返验收。平台一次快登明确拒绝旧身份后仍需本人扫码，不能宣称免扫码成功。0.13.3的1400/1400只属于上一版完整回归，不能改称0.13.4全量通过；见[本轮回执](verification/0.13.4-qq-login-recovery.json)。
+
+开源复用与记忆关联图仅为[研究建议](open-source-reuse-and-memory-visualization.md)，本补丁没有安装第二套机器人、替换人格记忆或交付图功能。收录PR进度沿用下述2026-10-28已核记录，本轮未另查上游状态、未提交新PR。
+
+## 历史验证与未测边界
 
 0.13.0统一时间线的证据见[历史机器回执](verification/0.13.0-memory-timeline.json)。该版可移植性修复后GitHub Actions运行40624830474在Windows通过1343项，在Linux通过1342项并保留1项Windows专用跳过；结果属于原提交4013d009164c10848f50e903eedd7f2f409b8b8a，不是0.13.1新增报错功能的验收。0.13.1在Windows、Node.js 24.16.0下完成本机全量1357/1357，失败、取消和跳过均为0；源文件哈希在测试前后不变。定向49/49包含本轮新增14项，与全量不叠加计算，详见[0.13.1报错通道回执](verification/0.13.1-support-channel.json)。本轮源码已推送，远程CI以[插件仓库Actions](https://github.com/MingoYung/dsh-Xiangxu-Persona/actions/workflows/ci.yml)对应提交的实际结果为准，不由本机结果推断。
 

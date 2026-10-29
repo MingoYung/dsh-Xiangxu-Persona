@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "xiangxu-verification/1",
+  "version": "0.13.4",
+  "checkedDate": "2026-10-29",
+  "scope": "Managed QQ startup account recovery, read-only overview connection status, and open-source research; no memory migration or graph UI delivered",
+  "tests": {
+    "napcatManaged": { "passed": 140, "failed": 0, "cancelled": 0, "skipped": 0, "newTests": 14, "durationMs": 10104 },
+    "finalUi": { "passed": 201, "failed": 0, "cancelled": 0, "skipped": 0, "newTests": 7, "durationMs": 1424, "includesFinalOverviewOrdering": true },
+    "relatedChannelsAndProcesses": { "passed": 38, "failed": 0, "cancelled": 0, "skipped": 0, "durationMs": 2262 },
+    "dshUiHostModule": { "passed": 5, "failed": 0, "cancelled": 0, "skipped": 0 },
+    "fullLocalSuiteRunForThisPatch": false,
+    "historicalFullSuite": { "version": "0.13.3", "passed": 1400, "appliesToThisPatch": false }
+  },
+  "checks": { "frontendBuild": true, "javascriptSyntaxFiles": 222, "portableCore": true, "packageTargets": true, "documentationLinks": true, "planMirrorsMatched": 14, "npmPackDryRun": true },
+  "sourceHashes": {
+    "adapters/dsh/connections/napcat-managed.js": "96b06b330f6b037d0810ac945cad5a0d733ac80e9aa932e046ece484bd3368a9",
+    "ui/app.js": "6050db8b2f6044493ae926ed534ed646c2689bb1a9c562fbf79fb1570007db94",
+    "ui/client.js": "1ce1080217c06a95995754d9f1321dca560e146d6cd88e7a152215b26622efce"
+  },
+  "runtime": {
+    "desktopReloadedForThisPatch": true,
+    "normalProfile": true,
+    "hostStartedAt": "2026-10-29T05:11:43.786Z",
+    "hostReadyAt": "2026-10-29T05:12:06.503Z",
+    "sourceLinkAndHashesConfirmed": true,
+    "overviewWaitingLoginFirst": true,
+    "overviewButtonNavigatesToQq": true,
+    "fullCurrentQrVisible": true,
+    "manualOfficialQuickLoginAttempts": 1,
+    "manualQuickLoginResult": "business_rejected_identity_expired",
+    "startupEnvironmentObservedDirectly": false,
+    "getQuickLoginQqReadsConfigOnly": true,
+    "currentLogin": "waiting_for_user_qr_confirmation",
+    "newRealModelAcceptanceCalls": 0,
+    "newLiveQqRoundTrips": 0,
+    "newQqProfileMutations": 0
+  },
+  "personalityAutonomy": { "coreChanged": false, "newJudgmentRulesAdded": false, "memoryClearedOrMigrated": false },
+  "unverified": ["Successful ticket reuse in the installed QQ account", "New private/group round trips after this reload", "QQ profile updates", "Other social platforms", "Memory graph implementation", "Longitudinal personality quality"]
+}
