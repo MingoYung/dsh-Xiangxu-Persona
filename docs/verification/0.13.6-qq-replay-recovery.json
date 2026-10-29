@@ -72,11 +72,17 @@
     "onebotOnline": true,
     "onebotGood": true,
     "newLoginOrQr": 0,
-    "newNativeModelTurns": 0,
-    "freshInboundAccepted": 0,
-    "freshOutboundDelivered": 0,
-    "actualPhoneReceiptConfirmed": false,
-    "liveAcceptance": "waiting_for_new_user_message",
+    "newNativeModelRequests": 3,
+    "newHumanConversationTurns": 1,
+    "freshInboundAccepted": 1,
+    "freshOutboundDelivered": 1,
+    "model": {
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "reasoningEffort": "high"
+    },
+    "actualPhoneReceiptConfirmed": true,
+    "liveAcceptance": "new_private_input_accepted_model_completed_qq_delivered_phone_confirmed",
     "interruptedEarlierInput": "Retained unknown after restart; not automatically resent or represented as accepted"
   },
   "personalityAutonomy": {
@@ -86,7 +92,7 @@
   },
   "boundaries": [
     "Prior DSH Host startup timeout is a separate unresolved incident.",
-    "A platform online check does not prove fresh model/QQ round-trip; actual phone confirmation remains separate.",
+    "Live acceptance covers one fresh private input; no new group or account-profile operation was requested for this patch.",
     "Unconfirmed historical output remains draft/unknown rather than becoming a new send."
   ],
   "remoteCI": "Must be checked independently after this patch is pushed; not inferred from local tests."

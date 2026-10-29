@@ -1,6 +1,6 @@
 # 实现与验证记录
 
-> 当前版本入口：0.13.6的[QQ冷恢复循环等待补修](0.13.6-qq-replay-recovery.md)与[机器回执](verification/0.13.6-qq-replay-recovery.json)。完整隔离回归1467/1467通过，新增4项；已在普通desktop重载并核实QQ保持在线。新来信、真实模型和手机收到回复仍按各环实际记录核实，不能以在线代替往返验收。
+> 当前版本入口：0.13.6的[QQ冷恢复循环等待补修](0.13.6-qq-replay-recovery.md)与[机器回执](verification/0.13.6-qq-replay-recovery.json)。完整隔离回归1467/1467通过，新增4项；普通desktop已重载且QQ保持登录。新私聊已完成accepted、DeepSeek Flash真实处理、QQ delivered和用户手机确认；本轮未新增群聊／资料变更验收。
 
 > 0.13.5历史入口：[记忆定位、发送前复核与关闭顺序](0.13.5-technical-safety-fixes.md)。该轮隔离回归与正式运行分开报告，未重启DSH或新增生产模型／QQ实测；下文旧版数字、SHA、路径与失败保留历史范围，不作为当前版本通过证明。
 
