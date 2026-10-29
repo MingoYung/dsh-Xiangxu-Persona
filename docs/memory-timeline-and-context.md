@@ -1,8 +1,8 @@
 # 时间线记忆与每轮人格背景
 
-0.13.5补记忆复合身份读取和编号碰撞时的遗忘原子拒绝，见[本轮技术修复](0.13.5-technical-safety-fixes.md)。转层格式、容量、来源撤销和人格自主理解不变。
+当前0.13.6的QQ历史回放只核对已有交付回执，原来源、投影、使用量与缺口继续处理，不把旧回复当作新发送；见[恢复说明](0.13.6-qq-replay-recovery.md)。0.13.5的[复合记忆定位与歧义拒绝](0.13.5-technical-safety-fixes.md)继续有效，转层格式、容量和人格自主理解不变。
 
-适用于dsh-Xiangxu-Persona 0.13.5及兼容的统一时间线。唯一字段与错误语义见[persona-schema第26节](plan/persona/persona-schema.md#0130-memory-timeline-contract)；日常操作见[使用说明](user-guide.md)。
+适用于dsh-Xiangxu-Persona 0.13.6及兼容的统一时间线。唯一字段与错误语义见[persona-schema第26节](plan/persona/persona-schema.md#0130-memory-timeline-contract)；日常操作见[使用说明](user-guide.md)。
 
 ## 交流保存一次，依次转层
 

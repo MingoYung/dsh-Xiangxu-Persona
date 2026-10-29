@@ -1,6 +1,6 @@
 # DSH Market 收录申请
 
-当前发布补丁：**0.13.5**。记忆定位、渠道发送前复核与关闭顺序的范围和未测边界见[技术补修](0.13.5-technical-safety-fixes.md)；0.13.4及更早验收保留原范围。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。[收录PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)已于2026-10-28T17:23:08Z合并，即北京时间2026-10-29 01:23:08；上游main已包含[目录条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/MingoYung__dsh-Xiangxu-Persona.yml)。这证明目录收录已合并，不表示所有市场客户端缓存均已刷新。
+当前发布补丁：**0.13.6**。QQ已在线但新来信卡在历史回放的修复、重载安排与验收边界见[QQ回放恢复](0.13.6-qq-replay-recovery.md)；0.13.5及更早验收保留原范围。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。[收录PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)已于2026-10-28T17:23:08Z合并，即北京时间2026-10-29 01:23:08；上游main已包含[目录条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/MingoYung__dsh-Xiangxu-Persona.yml)。这证明目录收录已合并，不表示所有市场客户端缓存均已刷新。
 
 ## 本轮材料与反馈入口
 
@@ -9,7 +9,11 @@
 - 目录条目为[market/MingoYung__dsh-Xiangxu-Persona.yml](../market/MingoYung__dsh-Xiangxu-Persona.yml)，使用memory分类。申请只在收录仓库data/plugins/增加同名文件，不修改自动生成的README。描述须区分已实现、可选服务与真实账号未测范围。
 - 2026-10-28核对仓库管理权限、启用Issues、dsh-plugin topic与至少一天仓库年龄均符合当时要求。贡献指南仍以[上游当前指南](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/contributing.md)为准，最终收录由上游维护者审查。
 
-## 0.13.5当前验证边界
+## 0.13.6当前验证边界
+
+本轮修复外部会话历史回放与入站同队列循环等待：历史最终助手消息只核对原交付回执，不排发送队列；无回执保留未知，不重发旧消息。实时新消息继续正常发送。隔离测试、正式重载与本次QQ实际恢复分别核实，结果由实际回执补充，不预填成功次数，也不借0.13.5完整回归充当本版通过。人格自主判断与未测平台状态不变。
+
+## 0.13.5历史验证边界
 
 本轮只做隔离复现、回归和文档／交付检查，测试汇总以实际回执为准，不借旧版数字充当本版通过数。本轮不访问正式记忆正文、不重启DSH、不调用生产模型或QQ实测；不把三处技术问题说成此前DSH Host启动超时的已证原因。人格自主判断保持，未测社交平台仍标未测试。
 

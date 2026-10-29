@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "xiangxu-verification/1",
+  "version": "0.13.6",
+  "checkedDate": "2026-10-29",
+  "issue": {
+    "code": "EXTERNAL_CHANNEL_COLD_REPLAY_QUEUE_CYCLE",
+    "reproduced": true,
+    "baselineFailed": 4,
+    "fixtureUsesRealCoordinatorChannelAndNativePort": true,
+    "platformAndSdkAgentAreFixtures": true,
+    "productionMetadata": {
+      "hostReady": true,
+      "qqOnline": true,
+      "stalledIncoming": "prepared",
+      "lastCheckpoint": 215,
+      "blockedCheckpoint": 33,
+      "firstReplayedFinalSeq": 45,
+      "oldFinalHadDeliveredReceipt": true,
+      "noNewNativeModelTurnBeforeRepair": true
+    },
+    "fix": "Historical external finals reconcile retained delivery receipts without entering output queue; real-time finals retain ordinary output",
+    "historicalMessagesResentByFix": false,
+    "checkpointsSkippedOrCleared": false
+  },
+  "fullLocalSuite": {
+    "startedAt": "2026-10-29T14:35:47.527Z",
+    "finishedAt": "2026-10-29T14:39:02.242Z",
+    "durationMs": 194714,
+    "counts": {
+      "tests": 1467,
+      "pass": 1467,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "logSha256": "d9f490bfff340df6a524969565c6a3e2d33d9a7500b6a7ac0aff97c4908ed3ce",
+    "changedDuringRun": [],
+    "newTestsComparedTo0135": 4
+  },
+  "targeted": {
+    "tests": 128,
+    "passed": 128,
+    "failed": 0,
+    "cancelled": 0,
+    "skipped": 0,
+    "durationMs": 4944.785
+  },
+  "checks": {
+    "frontendBuild": true,
+    "javascriptSyntaxFiles": 226,
+    "portableCore": true,
+    "packageTargets": true,
+    "planMirrorsMatched": 14,
+    "documentationLinks": true,
+    "npmPackDryRun": true
+  },
+  "sourceHashes": {
+    "package.json": "ddafe2b0287407455b6bf11774126418cb4dd95e587a4713f3f5ea10509bf88b",
+    "adapters/dsh/index.js": "c2c61683b3c240f53aa940993126113968d0df35e3a61ff5580187cfb16480fb",
+    "test/external-channel-cold-replay.test.js": "46ff373365a12729669bacea8745a2e43d194490167247a605b42b9763ad2bcd",
+    "ui/client.js": "ac0b0267e6c0ec034139844c7a1fc49f68bc0f48d605d9cb02281a20d747fb50"
+  },
+  "runtime": {
+    "desktopReloaded": true,
+    "normalProfile": true,
+    "hostStartedAt": "2026-10-29T14:40:18.233Z",
+    "hostReadyAt": "2026-10-29T14:40:25.813Z",
+    "hostReadyDurationMs": 7580,
+    "hostStartedAfterAllChangedRuntimeSources": true,
+    "qqLoginRetained": true,
+    "onebotOnline": true,
+    "onebotGood": true,
+    "newLoginOrQr": 0,
+    "newNativeModelTurns": 0,
+    "freshInboundAccepted": 0,
+    "freshOutboundDelivered": 0,
+    "actualPhoneReceiptConfirmed": false,
+    "liveAcceptance": "waiting_for_new_user_message",
+    "interruptedEarlierInput": "Retained unknown after restart; not automatically resent or represented as accepted"
+  },
+  "personalityAutonomy": {
+    "newJudgmentRulesAdded": false,
+    "formalMemoryClearedOrMigrated": false,
+    "forceReplyRuleAdded": false
+  },
+  "boundaries": [
+    "Prior DSH Host startup timeout is a separate unresolved incident.",
+    "A platform online check does not prove fresh model/QQ round-trip; actual phone confirmation remains separate.",
+    "Unconfirmed historical output remains draft/unknown rather than becoming a new send."
+  ],
+  "remoteCI": "Must be checked independently after this patch is pushed; not inferred from local tests."
+}

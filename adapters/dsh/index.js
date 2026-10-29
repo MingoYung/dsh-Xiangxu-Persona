@@ -602,7 +602,7 @@ export function createDshCoordinator(ctx, config = {}) {
       await runtime.handleSignal('environment_change', { ...context, proactive: true });
     }
   }
-  async function observeEvent(session, event) {
+  async function observeEvent(session, event, { reconcileOnly = false } = {}) {
     if (closed) return { gap: false };
     const projected = await taskIsolation.projectEventForMemory(session, event);
     if (projected.skip) return { gap: false, isolatedTask: true };
@@ -630,7 +630,11 @@ export function createDshCoordinator(ctx, config = {}) {
       const visibleFinal = event.type === 'assistant/message' && normalized.dialogue?.text && !event.data.message.content.some(block => block.type === 'tool-call');
       let receipt = null;
       if (external && visibleFinal) {
-        try { receipt = await coordinator.externalDelivery?.output?.({ sessionId: session.id, sourceEventId: normalized.dialogue.sourceEventId, seq: event.seq, text: normalized.dialogue.text, at: event.time, deliveryId: active?.deliveryId ?? null }); }
+        // A historical final is source replay, not a new delivery request. Cold
+        // attachment may already hold the channel's receive queue; enqueueing
+        // output here would wait on that same queue, even for a delivered ID.
+        const delivery = reconcileOnly ? 'reconcile' : 'output';
+        try { receipt = await coordinator.externalDelivery?.[delivery]?.({ sessionId: session.id, sourceEventId: normalized.dialogue.sourceEventId, seq: event.seq, text: normalized.dialogue.text, at: event.time, deliveryId: active?.deliveryId ?? null }); }
         catch (error) { report(error); receipt = { status: 'unknown', code: error.code ?? 'CHANNEL_OUTPUT_UNKNOWN' }; }
         receipt ??= { status: 'unknown', code: 'CHANNEL_OUTPUT_UNAVAILABLE' };
       }
@@ -703,7 +707,7 @@ export function createDshCoordinator(ctx, config = {}) {
     const own = (stored.events ?? []).filter(event => event.seq >= (stored.inheritedEventCount ?? 0) && event.seq >= start);
     let processed = 0, gapAt = null;
     for (const event of own.slice(0, 256)) {
-      const result = await observeEvent(agent.session, event); processed++;
+      const result = await observeEvent(agent.session, event, { reconcileOnly: true }); processed++;
       checkpoints.sessions[agent.session.id] = Math.max(checkpoints.sessions[agent.session.id] ?? -1, event.seq);
       if (result?.gap) { gapAt = event.seq; break; }
     }

@@ -1,6 +1,6 @@
 # Portable runtime API
 
-0.13.5技术补修见[记忆定位、发送前复核与关闭顺序](0.13.5-technical-safety-fixes.md)。本轮不重启DSH、不访问正式记忆正文、不调用生产模型或QQ实测；不把这些修复当作此前DSH Host启动超时的已证根因。旧版验收保留原范围，人格自主判断不变。
+当前0.13.6修复QQ已在线但来信卡在历史会话回放的循环等待，见[QQ回放恢复](0.13.6-qq-replay-recovery.md)。历史助手消息只核对原交付回执，不进入发送队列或重发；本轮按实际重载与消息链路另行验收。0.13.5的技术修复及当时无生产实测范围保留历史，人格自主判断不变。
 
 The implementation is ESM on Node >=22, has no external dependency, DSH imports, provider credentials or installed application paths. `core/index.js` exports `PersonaRuntime`, `MemoryRepository`, `JsonStore`, schema utilities and prompt snapshot helpers. The current product authority remains `plan/persona/persona-schema.md`; `identityPlan` is an additive expression of the already requested autonomous recognition, not an authentication system.
 

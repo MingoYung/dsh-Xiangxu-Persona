@@ -1,8 +1,8 @@
 # DSH 扩展点与 P0 接入验证
 
-当前0.13.5保留八工具与owner管理桥，增加同格式时间线的分层浏览和必要上下文加载保护。转层、来源回查、明确遗忘及请求故障分别报告，字段以persona-schema第26节为准。
+当前0.13.6保留八工具与owner管理桥，增加同格式时间线的分层浏览和必要上下文加载保护。转层、来源回查、明确遗忘及请求故障分别报告，字段以persona-schema第26节为准。
 
-> 0.13.5当前维护：复合recordKey定位记忆，裸ID歧义时不猜选；旧撤销依赖无法分清碰撞编号时，遗忘在写入前整次拒绝。渠道在最后驱动提交前复核当前实例／根／账号／连接／许可；关闭先同步取消模型，再排空已接纳写入，最后释放writer。机制与未测边界见[技术补修](../../0.13.5-technical-safety-fixes.md)。本轮不重启DSH、不访问正式记忆正文、不调用生产模型或QQ实测，不将这些问题认定为此前DSH Host启动超时根因。数据schema和人格自主判断不变，旧版验收保持原范围。
+> 0.13.6当前维护：修复QQ冷挂接历史回放与入站同队列循环等待。历史外部助手消息只核对已有交付回执，不入发送队列；无回执保留未知，不重发旧消息，实时新消息仍走正常交付。机制与实际重载验收边界见[QQ回放恢复](../../0.13.6-qq-replay-recovery.md)。本轮实际加载与聊天恢复分别核实，旧版不重载／无生产实测安排仅保留历史。来源、投影、使用量、记忆缺口和人格自主判断不变，其他平台不冒称已验收。
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
@@ -312,3 +312,9 @@ core维护五入口兼容增加extensionValidator；createInstanceManager通过m
 memory.detail透传recordKey与可选真实personId／scope／recordType；后续分页绑定相同选择，MEMORY_RECORD_AMBIGUOUS明确说明没有猜选或执行遗忘。runtime公开beginClose()供适配器在drain前同步取消模型，最终close负责释放仓库。渠道最后驱动前再次核当前实例与授权，不增加人格工具或语义门槛。
 
 机制、限制与本轮不重启／无生产实测范围见[0.13.5说明](../../0.13.5-technical-safety-fixes.md)。
+
+## 0.13.6回放边界
+
+observeEvent的历史观察使用reconcileOnly；externalDelivery.reconcile只核对已有交付状态，不形成新的发送请求。新实时事件保留output。冷挂接、重复回放、无回执与投影不匹配分别验收，不能只凭QQ在线宣称新消息已进入模型。
+
+当前机制与验收安排见[0.13.6恢复说明](../../0.13.6-qq-replay-recovery.md)。
