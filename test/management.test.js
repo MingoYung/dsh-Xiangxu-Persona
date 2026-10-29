@@ -22,6 +22,33 @@ async function fixture(t) {
 }
 const chat = (id, text) => ({ personId: null, sourceSessionId: 's', sourceEventId: id, sourceKind: 'assistant', contentClass: 'participant_dialogue', channelId: 'c', role: 'assistant', text, sourceAt: 1000, observedAt: 1000 });
 
+test('graph management returns bounded real source and expansion relations without loading original bodies or executing commands', async t => {
+  const { service, repository, calls } = await fixture(t), original = (await repository.ingest(chat('graph-source', 'PRIVATE_ORIGINAL_ONLY_ON_DEMAND'))).record;
+  const run = await repository.prepareConsolidation({ personId: null });
+  await repository.applyConsolidation(run, [
+    { documentKey: 'global:index', expectedVersion: run.inputVersions['global:index'], operation: 'upsert', recordId: 'graph-memory', value: { kind: 'fact', text: '共同经历的摘要', srcRefs: [{ sourceSessionId: 's', sourceEventId: 'graph-source' }] } },
+    { documentKey: 'global:codes', expectedVersion: run.inputVersions['global:codes'], operation: 'upsert', recordId: 'graph-code', value: { label: '已有编码', meaning: '一次经历', cues: [], expandIds: ['graph-memory'], occurrences: 1, srcRefs: [] } },
+  ]);
+  const view = await service.dispatch('memory.graph', { scope: 'global', limit: 80, edgeLimit: 160 });
+  assert.equal(view.format, 'persona-memory-graph/1'); assert.equal(view.referenceOnly, true); assert.equal(view.automaticRecall, false);
+  assert.equal(view.coverage.entireStoreRead, false); assert.equal(view.coverage.total, null); assert.equal(view.coverage.rawScope, 'none');
+  assert.ok(view.nodes.some(node => node.recordId === 'graph-memory')); assert.ok(view.nodes.some(node => node.kind === 'source')); assert.ok(view.nodes.some(node => node.kind === 'session'));
+  assert.ok(view.edges.some(edge => edge.kind === 'expands')); assert.ok(view.edges.some(edge => edge.kind === 'source')); assert.ok(view.edges.some(edge => edge.kind === 'source_session'));
+  assert.ok(Buffer.byteLength(JSON.stringify(view)) <= 131072); assert.doesNotMatch(JSON.stringify(view), /PRIVATE_ORIGINAL_ONLY_ON_DEMAND/);
+  const record = view.nodes.find(node => node.recordId === 'graph-memory'), detail = await service.dispatch('memory.detail', { id: record.recordId, recordKey: record.recordKey });
+  assert.equal(JSON.parse(detail.text).text, '共同经历的摘要'); assert.deepEqual(calls, []);
+  const originalGraph = await service.dispatch('memory.graph', { scope: 'unknown', sourceRef: { sourceSessionId: 's', sourceEventId: 'graph-source' } });
+  assert.equal(originalGraph.coverage.rawScope, 'selected_shard'); assert.ok(originalGraph.nodes.some(node => node.recordId === original.id));
+});
+
+test('graph management rejects invalid scope and budget and never implicitly loads an unavailable persona', async t => {
+  const { service, unload, calls } = await fixture(t);
+  await assert.rejects(service.dispatch('memory.graph', { scope: 'all' }), { code: 'SCHEMA_INVALID' });
+  await assert.rejects(service.dispatch('memory.graph', { scope: 'global', limit: 10000 }), { code: 'SCHEMA_INVALID' });
+  await assert.rejects(service.dispatch('memory.graph', { scope: 'person', personId: '../other' }), { code: 'SCHEMA_INVALID' });
+  unload(); await assert.rejects(service.dispatch('memory.graph', { scope: 'global' })); assert.deepEqual(calls, []);
+});
+
 test('management carries exact memory identity through browse, search and paged detail without cross-person reads', async t => {
   const { repository, service } = await fixture(t);
   for (const personId of ['a', 'b']) {

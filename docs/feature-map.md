@@ -1,5 +1,7 @@
 # 十四模块实现映射
 
+当前0.14.0增加[3D记忆关联图](memory-graph-3d.md)：core/memory-graph.js纯投影、repository.getMemoryGraph有界读取、management memory.graph与本地ui/memory-graph.js渲染消费。它不增加人格工具或模型行为，旧模块及历史验证保持范围。
+
 本表说明代码落点；当前0.12.0的QQ账号操作与真实支持边界见[账号能力与验收](account-capabilities.md)，个人QQ受管向导见[操作说明](qq-one-click-setup.md)。下文0.10.0检索／平台、0.10.1界面／上下文与0.11.0个人QQ验收保留各自历史范围。人格表达的正确性、讨喜程度或持续性不能仅由结构测试断言。
 
 | 模块 | 实现与消费点 | 验证种类 |

@@ -1,10 +1,10 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.13.6兼容增量以第26节为权威：统一persona-timeline/1注释、短期／长期／归档转层与必要人格上下文。第20–25节自我档案、生命周期、检索、受管连接和账号工具按兼容范围继续有效；历史证据不提升为本轮验收。
+当前0.14.0兼容增量以第26节为权威：统一persona-timeline/1注释、短期／长期／归档转层与必要人格上下文。第20–25节自我档案、生命周期、检索、受管连接和账号工具按兼容范围继续有效；历史证据不提升为本轮验收。
 
-> 0.13.6当前维护：修复QQ冷挂接历史回放与入站同队列循环等待。历史外部助手消息只核对已有交付回执，不入发送队列；无回执保留未知，不重发旧消息，实时新消息仍走正常交付。机制与实际重载验收边界见[QQ回放恢复](../../0.13.6-qq-replay-recovery.md)。本轮实际加载与聊天恢复分别核实，旧版不重载／无生产实测安排仅保留历史。来源、投影、使用量、记忆缺口和人格自主判断不变，其他平台不冒称已验收。
+> 0.14.0当前维护：新增只读[3D记忆关联图](../../memory-graph-3d.md)，按复合身份和实际来源／显式关系展示局部；默认派生文档，明确选原件才读对应分片。后端有界读取与显示预算独立于记忆容量，超限只影响本次视图。图不调用模型、不触发回忆或人格更新，布局不冒充神经元／情绪实测；原文、撤销、人格自主和既有QQ恢复保持。最终全量、实机和正式加载另验，不预填成功。
 
-本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.13.6 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
+本文件是本批方案的**唯一字段权威**。架构、关系说明、主计划引用这里的字段和枚举；不得各自保留另一套 `kind`、版本、对象键或控制接口。下列 TypeScript 结构由 `dsh-xiangxu-persona` 0.14.0 的 JSON 校验器与持久化适配器消费。实际宿主接口及通过范围见实现目录 `docs/host-api-evidence.md`、`docs/host-test-results.md`；首次实现和真实模型复核的兼容扩展见本文第10至12节。
 
 本方案实现的是**同一个 AI 人格认识不同的人**。经历会影响共同人格，也会形成对某个人的独特印象。对象归属用于准确记忆、路由和检索，不是多租户权限边界；允许明确查询、正确谈论第三人。人格判断与数据可靠性分开：程序校验类型、来源、版本和目标，不能用支持次数、问卷分数或硬规则替人格决定如何相处。
 
@@ -1281,3 +1281,17 @@ forget沿原ids／targetPersonId／scope接口。现有revokedIds和来源依赖
 replaySources显式以reconcileOnly观察历史事件。外部渠道的历史最终助手消息只走externalDelivery.reconcile核对已有回执，不走output发送队列；没有匹配送达回执或投影不一致时保持unknown／draft，不发旧消息。实时新事件仍经正常output与当前授权／账号复核。此增量不新增持久化schema、不改C1角色或来源事实，使用量、缺口和检查点仍按原路径处理。
 
 当前机制与验收安排见[0.13.6恢复说明](../../0.13.6-qq-replay-recovery.md)。
+
+### 26.8 0.14.0：只读3D记忆关联图
+
+MemoryRepository.getMemoryGraph(input)接受scope=global|person|unknown（默认global）、personId（仅person）、seedRecordKey、sourceRef:{sourceSessionId,sourceEventId}、query（最多200个Unicode字符）、recordTypes、limit（默认80，上限120）和edgeLimit（默认160，上限200）。未知选项、根路径和越界预算拒绝。recordKey继续使用JSON.stringify([recordType,scope,personId,id])；本版不新增人格工具或持久化schema。
+
+返回format:"persona-memory-graph/1"、nodes、edges、coverage、readBudget、revision、referenceOnly:true、automaticRecall:false。节点kind为record/source/person/session；record带recordKey、recordId、类型、scope/personId、短预览和实际时间／来源事实，chat不返回原文正文，source/person/session不当作记忆条目详情。边只用srcRefs、relatedMemoryIds（含timeline）、expandIds、supersedesIds、replacementIds、aboutPersonIds或实际sourceSessionId，kind分别为source/related/expands/supersedes/replaces/about_person/source_session，并带可查basis。相似度和视觉位置不生成边。
+
+默认只读取选定派生资料；用户明确选择原件后按实际storagePath读选中分片，在上限内投影同scope/person原件并校验归档SHA，不扫其它归档。原文详情复用固定owner实例的memory.detail与分页；实例变化使旧图和旧详情失效，撤销和旧备份恢复不复活来源。来源不明、裸ID歧义、范围外或未读目标只标限制，不猜线。
+
+硬读取预算为8文件/累计4MiB、元数据2MiB、派生文档每份512KiB、选中归档每份1MiB、目录256KiB、遍历2048记录及4096来源收据；响应114688字节。文件大小先检查，不能_allMemory全扫后再截节点。coverage给实际读／未读原因、局部数量和未解析关系，total:null／entireStoreRead:false，catalogueComplete仅指选定派生范围。超限不删除资料，也不改长期／短期容量。
+
+渲染器本地打包，以Canvas2D画xyz透视，可旋转、平面、缩放、复位、键盘／列表选中和按需详情。无CDN/WebGL和持续动画；主题随DSH，隐藏／离页清理，切换实例立即停图清旧详情。坐标和类别颜色是布局，不是神经元或情绪实测；浏览不调用模型、触发回忆、学习或人格更新。
+
+操作、限制与当前验收边界见[3D记忆关联图](../../memory-graph-3d.md)。

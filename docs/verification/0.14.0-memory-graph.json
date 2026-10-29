@@ -1,0 +1,147 @@
+{
+  "version": "0.14.0",
+  "format": "xiangxu-verification/1",
+  "at": "2026-10-29T18:51:21.224Z",
+  "scope": "Read-only bounded memory graph; no persona judgment or memory policy changes",
+  "regression": {
+    "command": "node --test --test-concurrency=1 --test-timeout=30000",
+    "startedAt": "2026-10-29T18:28:28.403Z",
+    "finishedAt": "2026-10-29T18:31:48.874Z",
+    "durationMs": 200471,
+    "exitCode": 0,
+    "logSha256": "77ce0628a5cbdf5a026e8ae4ec0865d99b4aec631549c309655091fcc6fb506e",
+    "counts": {
+      "tests": 1507,
+      "pass": 1507,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0
+    },
+    "changedDuringRun": [],
+    "newTests": 40
+  },
+  "checks": {
+    "javascriptSyntaxFiles": 230,
+    "portableCoreImports": "passed",
+    "packageTargets": "passed",
+    "planDocuments": 14,
+    "implementationDocuments": 35,
+    "structuralLocalLinks": 938,
+    "docsMirrorVerification": "passed",
+    "mirrors": 14,
+    "graphRelatedDocuments": 47,
+    "graphDocumentLocalTargets": 1255,
+    "gitDiffCheck": "passed"
+  },
+  "browser": {
+    "syntheticDataOnly": true,
+    "themes": [
+      "dark",
+      "light"
+    ],
+    "viewportWidths": [
+      1257,
+      620,
+      400
+    ],
+    "horizontalOverflowAt620": false,
+    "horizontalOverflowAt400": false,
+    "accepted": [
+      "actual repository/management bridge with isolated fixture",
+      "17 nodes and 24 real fixture edges",
+      "canvas hit selection and full record detail",
+      "3D and flat mode state",
+      "unknown scope empty-state next step",
+      "recent original selection and scoped graph"
+    ],
+    "modelCalls": 0
+  },
+  "nativeDsh": {
+    "profile": "desktop",
+    "installation": "existing local linked source",
+    "normalRestart": true,
+    "loaded": true,
+    "observedDateLocal": "2026-10-30 Asia/Shanghai",
+    "startupCheckTimeShown": "02:39:08",
+    "entry": "Settings > 相续人格 > 记忆 > 3D 记忆关联图",
+    "accepted": [
+      "new graph entry visibly present after normal restart",
+      "empty shared graph correctly offers original selection",
+      "explicitly selected retained original produces 35 nodes and 31 edges through authenticated host bridge",
+      "real 3D drag interaction retains local count and selection",
+      "theme inherited from actual DSH settings"
+    ],
+    "nodesObserved": 35,
+    "edgesObserved": 31,
+    "graphAndDetailActionsReadOnly": true,
+    "productionModelTest": false,
+    "qqRoundTripTest": false,
+    "qqStatus": "Settings showed waiting for login both before and after this restart; no reconnect, QR refresh or platform test performed for this visualization"
+  },
+  "bounds": {
+    "defaultNodes": 80,
+    "maxNodes": 120,
+    "defaultEdges": 160,
+    "maxEdges": 200,
+    "files": 8,
+    "bytes": 4194304,
+    "metadataEntries": 4096,
+    "rows": 2048,
+    "responseBytes": 114688,
+    "canvasMaxPixels": 2097152,
+    "canvasMaxDimension": 2048,
+    "continuousAnimation": false,
+    "webgl": false,
+    "cdn": false
+  },
+  "review": {
+    "independentBackendReadAudit": "passed",
+    "independentUiConsumptionAudit": "passed after stale-instance status race fix",
+    "staleStatusFix": "Capture owner instance and generation before status request; reject obsolete status before assignment or page construction"
+  },
+  "autonomy": {
+    "newPersonaRules": false,
+    "graphTriggersRecall": false,
+    "graphChangesImportance": false,
+    "memoryMigration": false,
+    "modelOrEmbeddingCallsForGraph": 0
+  },
+  "package": {
+    "name": "dsh-xiangxu-persona",
+    "version": "0.14.0",
+    "dryRunSize": 2610824,
+    "dryRunUnpackedSize": 5781072,
+    "includesRenderer": true,
+    "includesGraphCore": true
+  },
+  "evidence": {
+    "fullTestLogSha256": "77ce0628a5cbdf5a026e8ae4ec0865d99b4aec631549c309655091fcc6fb506e",
+    "demoScreenshotSha256": "53267cd903b7ea44dfc6486bb36d8cbe0b64f5a1090f71c1efbafb1b933a5638",
+    "nativeScreenshotSha256": "7f21b03006a565d1496202ab50cf9ba04c892bb8260e43576aee8c881e5587e1",
+    "screenshotsPublished": false
+  },
+  "sourceDigests": {
+    "package.json": "9b40a74e6f442312a613a2a47eea2675eedca10f88b6c96534439c6decc6e0a6",
+    "core/repository.js": "96284cf4aa5f97df12b2b60086664bfde642224e684dbc3f820258c31cfbe647",
+    "core/memory-graph.js": "6ae948faf38ad14a8d44f89bc55769578900b47e55273a7c328a5fc96948a2d7",
+    "adapters/dsh/management.js": "3c6e4d79cfb02408ecc85ac895cbd450c1185cbb60e68f5e85ebb3bdad64cb3a",
+    "ui/app.js": "91d8b107840311e3aa45f7d2a8dccc2dc48d9b9dde90de656be014be244d6f0a",
+    "ui/memory-graph.js": "53c443a0d95196be3d374c1cd24c9f355f900217a2f044b360c83e6970dfb312",
+    "ui/style.css": "91043e5b8268ad66552682dbcf49b1914f50ad93118e2e90d8d664f7a80918aa",
+    "ui/index.html": "cb42ef4269040a394a527ec3239bd32b91152acf9db9f2c9aa85a1e6b972f348",
+    "ui/client.js": "492d1f985a0f7780877460a21f20d9748e1118473ad52b6f9e5b713669dc0d71",
+    "scripts/build-ui.mjs": "840223dd441f1def45d2833900a063855ee7d4e0e4e533706c3862a571344d17",
+    "test/memory-graph.test.js": "fa280b197bb87068e7b0c5ecc536bed23804012b545c666e1987e185bb8de063",
+    "test/ui-memory-graph-renderer.test.js": "c75b1ab5440151e21617e1fc519543c8933e283118904e4a576f2d57414ef739",
+    "test/ui-pagination.test.js": "5dbc2ac898009ad07de2f20804e2e6e94bc8a3bf4790318f2871c6a2b2696d75",
+    "test/management.test.js": "194bbce95cdfa210f05c4bc9bcbe498b8b27230a7fa3ae53489ddf6297ae8d61"
+  },
+  "limits": [
+    "Memory graph visualizes saved external records and explicit provenance, not model internal neurons or measured emotion",
+    "The entire memory store was not enumerated; an empty local scope does not mean no memories",
+    "This release does not establish a cause or a complete fix for previous DSH crashes",
+    "This release adds no new real-model, QQ, Bilibili or other platform acceptance; those histories retain their original scope",
+    "GitHub CI is verified against the pushed source commit separately"
+  ]
+}

@@ -108,6 +108,100 @@ const timelineStatus = { recent: { count: 29, chars: 290 }, long_term: { count: 
 const timelineRows = Array.from({ length: 29 }, (_, i) => ({ id: 'timeline-' + i, recordType: 'chat', scope: 'staging', role: 'user', personId: null,
   tier: 'recent', textPreview: '经历正文-' + i, sourceAt: 1000 + i, timeline: { title: '事件标题-' + i, occurredAt: 1000 + i, recordedAt: 2000 + i } }));
 
+function graphSample(label = '当前人格记忆') {
+  const recordKey = JSON.stringify(['memory', 'global', null, 'same-id']);
+  return { format: 'persona-memory-graph/1', referenceOnly: true, automaticRecall: false,
+    nodes: [{ id: recordKey, recordKey, recordId: 'same-id', kind: 'record', recordType: 'memory', scope: 'global', personId: null, label, preview: '只读预览' },
+      { id: 'source:session-one:source-one', kind: 'source', label: '来源原件', sourceRef: { sourceSessionId: 'session-one', sourceEventId: 'source-one' } }],
+    edges: [{ source: recordKey, target: 'source:session-one:source-one', kind: 'source', basis: { field: 'srcRefs' } }], coverage: { entireStoreRead: false, total: null, truncated: false } };
+}
+async function graphFrontend(overrides = {}) {
+  const data = graphSample(), trace = { created: [], disposed: 0, data: [], modes: [], zooms: 0 };
+  const ui = await frontend({ 'memory.graph': () => data, 'memory.timeline.status': () => timelineStatus,
+    'memory.timeline.list': args => page(timelineRows.map(row => ({ ...row, recordKey: JSON.stringify(['chat', 'staging', null, row.id]) })), args),
+    'memory.detail': () => ({ id: 'same-id', recordKey: data.nodes[0].id, scope: 'global', personId: null, text: '按需读取的原文' }),
+    'sources.read': () => [{ available: true, sourceSessionId: 'session-one', sourceEventId: 'source-one', text: '原件正文' }], ...overrides });
+  ui.context.XiangxuMemoryGraph = { create(canvas, options) {
+    trace.created.push({ canvas, options }); return { setData(value) { trace.data.push(structuredClone(value)); }, select() {}, setColors() {}, resize() {}, reset() {},
+      setMode(value) { trace.modes.push(value); }, zoomIn() { trace.zooms++; }, zoomOut() { trace.zooms--; }, dispose() { trace.disposed++; } };
+  } };
+  return { ...ui, graphTrace: trace, graphData: data };
+}
+
+test('memory graph is explicit, local and read-only; record and source details load only on click with full identities', async () => {
+  const ui = await graphFrontend(); await ui.evaluate("navigate('memory')");
+  assert.equal(ui.calls.some(call => call.action === 'memory.graph'), false); assert.equal(ui.graphTrace.created.length, 0);
+  const entry = ui.walk(content(ui)).find(node => node.getAttribute('aria-label') === '3D 记忆关联图'); assert.ok(entry); await entry.emit('click');
+  assert.match(content(ui).textContent, /位置只用于排布/); assert.match(ui.ids.get('graph-status').textContent, /2 个节点，1 条关联/);
+  const graphRead = ui.calls.find(call => call.action === 'memory.graph'); assert.equal(graphRead.args.instanceId, 'default'); assert.equal(graphRead.args.scope, 'global');
+  assert.equal(graphRead.args.limit, 80); assert.equal(graphRead.args.edgeLimit, 160); assert.equal(ui.calls.some(call => call.action === 'sources.read' || call.action === 'memory.detail'), false);
+  ui.graphTrace.created[0].options.onSelect(ui.graphData.nodes[0]);
+  await ui.button(ui.ids.get('graph-selection'), '查看完整记忆与来源').emit('click');
+  const detail = ui.calls.find(call => call.action === 'memory.detail'); assert.equal(detail.args.id, 'same-id'); assert.equal(detail.args.recordKey, ui.graphData.nodes[0].recordKey); assert.equal(detail.args.instanceId, 'default');
+  ui.graphTrace.created[0].options.onSelect(ui.graphData.nodes[1]); await ui.button(ui.ids.get('graph-selection'), '查看来源原文').emit('click');
+  assert.deepEqual(ui.calls.find(call => call.action === 'sources.read').args.sourceRefs, [{ sourceSessionId: 'session-one', sourceEventId: 'source-one' }]);
+  assert.equal(ui.calls.some(call => /configure|update|forget|operations\.start|rebuild/.test(call.action)), false);
+  await ui.evaluate("navigate('settings')"); assert.equal(ui.graphTrace.disposed, 1);
+});
+
+test('graph mode and zoom controls expose selection state without changing memory or model settings', async () => {
+  const ui = await graphFrontend(); await ui.evaluate("navigate('memory','graph')");
+  await ui.button(content(ui), '平面视图').emit('click'); assert.deepEqual(ui.graphTrace.modes, ['2d']); assert.equal(ui.button(content(ui), '平面视图').getAttribute('aria-pressed'), 'true');
+  await ui.button(content(ui), '放大').emit('click'); await ui.button(content(ui), '缩小').emit('click'); assert.equal(ui.graphTrace.zooms, 0);
+  assert.equal(ui.calls.filter(call => call.action === 'memory.graph').length, 1);
+});
+
+test('a slower graph query cannot replace newer selected results and empty unknown scope gives a concrete next step', async () => {
+  let entered, release; const waiting = new Promise(resolve => { entered = resolve; });
+  const ui = await graphFrontend({ 'memory.graph': args => { if (args.query === 'slow') { entered(); return new Promise(resolve => { release = resolve; }); } return args.scope === 'unknown' ? { ...graphSample(), nodes: [], edges: [] } : graphSample(args.query === 'new' ? '新的查询结果' : '初始结果'); } });
+  await ui.evaluate("navigate('memory','graph')"); ui.ids.get('graph-query').value = 'slow'; await ui.ids.get('graph-query').emit('keydown', { key: 'Enter' }); await waiting;
+  ui.ids.get('graph-query').value = 'new'; await ui.ids.get('graph-query').emit('keydown', { key: 'Enter' }); await tick();
+  release(graphSample('过期查询结果')); await tick(); assert.equal(ui.graphTrace.data.at(-1).nodes[0].label, '新的查询结果'); assert.doesNotMatch(content(ui).textContent, /过期查询结果/);
+  ui.ids.get('graph-scope').value = 'unknown'; await ui.ids.get('graph-scope').emit('change'); await tick(); assert.match(ui.ids.get('graph-status').textContent, /先从近期经历选一条.*不代表没有记忆/);
+});
+
+test('recent source selection is paged and opens only the explicitly selected original shard', async () => {
+  const ui = await graphFrontend(); await ui.evaluate("navigate('memory','graph')"); assert.equal(ui.calls.some(call => call.action === 'memory.timeline.list'), false);
+  await ui.button(content(ui), '从近期经历选一条').emit('click'); const picker = ui.ids.get('graph-source-picker'); assert.equal(picker.hidden, false);
+  await ui.button(picker, '下一页 →').emit('click'); assert.match(picker.textContent, /第 2 页/); await ui.button(picker, '上一页').emit('click'); assert.match(picker.textContent, /第 1 页/);
+  await ui.button(picker, '事件标题-0').emit('click'); const read = ui.calls.filter(call => call.action === 'memory.graph').at(-1);
+  assert.equal(read.args.scope, 'unknown'); assert.equal(read.args.seedRecordKey, JSON.stringify(['chat', 'staging', null, 'timeline-0'])); assert.equal(picker.hidden, true);
+});
+
+test('instance changes immediately dispose the graph and invalidate in-flight details before loading the next persona', async () => {
+  let detailEntered, releaseDetail, statusEntered, releaseStatus;
+  const waitingDetail = new Promise(resolve => { detailEntered = resolve; }), waitingStatus = new Promise(resolve => { statusEntered = resolve; });
+  const ui = await graphFrontend({ 'instances.list': () => ({ items: [{ id: 'default', name: '甲', active: true, loaded: true }, { id: 'second', name: '乙', active: false, loaded: true }], activeInstanceId: 'default' }),
+    status: args => args.instanceId === 'second' ? (statusEntered(), new Promise(resolve => { releaseStatus = resolve; })) : ({ available: true, runtime: {}, capacity: {} }),
+    'sources.read': () => (detailEntered(), new Promise(resolve => { releaseDetail = resolve; })), 'memory.graph': args => graphSample(args.instanceId === 'second' ? '乙人格专属记忆' : '甲人格专属记忆') });
+  await ui.evaluate("navigate('memory','graph')"); ui.graphTrace.created[0].options.onSelect(ui.graphData.nodes[1]);
+  const oldDetail = ui.button(ui.ids.get('graph-selection'), '查看来源原文').emit('click'); await waitingDetail;
+  ui.ids.get('active-instance').value = 'second'; const changing = ui.ids.get('active-instance').emit('change'); await waitingStatus;
+  assert.equal(ui.graphTrace.disposed, 1); assert.equal(ui.ids.get('detail-dialog').open, false); assert.doesNotMatch(content(ui).textContent, /甲人格专属记忆/);
+  releaseDetail([{ text: '甲的过期详情' }]); await oldDetail; assert.doesNotMatch(ui.ids.get('detail-content').textContent, /甲的过期详情/);
+  releaseStatus({ available: true, runtime: {}, capacity: {} });
+  // renderPage makes its own current-instance status read; let that read finish too.
+  await tick(); releaseStatus({ available: true, runtime: {}, capacity: {} }); await changing;
+  assert.equal(ui.graphTrace.data.at(-1).nodes[0].label, '乙人格专属记忆'); assert.equal(ui.calls.filter(call => call.action === 'sources.read')[0].args.instanceId, 'default');
+});
+
+test('an old page status cannot overwrite a new persona or create a hidden second graph', async () => {
+  let delay = false, entered, release;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const ui = await graphFrontend({ status: args => {
+    if (delay && args.instanceId === 'default') { entered(); return new Promise(resolve => { release = resolve; }); }
+    return { available: true, runtime: {}, capacity: {}, memoryRoot: args.instanceId === 'second' ? 'persona-B-root' : 'persona-A-root' };
+  }, 'memory.graph': args => graphSample(args.instanceId === 'second' ? '乙人格记忆' : '甲人格记忆') });
+  delay = true; const older = ui.evaluate("navigate('memory','graph')"); await waiting;
+  await ui.evaluate("state.instanceId='second';navigate('memory','graph')");
+  release({ available: true, runtime: {}, capacity: {}, memoryRoot: 'stale-A-root' }); await older;
+  assert.equal(ui.evaluate('state.status.memoryRoot'), 'persona-B-root');
+  assert.equal(ui.graphTrace.created.length, 1); assert.equal(ui.graphTrace.data.filter(item => item.nodes.length).length, 1);
+  assert.equal(ui.graphTrace.data.at(-1).nodes[0].label, '乙人格记忆');
+  assert.equal(ui.calls.filter(call => call.action === 'memory.graph').length, 1);
+  assert.equal(ui.calls.filter(call => call.action === 'memory.graph')[0].args.instanceId, 'second');
+});
+
 test('memory, timeline and retrieval detail buttons retain the selected compound identity on every detail page', async () => {
   const row = { ...timelineRows[0], id: 'same', personId: 'b', scope: 'person', recordKey: '["chat","person","b","same"]' };
   for (const view of ['', 'timeline', 'retrieval']) {

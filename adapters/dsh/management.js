@@ -229,6 +229,11 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
       return pageDetail(action, args, value);
     }
     if (action === 'retrieval.detail') return pageDetail(action,args,await repo.getRetrievalDiagnostics());
+    if (action === 'memory.graph') {
+      const input = Object.fromEntries(['scope', 'personId', 'seedRecordKey', 'sourceRef', 'query', 'recordTypes', 'limit', 'edgeLimit']
+        .filter(key => args[key] !== undefined).map(key => [key, args[key]]));
+      return repo.getMemoryGraph(input);
+    }
     if (action === 'memory.timeline.status') return repo.getTimelineStatus();
     if (action === 'memory.timeline.list') {
       const tier = args.tier ?? 'recent', size = args.pageSize ?? 12;

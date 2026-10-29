@@ -1,6 +1,6 @@
 /* Management uses the authenticated DSH bridge. Optional indexing and generation run only after an explicit owner action. */
 const $ = id => document.getElementById(id);
-const state = { connected: false, instanceId: null, instances: [], people: [], status: null, page: 'overview', view: null, trail: [], budgetDraft: null, configGroup: '0', memoryPerson: null, generation: 0, detailGeneration: 0 };
+const state = { connected: false, instanceId: null, instances: [], people: [], status: null, page: 'overview', view: null, trail: [], budgetDraft: null, configGroup: '0', memoryPerson: null, graphSeed: null, generation: 0, detailGeneration: 0 };
 const pages = {
   overview: ['相处', 'OVERVIEW', '查看相续的近况，按自己的需要管理日常交流。'],
   persona: ['了解相续', 'PERSONA', '查看持续积累的身份、性格与习惯。这里展示当前数据，不替人格设定成长指标。'],
@@ -76,6 +76,7 @@ const timelineTierNames = { recent: '短期记忆', long_term: '长期记忆', a
 const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overview', maintenance: 'settings' };
 const viewTitles = { retrieval: '查找关联记忆', 'retrieval-settings': '可选语义服务', 'retrieval-diagnostics': '检索与参考记录', 'provider-feed': 'QQ 动态扩展', 'provider-cover': '可选翻唱服务', bilibili: '连接 B 站', 'bilibili-permissions': 'B 站能力与权限', 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', 'qq-official': 'QQ 官方 Bot', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-account': 'QQ 账号操作记录', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
 viewTitles.timeline = '记忆时间线';
+viewTitles.graph = '3D 记忆关联图';
 viewTitles.support = '报告问题';
 viewTitles['source-diagnostics'] = '来源诊断';
 const supportIssueUrl = 'https://github.com/MingoYung/dsh-Xiangxu-Persona/issues/new?template=bug_report.yml';
@@ -150,10 +151,13 @@ async function confirmOperation({ title, description, preview, reason = false, a
 function startDetail(title, eyebrow = 'DETAIL') { state.detailGeneration++; $('detail-title').textContent = title; $('detail-eyebrow').textContent = eyebrow; replace($('detail-content'), element('p', { class: 'muted' }, '正在读取…')); replace($('detail-footer')); if (!$('detail-dialog').open) $('detail-dialog').showModal(); return state.detailGeneration; }
 async function inspectDocument(action, args, title, { actions = [], eyebrow } = {}) {
   const generation = startDetail(title, eyebrow), body = $('detail-content'), footer = $('detail-footer');
+  const ownerInstance = args.instanceId ?? state.instanceId;
+  const alive = () => generation === state.detailGeneration && state.instanceId === ownerInstance;
   let accumulated = '', cursor, total = null;
   async function load() {
-    const result = await request(action, { ...args, ...(cursor != null ? { cursor } : {}) });
-    if (generation !== state.detailGeneration) return;
+    if (!alive()) return;
+    const result = await request(action, { ...args, ...(ownerInstance ? { instanceId: ownerInstance } : {}), ...(cursor != null ? { cursor } : {}) });
+    if (!alive()) return;
     let view, complete = true;
     if (result?.format === 'json_text_fragment') {
       if (cursor == null) accumulated = '';
@@ -167,7 +171,7 @@ async function inspectDocument(action, args, title, { actions = [], eyebrow } = 
       cursor != null ? button('继续读取下一页', load, 'primary', { dataset: { action: 'detail-next' } }) : element('span', { class: 'small muted' }, '已读取可用详情'),
       button('关闭', () => $('detail-dialog').close(), 'secondary'));
   }
-  try { await load(); } catch (error) { if (generation === state.detailGeneration) replace(body, notice(errorText(error), 'error')); throw error; }
+  try { await load(); } catch (error) { if (!alive()) return; replace(body, notice(errorText(error), 'error')); throw error; }
 }
 function paginator(result, next, { pageNumber = 1, previous, first, label = '结果', position = 'bottom' } = {}) {
   const count = getItems(result).length, total = result?.total, from = Number.isSafeInteger(result?.offset) ? result.offset + 1 : null;
@@ -238,12 +242,14 @@ async function renderPage() {
   replace($('page-actions'));
   const supporting = state.page === 'settings' && state.view === 'support';
   if (!state.connected && !supporting) return;
-  clearError(); const generation = ++state.generation; $('page-content').classList.add('loading');
+  clearError(); const generation = ++state.generation, ownerInstance = state.instanceId; $('page-content').classList.add('loading');
   try {
     let content;
     if (supporting) content = await supportPage();
     else {
-      state.status = await request('status'); updateInstanceBar();
+      const status = await request('status', { instanceId: ownerInstance });
+      if (generation !== state.generation || ownerInstance !== state.instanceId) return;
+      state.status = status; updateInstanceBar();
       if (state.view === 'user-guide') content = userGuidePage();
       else if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('启用或选择人格', () => navigate('settings', 'instances'), 'primary'));
       else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage, tasks: tasksPage })[state.page]();
@@ -516,7 +522,142 @@ function memoryRecord(record, open) {
   const text = record.recordType === 'deep' ? record.reference ?? record.textPreview ?? record.experience ?? '' : record.text ?? record.textPreview ?? record.summary ?? record.expansion ?? record.meaning ?? record.preview ?? record.anchorPreview ?? record.title ?? '';
   return element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, record.label ?? record.name ?? (record.recordType === 'deep' ? record.title : null) ?? ({ chat: '对话原件', memory: '记忆提炼', deep: '深刻记忆', code: '编码', relation_signature: '关系签名', relation_event: '关系事件', interpretation: '待解释', facet: '人格倾向', signature: '共同签名', habit: '习惯' })[record.recordType] ?? record.recordType ?? '记忆条目'), element('time', { class: 'record-time' }, record.sourceAt || record.createdAt || record.updatedAt ? date(record.sourceAt ?? record.createdAt ?? record.updatedAt) : '时间未提供')),
     element('p', { class: 'record-text' }, short(text, 360)), element('div', { class: 'record-meta' }, tag(({ assistant: 'AI 助手', user: '用户原话', system: '程序材料' })[role] ?? role ?? '提炼/解释', role === 'assistant' ? 'ai' : role === 'user' ? 'human' : ''), tag(memoryScopeLabel(record)), record.speakerId ? tag('发言者：' + record.speakerId) : null, record.epistemic ? tag(record.epistemic) : null),
-    element('div', { class: 'record-footer' }, button('查看详情 →', open, 'link')));
+    element('div', { class: 'record-footer' }, button('查看详情 →', open, 'link'),
+      record.recordKey ? button('在 3D 图中查看', () => openMemoryGraph(record), 'link') : null));
+}
+async function openMemoryGraph(item) {
+  state.graphSeed = { instanceId: state.instanceId, ...memorySelection(item),
+    label: item.timeline?.title ?? item.title ?? item.label ?? '选中的记忆',
+    ...(item.sourceSessionId && item.sourceEventId ? { sourceRef: { sourceSessionId: item.sourceSessionId, sourceEventId: item.sourceEventId } } : {}) };
+  state.detailGeneration++; if ($('detail-dialog').open) $('detail-dialog').close();
+  await openSection('graph');
+}
+async function memoryGraphPage() {
+  const instanceId = state.instanceId, generation = state.generation;
+  const alive = () => state.instanceId === instanceId && state.generation === generation && state.page === 'memory' && state.view === 'graph';
+  let seed = state.graphSeed?.instanceId === instanceId ? state.graphSeed : null, graph = null, result = null, readGeneration = 0, selected = null, themeObserver = null, mountObserver = null;
+  const scopeValue = seed ? seed.scope === 'person' ? 'person' : seed.scope === 'global' ? 'global' : 'unknown' : state.memoryPerson ? 'person' : 'global';
+  const scope = field('graph-scope', '查看范围', scopeValue, { choices: [['global', '共同记忆'], ['person', '某个人的记忆'], ['unknown', '尚未确认归属']] });
+  const person = field('graph-person', '选择人物', seed?.personId ?? state.memoryPerson?.id ?? '', { choices: [['', '请选择人物'], ...state.people.map(p => [p.personId ?? p.id, p.displayName ?? p.personId ?? p.id])] });
+  if (seed?.personId && ![...person.input.options].some(option => option.value === seed.personId)) person.input.append(element('option', { value: seed.personId }, personName(seed.personId)));
+  person.input.value = seed?.personId ?? state.memoryPerson?.id ?? ''; person.wrapper.hidden = scopeValue !== 'person';
+  const query = field('graph-query', '查找当前范围', '', { placeholder: '标题、经历或关键词', class: 'search' });
+  const container = element('div', { class: 'memory-graph-page' }), status = element('p', { id: 'graph-status', class: 'subtle-note', role: 'status' }), focus = element('div', { class: 'graph-focus' });
+  const canvas = element('canvas', { id: 'memory-graph-canvas', class: 'memory-graph-canvas', tabIndex: 0, role: 'img', 'aria-label': '记忆关联图，可拖动旋转；下面的节点列表提供相同内容。', 'aria-describedby': 'graph-help' });
+  const panel = element('section', { id: 'graph-selection', class: 'memory-graph-selection', 'aria-label': '选中的记忆' }), listing = element('div', { class: 'graph-node-list' }), picker = element('div', { id: 'graph-source-picker', hidden: true }), coverageInfo = element('div', { id: 'graph-coverage' });
+  const hint = element('p', { id: 'graph-help', class: 'small muted graph-help' }, '拖动旋转，点击选中。点击图或用 Tab 进入后可滚轮缩放，Esc 退出；也可以用下方列表选择。');
+  const kinds = { record: '记忆条目', source: '来源原件', person: '人物', session: '对话来源' };
+  const edgeNames = { source: '来源于', source_ref: '来源于', source_session: '来自同一会话', about_person: '涉及人物', related_memory: '明确关联', related: '明确关联', expand: '展开编码', expands: '展开编码', code_expansion: '展开编码', supersedes: '替代旧理解', replaces: '被新理解替代', replacement: '被新理解替代' };
+  const probes = Object.fromEntries(['text', 'muted', 'edge', 'node', 'selected', 'neighbor', 'record', 'source', 'person', 'session'].map(name => [name, element('span', { class: 'graph-color-probe graph-color-' + name, 'aria-hidden': true })]));
+  function colors() {
+    const value = (name, fallback) => typeof getComputedStyle === 'function' ? getComputedStyle(probes[name]).color || fallback : fallback;
+    return { background: 'transparent', text: value('text', '#e5e7eb'), muted: value('muted', '#9ca3af'), edge: value('edge', '#78838e'), node: value('node', '#82b4d1'), selected: value('selected', '#ffffff'), neighbor: value('neighbor', '#a1c9e0'),
+      kinds: { record: value('record', '#82b4d1'), source: value('source', '#9ca3af'), person: value('person', '#c3aa72'), session: value('session', '#8cb8b1') } };
+  }
+  function cleanup() { readGeneration++; graph?.dispose(); graph = null; result = null; selected = null; themeObserver?.disconnect(); mountObserver?.disconnect(); pageCleanups.delete(cleanup); }
+  pageCleanups.add(cleanup);
+  function selectNode(node) {
+    if (!alive()) return;
+    selected = node; graph?.select(node?.id ?? null);
+    for (const row of listing.children) row.setAttribute('aria-pressed', String(row.dataset.nodeId === node?.id));
+    if (!node) {
+      const emptyGraph = result && !result.nodes.length;
+      replace(panel, element('h2', {}, emptyGraph ? '从一段经历开始' : '点选一条记忆'),
+        element('p', { class: 'muted' }, emptyGraph ? '当前局部暂无节点。选一条近期经历，或从记忆列表定位；这不代表记忆库为空。' : '查看它涉及的来源、人物，以及已有的明确关联。'),
+        emptyGraph ? button('选择近期经历', () => chooseRecent(), 'secondary') : null); return;
+    }
+    const links = (result?.edges ?? []).filter(edge => edge.source === node.id || edge.target === node.id);
+    const actions = [];
+    if (node.kind === 'record') actions.push(button('查看完整记忆与来源', () => inspectDocument('memory.detail', { ...memorySelection({ ...node, id: node.recordId, recordKey: node.recordKey ?? node.id }), instanceId }, node.label || '记忆详情'), 'secondary'));
+    if (node.kind === 'source' && node.sourceRef) actions.push(button('查看来源原文', () => inspectDocument('sources.read', { sourceRefs: [node.sourceRef], instanceId }, '来源原件'), 'secondary'));
+    replace(panel, element('p', { class: 'small muted' }, kinds[node.kind] ?? '关联资料'), element('h2', {}, node.label || kinds[node.kind]),
+      node.preview ? element('p', { class: 'graph-node-preview' }, node.preview) : null,
+      node.sourceAt || node.createdAt ? element('p', { class: 'small muted' }, date(node.sourceAt ?? node.createdAt)) : null,
+      ...actions, element('h3', {}, `图中关联 ${links.length} 条`), links.length ? element('div', { class: 'graph-links' }, links.map(edge => {
+        const neighbor = result.nodes.find(item => item.id === (edge.source === node.id ? edge.target : edge.source));
+        return element('div', { class: 'graph-link' }, element('span', { class: 'small muted' }, edge.label ?? edgeNames[edge.kind] ?? '已保存的关联'),
+          neighbor ? button(neighbor.label || kinds[neighbor.kind], () => selectNode(neighbor), 'link') : null,
+          edge.basis ? button('查看依据', () => { startDetail('这条关联的记录依据'); replace($('detail-content'), data(edge.basis)); replace($('detail-footer'), button('关闭', () => $('detail-dialog').close(), 'secondary')); }, 'link small') : null);
+      })) : element('p', { class: 'small muted' }, '当前局部没有其它已保存关联。图不会为孤立条目补造联系。'));
+  }
+  function ensureRenderer() {
+    if (graph || !alive()) return;
+    if (!globalThis.XiangxuMemoryGraph?.create) throw new Error('绘图组件尚未加载，请重新打开插件页面。记忆列表仍可使用。');
+    graph = globalThis.XiangxuMemoryGraph.create(canvas, { onSelect: selectNode, colors: colors(), mode: '3d' });
+    if (typeof ResizeObserver === 'function') { mountObserver = new ResizeObserver(() => { if (alive()) graph?.setColors(colors()); }); mountObserver.observe(container); }
+    if (typeof MutationObserver === 'function' && document.documentElement) {
+      themeObserver = new MutationObserver(() => { if (alive()) graph?.setColors(colors()); });
+      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-host-theme'] });
+    }
+  }
+  function drawSelection() {
+    replace(focus, seed ? element('div', { class: 'active-filter' }, element('span', {}, '围绕：' + seed.label), button('取消记忆定位', () => { seed = null; state.graphSeed = null; return load(); }, 'link')) : null);
+  }
+  async function load() {
+    if (!alive()) return;
+    const ticket = ++readGeneration;
+    ensureRenderer(); graph.setData({ nodes: [], edges: [] }); result = null; selectNode(null); replace(listing); replace(coverageInfo); status.textContent = '正在读取这一范围的局部关联…'; container.setAttribute('aria-busy', 'true'); drawSelection();
+    if (scope.input.value === 'person' && !person.input.value) { status.textContent = '先选择人物，再查看这段关系的记忆。'; container.setAttribute('aria-busy', 'false'); return; }
+    const args = { instanceId, scope: scope.input.value, limit: 80, edgeLimit: 160,
+      ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), ...(query.input.value.trim() ? { query: query.input.value.trim() } : {}),
+      ...(seed?.recordKey ? { seedRecordKey: seed.recordKey } : seed?.sourceRef ? { sourceRef: seed.sourceRef } : {}) };
+    try {
+      const next = await request('memory.graph', args);
+      if (!alive() || ticket !== readGeneration) return;
+      if (next.format !== 'persona-memory-graph/1' || !Array.isArray(next.nodes) || !Array.isArray(next.edges)) throw new Error('关联图返回的数据不完整，请刷新后重试。');
+      const displayCounts = { source: 0, session: 0 };
+      result = { ...next, nodes: next.nodes.map(node => ({ ...node,
+        label: node.kind === 'source' ? '来源原件 ' + (++displayCounts.source)
+          : node.kind === 'session' ? '对话来源 ' + (++displayCounts.session)
+          : node.kind === 'person' ? personName(node.personId) : node.label })) };
+      graph.setData(result);
+      const coverage = next.coverage ?? {}, clipped = coverage.truncated || coverage.complete === false || coverage.skippedFiles > 0;
+      status.textContent = `当前局部：${number(next.nodes.length)} 个节点，${number(next.edges.length)} 条关联。${clipped ? '部分资料未展开；可缩小范围或从具体经历打开。' : '这是选定范围的局部视图，未读取整个人格记忆库。'}`;
+      if (!next.nodes.length) status.textContent = scope.input.value === 'unknown' && !seed ? '先从近期经历选一条，或从记忆列表打开具体条目。尚未确认归属不代表没有记忆。' : '当前局部没有可展示的节点。可以换一个范围，或从具体经历开始。';
+      const unreadLinks = Object.values(coverage.unresolvedLinks ?? {}).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+      replace(coverageInfo, kv({ '当前显示': `${number(next.nodes.length)} 个节点，${number(next.edges.length)} 条关联`,
+        '读取范围': coverage.rawScope === 'selected_shard' ? '选中原件所在分片，以及同范围的记忆条目' : '选定范围中已经整理的记忆条目；未读取聊天原文流',
+        '本次读取': next.readBudget ? `${number(next.readBudget.filesRead)} 份资料，约 ${number(Math.ceil(next.readBudget.bytesRead / 1024))} KiB` : '以本次接口覆盖信息为准',
+        '未展开节点／边': `${number(coverage.omittedNodes ?? 0)} ／ ${number(coverage.omittedEdges ?? 0)}`,
+        '本次未能核对的引用': number(unreadLinks), '完整记忆总量': '未统计整库；画面上限不会删除或缩减记忆' }));
+      replace(listing, result.nodes.map(node => button((node.label || kinds[node.kind] || '条目') + ' · ' + (kinds[node.kind] ?? '资料'), () => selectNode(node), 'secondary', { class: 'button graph-node-row', dataset: { nodeId: node.id }, 'aria-pressed': 'false' })));
+      selectNode(seed ? result.nodes.find(node => node.id === seed.recordKey) ?? result.nodes.find(node => node.kind === 'record') ?? null : null);
+    } catch (error) { if (!alive() || ticket !== readGeneration) return; status.textContent = '这次读取没有完成；可以重试，或继续使用记忆列表。'; throw error; }
+    finally { if (alive() && ticket === readGeneration) container.setAttribute('aria-busy', 'false'); }
+  }
+  let pickerGeneration = 0, pickerCursors = [null], pickerPage = 0;
+  async function chooseRecent(cursor = null, { pageIndex } = {}) {
+    if (!alive()) return;
+    const ticket = ++pickerGeneration, reset = cursor == null && pageIndex === undefined, index = reset ? 0 : pageIndex ?? pickerPage + 1;
+    picker.hidden = false; replace(picker, element('p', { class: 'muted' }, '正在读取近期经历…'));
+    const page = await request('memory.timeline.list', { instanceId, tier: 'recent', pageSize: 12, ...(cursor ? { cursor } : {}) });
+    if (!alive() || ticket !== pickerGeneration) return;
+    if (reset) pickerCursors = [null]; pickerCursors[index] = cursor; pickerPage = index;
+    replace(picker, element('h2', {}, '选一段经历作为起点'), getItems(page).length ? element('div', { class: 'graph-recent-list' }, getItems(page).map(item => button(item.timeline?.title || item.title || short(item.textPreview, 65) || '交流记录', async () => {
+      if (!alive()) return;
+      seed = { instanceId, ...memorySelection(item), label: item.timeline?.title || item.title || '选中的经历' }; state.graphSeed = seed;
+      scope.input.value = item.personId ? 'person' : 'unknown'; person.wrapper.hidden = !item.personId;
+      if (item.personId) { if (![...person.input.options].some(option => option.value === item.personId)) person.input.append(element('option', { value: item.personId }, personName(item.personId))); person.input.value = item.personId; }
+      query.input.value = ''; picker.hidden = true; await load();
+    }, 'secondary'))) : element('p', { class: 'muted' }, '近期还没有可选经历。也可以回到记忆列表，按来源查看长期或归档条目。'),
+      paginator(page, next => chooseRecent(next, { pageIndex: index + 1 }), { pageNumber: index + 1, first: () => chooseRecent(), previous: () => chooseRecent(pickerCursors[index - 1], { pageIndex: index - 1 }), label: '近期经历选择' }),
+      button('收起选择', () => { pickerGeneration++; picker.hidden = true; }, 'link'));
+  }
+  const mode3d = button('3D 视图', () => setMode('3d'), 'secondary compact', { 'aria-pressed': 'true' }), mode2d = button('平面视图', () => setMode('2d'), 'secondary compact', { 'aria-pressed': 'false' });
+  function setMode(mode) { if (!alive()) return; graph?.setMode(mode); mode3d.setAttribute('aria-pressed', String(mode === '3d')); mode2d.setAttribute('aria-pressed', String(mode === '2d')); hint.textContent = mode === '3d' ? '拖动旋转，点击选中。点击图或用 Tab 进入后可滚轮缩放，Esc 退出；也可以用下方列表选择。' : '拖动平移，点击选中。放大、缩小和节点列表同样可用。'; }
+  scope.input.addEventListener('change', () => { seed = null; state.graphSeed = null; person.wrapper.hidden = scope.input.value !== 'person'; load().catch(showError); });
+  person.input.addEventListener('change', () => { seed = null; state.graphSeed = null; load().catch(showError); });
+  query.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); load().catch(showError); } });
+  container.append(element('p', { class: 'subtle-note' }, '每条线都有记录依据。位置只用于排布，不代表情绪强弱或已触发回忆。'),
+    element('div', { class: 'graph-filterbar' }, scope.wrapper, person.wrapper, query.wrapper, button('查看关联', load, 'primary')), focus,
+    element('div', { class: 'row-actions graph-source-actions' }, button('从近期经历选一条', () => chooseRecent(), 'secondary'), button('回到记忆列表', () => openSection('', false), 'link')), picker,
+    element('div', { class: 'graph-controls', 'aria-label': '图形视角' }, mode3d, mode2d, button('放大', () => graph?.zoomIn(), 'secondary compact'), button('缩小', () => graph?.zoomOut(), 'secondary compact'), button('复位视角', () => graph?.reset(), 'secondary compact')),
+    element('div', { class: 'memory-graph-layout' }, element('div', { class: 'memory-graph-stage' }, canvas, hint), panel), status,
+    element('div', { class: 'graph-legend', 'aria-label': '节点类型' }, Object.entries(kinds).map(([key, label]) => element('span', { class: 'graph-legend-item kind-' + key }, label))),
+    disclosure({}, element('summary', {}, '以列表选择节点'), listing),
+    disclosure({}, element('summary', {}, '本次覆盖范围'), coverageInfo),
+    ...Object.values(probes));
+  await load(); return container;
 }
 async function retrievalPage() {
   const container = element('div'), instanceId=state.instanceId,generation=state.generation;
@@ -589,6 +730,7 @@ async function retrievalPage() {
         getItems(result).length ? element('div', { class: 'record-list' }, ...getItems(result).map(item => element('article', { class: 'record' }, element('h3', {}, item.title || item.textPreview || item.id),
           element('p', { class: 'record-meta' }, memoryScopeLabel(item) + ' · ' + (item.retrieval?.channels ?? []).join(' / ')),
           button('查看完整记忆与来源', () => inspectDocument('memory.detail', memorySelection(item), '记忆详情'), 'link'),
+          item.recordKey ? button('在 3D 图中查看', () => openMemoryGraph(item), 'link') : null,
           disclosure({}, element('summary', {}, '为什么找到这一条'), data(item.retrieval))))) : empty('没有匹配的候选参考', '可以调整线索或范围后再次查找；没有结果不代表记忆库为空。'),
         paginator(result, next => search(next, { pageIndex: searchPage + 1 }), paging),
         disclosure({}, element('summary', {}, '本次检索覆盖与限制'), data(result.diagnostics)));
@@ -662,6 +804,7 @@ async function timelinePage() {
 }
 
 async function memoryPage() {
+  if (state.view === 'graph') return memoryGraphPage();
   if (['retrieval','retrieval-settings','retrieval-diagnostics'].includes(state.view)) return retrievalPage();
   if (state.view === 'timeline') return timelinePage();
   const container = element('div'), filters = element('div', { class: 'toolbar', role: 'search' }), resultArea = element('div'), ownerInstance = state.instanceId, ownerGeneration = state.generation;
@@ -740,6 +883,7 @@ async function memoryPage() {
   const relations = card('人物与关系', '按真实人物列表分页。查看主观印象、编码与相处状态。', peopleQuery.wrapper, button('搜索人物', () => loadPeople(), 'secondary compact'), peopleResults);
   const tabs = sectionTabs([['', '全部记忆'], ['deep', '深刻经历'], ['people', '认识的人']]);
   container.append(destinations(destination('短期、长期与归档', '按时间线查看同一份经历；超出短期转入长期，长期满后最旧部分转入归档。', () => openSection('timeline')),
+    destination('3D 记忆关联图', '旋转查看经历、来源和人物之间已经保存的联系。', () => { state.graphSeed = null; return openSection('graph'); }),
     destination('查找关联记忆', '使用文字、可选语义和已有关系查找，并查看过去与现在的理解。', () => openSection('retrieval'))));
   container.append(tabs);
   if (state.view === 'people') { await loadPeople(); container.append(relations); return container; }
@@ -1935,7 +2079,20 @@ $('confirm-cancel').addEventListener('click', () => $('confirm-dialog').close('c
 $('confirm-close').addEventListener('click', () => $('confirm-dialog').close('cancel'));
 $('detail-dialog').addEventListener('cancel', () => { state.detailGeneration++; });
 $('refresh-button').addEventListener('click', () => { if (state.connected) renderPage().catch(showError); else connect(); });
-$('active-instance').addEventListener('change', async event => { state.instanceId = event.target.value; state.budgetDraft = null; state.memoryPerson = null; state.trail = []; try { state.status = await request('status'); state.people = state.status.available ? getItems(await request('people.list', { pageSize: 100 })) : []; await renderPage(); } catch (error) { showError(error); } });
+$('active-instance').addEventListener('change', async event => {
+  for (const cleanup of [...pageCleanups]) cleanup();
+  const instanceId = event.target.value, ticket = ++state.generation;
+  state.detailGeneration++; if ($('detail-dialog').open) $('detail-dialog').close();
+  state.instanceId = instanceId; state.budgetDraft = null; state.memoryPerson = null; state.graphSeed = null; state.trail = [];
+  replace($('page-content'), element('p', { class: 'muted', role: 'status' }, '正在读取所选人格…'));
+  try {
+    const status = await request('status', { instanceId });
+    if (state.instanceId !== instanceId || state.generation !== ticket) return;
+    const people = status.available ? getItems(await request('people.list', { instanceId, pageSize: 100 })) : [];
+    if (state.instanceId !== instanceId || state.generation !== ticket) return;
+    state.status = status; state.people = people; await renderPage();
+  } catch (error) { if (state.instanceId === instanceId && state.generation === ticket) showError(error); }
+});
 $('connect-retry').addEventListener('click', connect);
 document.querySelectorAll('[data-page]').forEach(node => node.addEventListener('click', event => { event.preventDefault(); navigate(node.dataset.page).catch(showError); }));
 window.addEventListener('persona-bridge-ready', () => { if (!state.connected) connect(); });

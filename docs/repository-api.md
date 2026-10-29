@@ -1,6 +1,6 @@
 # Repository API (implementation contract)
 
-当前0.13.6修复QQ已在线但来信卡在历史会话回放的循环等待，见[QQ回放恢复](0.13.6-qq-replay-recovery.md)。历史助手消息只核对原交付回执，不进入发送队列或重发；本轮按实际重载与消息链路另行验收。0.13.5的技术修复及当时无生产实测范围保留历史，人格自主判断不变。
+当前0.14.0增加只读[3D记忆关联图](memory-graph-3d.md)：展示有实际依据的记录、来源、人物和会话关系，后端有界读取，原文按需详情。图不调用模型、不触发回忆或人格更新；旧版QQ恢复与技术修复保留原范围，最终全量、实机与正式加载另验，不预填成功。
 
 ESM exports: JsonStore from core/store.js; MemoryRepository from core/repository.js; schema utilities from core/schema.js. Persistent mutations resolve after durable local commits; reads and the explicitly volatile retrieval caches/diagnostics do not imply a disk write. Returned data are detached copies. Times are epoch ms. Clock may be a function or {now()}.
 
@@ -136,3 +136,9 @@ Owner provider actions retrieval.inspect/configure/prepare, retrieval.diagnostic
 The optional adapter-supplied extensionValidator({path,value,kind:'content'|'writerLock'}) must return true to admit an extension. All five public maintenance entries, candidate validation, fingerprints and restore completion propagate the same port. Without it, extension data and foreign schemas remain rejected; a caller must also provide it when recovering an interrupted extension restore. Candidate contents are validated before the directory switch, including the already-installed recovery branch before its journal is cleared. Core does not import DSH or recognize QQ fields.
 
 The DSH validator admits only precise qq-account and existing qq-social paths and structures, checks nested JsonStore WAL names/checksums/entries, and rejects an active nested writer. Writer locks are not copied into backups. Immutable extension records are preserved rather than rewritten by the personality-source revocation walk; source revocations remain applied to the core personality records. DSH instance lifecycle releases the account root before offline maintenance and uses an exact clear allowlist. Current account-archive validation covers restoration to the same personality and original root; cross-root/instance archive migration is not implemented. External platform credentials and the shared native-operation journal are outside the personality backup/clear scope. See [QQ account operations](qq-account-operations.md) and [schema §24](plan/persona/persona-schema.md#24-独立qq账号工具与维护扩展0110).
+
+## 0.14.0 bounded read-only memory graph
+
+getMemoryGraph({scope:"global"|"person"|"unknown"="global",personId?,seedRecordKey?,sourceRef?:{sourceSessionId,sourceEventId},query?,recordTypes?,limit=80,edgeLimit=160}) returns format persona-memory-graph/1, nodes, edges, coverage, readBudget, revision, referenceOnly:true and automaticRecall:false. Query is at most200 Unicode characters, display caps are120 nodes/200 edges. The port does not call _allMemory, ordinary search or a model. Default reads selected derived documents; explicit original selection alone may open its actual source shard, verifying archived bytes/SHA. Shared/person/unknown scopes and composite identities are retained. Missing, ambiguous or unread links do not become guessed edges.
+
+Hard budgets are8 opened files/4MiB cumulative reads,2MiB metadata,512KiB per derived file,1MiB per selected archive,256KiB catalog,2048 projected records/4096 metadata receipts and114688 response bytes. Size is checked before bounded reads. coverage.total is null and entireStoreRead false; catalogueComplete describes selected derived documents only. Skips or display truncation never delete source memory. See [full graph contract and user semantics](memory-graph-3d.md).

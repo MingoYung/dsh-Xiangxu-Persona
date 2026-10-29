@@ -1,12 +1,12 @@
 # DSH 扩展点与 P0 接入验证
 
-当前0.13.6保留八工具与owner管理桥，增加同格式时间线的分层浏览和必要上下文加载保护。转层、来源回查、明确遗忘及请求故障分别报告，字段以persona-schema第26节为准。
+当前0.14.0保留八工具与owner管理桥，增加同格式时间线的分层浏览和必要上下文加载保护。转层、来源回查、明确遗忘及请求故障分别报告，字段以persona-schema第26节为准。
 
-> 0.13.6当前维护：修复QQ冷挂接历史回放与入站同队列循环等待。历史外部助手消息只核对已有交付回执，不入发送队列；无回执保留未知，不重发旧消息，实时新消息仍走正常交付。机制与实际重载验收边界见[QQ回放恢复](../../0.13.6-qq-replay-recovery.md)。本轮实际加载与聊天恢复分别核实，旧版不重载／无生产实测安排仅保留历史。来源、投影、使用量、记忆缺口和人格自主判断不变，其他平台不冒称已验收。
+> 0.14.0当前维护：新增只读[3D记忆关联图](../../memory-graph-3d.md)，按复合身份和实际来源／显式关系展示局部；默认派生文档，明确选原件才读对应分片。后端有界读取与显示预算独立于记忆容量，超限只影响本次视图。图不调用模型、不触发回忆或人格更新，布局不冒充神经元／情绪实测；原文、撤销、人格自主和既有QQ恢复保持。最终全量、实机和正式加载另验，不预填成功。
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
-修订日期：2026-10-29。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
+修订日期：2026-10-30。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
 
 本文保留上一轮从本机安装包、官方 README 和既有插件读取的宿主出处，同时收回把“接口存在”直接写成“端到端行为成立”的结论。本次文档修订没有运行宿主探针，不能据此声称事件完整性、idle agent 自动启动、睡眠静默、请求作用域或最终送达已经实测。
 
@@ -318,3 +318,9 @@ memory.detail透传recordKey与可选真实personId／scope／recordType；后�
 observeEvent的历史观察使用reconcileOnly；externalDelivery.reconcile只核对已有交付状态，不形成新的发送请求。新实时事件保留output。冷挂接、重复回放、无回执与投影不匹配分别验收，不能只凭QQ在线宣称新消息已进入模型。
 
 当前机制与验收安排见[0.13.6恢复说明](../../0.13.6-qq-replay-recovery.md)。
+
+## 0.14.0图API与消费者
+
+owner管理新增memory.graph，参数沿getMemoryGraph并固定原instanceId；UI从近期分页12或具体记忆条目传recordKey起点。record节点才通过相同owner打开memory.detail，source/person/session查看事实说明。前端不得把截断局部写成全库total，也不得根据用户点选向量化、触发模型或改重要度。
+
+操作、限制与当前验收边界见[3D记忆关联图](../../memory-graph-3d.md)。

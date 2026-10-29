@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import * as fs from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { JsonStore } from './store.js';
 import { extractSourceDependencies, hotSourceDependencies, dependenciesRevoked, temporaryCleanupPlan, runReferencesRevocation } from './source-dependencies.js';
@@ -6,7 +7,8 @@ import { countStringValues, serializedBytes, assertRecordCapacity, assertDocumen
 import { SELF_PROFILE_PATH, emptySelfProfile, validateSelfProfile, validateSelfProfilePatch, applySelfProfilePatch, selfProfileLinks, redactSelfProfile } from './self-profile.js';
 import { validateRetrievalInput, temporalReference, lexicalCandidates, associationCandidates, mergeCandidates, retrievalRecordKey } from './retrieval.js';
 import { RetrievalState } from './retrieval-semantic.js';
-import { TimelineStorage, TIMELINE_CATALOG, TIMELINE_FIELDS, unifiedRecord, timelineChars, timelineOrder, isTimelinePath, validateTimelineAnnotation, redactTimelineRecord } from './timeline.js';
+import { MEMORY_GRAPH_LIMITS, validateMemoryGraphInput, parseGraphRecordKey, graphScopeAllows, graphDocumentRows, projectMemoryGraph, graphError } from './memory-graph.js';
+import { TimelineStorage, TIMELINE_CATALOG, TIMELINE_FIELDS, unifiedRecord, timelineChars, timelineOrder, isTimelinePath, validateTimelineAnnotation, redactTimelineRecord, validateTimelineCatalog as validateTimelineCatalogForGraph } from './timeline.js';
 import {
   SCHEMA_VERSION, SchemaError, defaultConfig, mergeConfig, emptyPersona, emptyRuntime,
   newId, sourceKey, countChars, safeId, validateChat, validateHot, validateMemoryItem,
@@ -621,6 +623,104 @@ export class MemoryRepository {
       const rows = (await this._allMemory(meta, { chatPaths })).filter(item => item.id === id && matches(item));
       if (rows.length > 1) throw memoryRecordAmbiguous(id);
       return copy(rows[0] ?? null);
+    });
+  }
+  getMemoryGraph(input = {}) {
+    return this._queue(async () => {
+      const options = validateMemoryGraphInput(input), limits = MEMORY_GRAPH_LIMITS;
+      const budget = { bytesRead: 0, filesRead: 0, filesOpened: 0, rowsVisited: 0, metadataEntriesVisited: 0 };
+      const coverage = { documentsRead: [], documentsSkipped: [], reasons: [], rawScope: 'none', catalogueScope: 'selected_derived_documents', selectedSourcePath: null, selectedShardRecords: 0 };
+      let catalogueComplete = true, metadataIndexComplete = true; const fingerprints = [], rows = [];
+      const skip = (relative, reason, bytes = null) => { coverage.documentsSkipped.push({ path: relative, reason, bytes }); coverage.reasons.push(reason); catalogueComplete = false; };
+      // Open and stat first; never allocate/read a document above either cap.
+      // Use the store's serial/path protections without calling its unbounded readers.
+      const read = (relative, maximum, { required = false, expected = null } = {}) => this.store._queue(async () => {
+        this.store._check();
+        if (budget.filesOpened >= limits.files) { skip(relative, 'file_limit'); return null; }
+        let handle;
+        try {
+          handle = await fs.open(await this.store._path(relative), 'r'); budget.filesOpened++;
+          const before = await handle.stat();
+          if (!before.isFile()) throw graphError('MEMORY_GRAPH_SOURCE_INVALID', 'Graph source is not a regular file');
+          const remaining = limits.bytes - budget.bytesRead;
+          if (before.size > maximum || before.size > remaining) { skip(relative, before.size > maximum ? 'file_byte_limit' : 'total_byte_limit', before.size); return null; }
+          if (expected && before.size !== expected.bytes) throw graphError('TIMELINE_ARCHIVE_CORRUPT', 'Selected archive byte count changed');
+          const raw = Buffer.alloc(before.size); let offset = 0;
+          while (offset < raw.length) { const part = await handle.read(raw, offset, raw.length - offset, offset); budget.bytesRead += part.bytesRead; offset += part.bytesRead; if (!part.bytesRead) throw graphError('MEMORY_GRAPH_SOURCE_CHANGED', 'Graph source changed while reading'); }
+          const after = await handle.stat();
+          if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ino !== after.ino) throw graphError('MEMORY_GRAPH_SOURCE_CHANGED', 'Graph source changed while reading');
+          const fingerprint = digest(raw);
+          if (expected && fingerprint !== expected.sha256) throw graphError('TIMELINE_ARCHIVE_CORRUPT', 'Selected archive checksum changed');
+          budget.filesRead++; coverage.documentsRead.push({ path: relative, bytes: raw.length }); fingerprints.push([relative,fingerprint]); return raw.toString('utf8');
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+          if (required) throw Object.assign(new Error('Required graph source is unavailable: ' + relative), { code: 'MEMORY_REQUIRED_DOCUMENT_MISSING' });
+          coverage.documentsSkipped.push({ path: relative, reason: 'not_present', bytes: 0 }); return null;
+        } finally { await handle?.close(); }
+      });
+      const metaText = await read('meta/state.json', limits.metadataBytes, { required: true });
+      if (metaText === null) return projectMemoryGraph({ rows: [], options, meta: {}, catalogueComplete: false, metadataIndexComplete: false, coverage, readBudget: budget });
+      const meta = JSON.parse(metaText);
+      if (!meta || typeof meta !== 'object' || !Number.isSafeInteger(meta.version) || !meta.sources || Array.isArray(meta.sources) || !['personIds','revokedIds','revokedSources'].every(key=>Array.isArray(meta[key]))) throw new SchemaError('Required graph source metadata is invalid');
+      if (options.scope === 'person' && !meta.personIds.includes(options.personId)) throw Object.assign(new Error('Unknown graph person'), { code:'UNKNOWN_PERSON_TARGET' });
+      const revokedSources = new Set(meta.revokedSources), revokedIds = new Set(meta.revokedIds), sourceIdentities = [];
+      for (const key in meta.sources) {
+        if (budget.metadataEntriesVisited >= limits.metadataEntries) { metadataIndexComplete = false; coverage.reasons.push('metadata_entry_limit'); break; }
+        budget.metadataEntriesVisited++; const receipt = meta.sources[key];
+        if (!receipt || revokedSources.has(key) || revokedIds.has(receipt.id)) continue;
+        const pair = JSON.parse(key);
+        if (!Array.isArray(pair) || pair.length!==2 || pair.some(value=>typeof value!=='string'||!value) || typeof receipt.id!=='string' || !receipt.id || countChars(receipt.id)>200 || receipt.personId!=null && (typeof receipt.personId!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(receipt.personId))) throw new SchemaError('Graph source receipt identity is invalid');
+        const row = { recordType:'chat',scope:receipt.personId?'person':'staging',personId:receipt.personId??null,id:receipt.id };
+        sourceIdentities.push({ ...row,recordKey:retrievalRecordKey(row),sourceRef:{sourceSessionId:pair[0],sourceEventId:pair[1]},receipt });
+      }
+      const documents = options.scope === 'unknown' ? [] : options.scope === 'person'
+        ? ['self/persona.json',...['index','codes','pending','impression'].map(name=>personPath(options.personId,name+'.json'))]
+        : ['self/persona.json','global/index.json','global/codes.json','global/deep.json'];
+      for (const relative of documents) {
+        if (budget.rowsVisited >= limits.rows) { skip(relative,'row_limit'); continue; }
+        const text = await read(relative,limits.documentBytes,{required:relative==='self/persona.json'});
+        if (text===null) { if (meta.lineage?.[relative] && Object.keys(meta.lineage[relative]).length) { catalogueComplete=false;coverage.reasons.push('known_document_unavailable'); } continue; }
+        const extracted=graphDocumentRows(relative,JSON.parse(text),limits.rows-budget.rowsVisited);budget.rowsVisited+=extracted.visited;rows.push(...extracted.rows);
+        if(extracted.truncated){catalogueComplete=false;coverage.reasons.push('row_limit');}
+      }
+      let requested = options.sourceRef ? { sourceRef:options.sourceRef,receipt:meta.sources[sourceKey(options.sourceRef)] } : null;
+      const seed = options.seedRecordKey === undefined ? null : parseGraphRecordKey(options.seedRecordKey);
+      if (!requested && seed?.recordType==='chat') {
+        const found=sourceIdentities.filter(row=>row.recordKey===options.seedRecordKey&&graphScopeAllows(row,options));
+        if(found.length>1)throw graphError('MEMORY_RECORD_AMBIGUOUS','Selected graph original has ambiguous identity');
+        requested=found[0]??null;if(!requested)coverage.reasons.push(metadataIndexComplete?'seed_source_unavailable':'seed_source_not_indexed');
+      }
+      if (requested) {
+        const ref=requested.sourceRef,receipt=requested.receipt,key=sourceKey(ref);
+        if(receipt && (typeof receipt.id!=='string'||!receipt.id||countChars(receipt.id)>200||receipt.personId!=null&&(typeof receipt.personId!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(receipt.personId))))throw new SchemaError('Selected graph source receipt identity is invalid');
+        const sourceRow=receipt?{id:receipt.id,recordType:'chat',scope:receipt.personId?'person':'staging',personId:receipt.personId??null}:null;
+        if(!receipt||revokedSources.has(key)||revokedIds.has(receipt.id))coverage.reasons.push('selected_source_unavailable');
+        else if(!graphScopeAllows(sourceRow,options))coverage.reasons.push('selected_source_outside_scope');
+        else if(seed && seed.recordType==='chat'&&retrievalRecordKey(sourceRow)!==options.seedRecordKey)throw new SchemaError('Selected graph source does not match the seed record');
+        else {
+          const relative=receipt.storagePath??streamPath(receipt.personId);if(!isTimelinePath(relative))throw new SchemaError('Graph source receipt points outside timeline storage');
+          let expected=null;
+          if(relative.startsWith('timeline/archive/')){
+            const catalogText=await read(TIMELINE_CATALOG,limits.catalogBytes,{required:true});
+            if(catalogText!==null){const catalog=validateTimelineCatalogForGraph(JSON.parse(catalogText));expected=catalog.archiveFiles.find(item=>item.path===relative);if(!expected)throw new SchemaError('Selected graph archive is not cataloged');}
+          }
+          if(!relative.startsWith('timeline/archive/')||expected){
+            const text=await read(relative,relative.startsWith('timeline/archive/')?limits.archiveBytes:limits.documentBytes,{required:true,expected});
+            if(text!==null){coverage.rawScope='selected_shard';coverage.selectedSourcePath=relative;
+              for(const line of text.split(/\r?\n/))if(line.trim()){
+                if(budget.rowsVisited>=limits.rows){catalogueComplete=false;coverage.reasons.push('row_limit');break;}budget.rowsVisited++;
+                const row=redactTimelineRecord(JSON.parse(line),meta).record;
+                if(revokedIds.has(row.id)||revokedSources.has(sourceKey(row)))continue;
+                const item={...row,recordType:'chat',scope:row.personId?'person':'staging',personId:row.personId??null,tier:relative.startsWith('timeline/archive/')?'archive':relative.startsWith('timeline/long/')?'long_term':'recent'};
+                if(graphScopeAllows(item,options)){rows.push(item);coverage.selectedShardRecords++;}
+              }
+            }
+          }
+        }
+      }
+      if(options.scope==='unknown'&&!requested)coverage.reasons.push('select_original_for_unknown_scope');
+      const revision=digest(JSON.stringify([meta.version,options.scope,options.personId,fingerprints]));
+      return projectMemoryGraph({rows,options,meta,catalogueComplete,metadataIndexComplete,sourceIdentities,coverage,readBudget:budget,revision});
     });
   }
   getTimelineStatus() {

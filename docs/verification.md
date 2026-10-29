@@ -1,6 +1,8 @@
 # 实现与验证记录
 
-> 当前版本入口：0.13.6的[QQ冷恢复循环等待补修](0.13.6-qq-replay-recovery.md)与[机器回执](verification/0.13.6-qq-replay-recovery.json)。完整隔离回归1467/1467通过，新增4项；普通desktop已重载且QQ保持登录。新私聊已完成accepted、DeepSeek Flash真实处理、QQ delivered和用户手机确认；本轮未新增群聊／资料变更验收。
+> 当前版本入口：0.14.0的[3D记忆关联图](memory-graph-3d.md)与[机器回执](verification/0.14.0-memory-graph.json)。完整隔离回归1507/1507通过，新增40项，失败／取消／跳过均为0；JavaScript与包配置运行前后哈希未变。普通desktop正常重启后，实际设置页已打开正式原件的35节点／31关联局部图，并完成三维拖动检查。本轮可视化不调用模型，不修改记忆，不新增QQ或其它平台收发验收。
+
+> 0.13.6历史入口：[QQ冷恢复循环等待补修](0.13.6-qq-replay-recovery.md)与[机器回执](verification/0.13.6-qq-replay-recovery.json)。完整隔离回归1467/1467通过，新增4项；该轮普通desktop已重载且QQ保持登录。新私聊已完成accepted、DeepSeek Flash真实处理、QQ delivered和用户手机确认；该轮未新增群聊／资料变更验收。
 
 > 0.13.5历史入口：[记忆定位、发送前复核与关闭顺序](0.13.5-technical-safety-fixes.md)。该轮隔离回归与正式运行分开报告，未重启DSH或新增生产模型／QQ实测；下文旧版数字、SHA、路径与失败保留历史范围，不作为当前版本通过证明。
 

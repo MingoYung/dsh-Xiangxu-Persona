@@ -1,6 +1,6 @@
 # Portable runtime API
 
-当前0.13.6修复QQ已在线但来信卡在历史会话回放的循环等待，见[QQ回放恢复](0.13.6-qq-replay-recovery.md)。历史助手消息只核对原交付回执，不进入发送队列或重发；本轮按实际重载与消息链路另行验收。0.13.5的技术修复及当时无生产实测范围保留历史，人格自主判断不变。
+当前0.14.0增加只读[3D记忆关联图](memory-graph-3d.md)：展示有实际依据的记录、来源、人物和会话关系，后端有界读取，原文按需详情。图不调用模型、不触发回忆或人格更新；旧版QQ恢复与技术修复保留原范围，最终全量、实机与正式加载另验，不预填成功。
 
 The implementation is ESM on Node >=22, has no external dependency, DSH imports, provider credentials or installed application paths. `core/index.js` exports `PersonaRuntime`, `MemoryRepository`, `JsonStore`, schema utilities and prompt snapshot helpers. The current product authority remains `plan/persona/persona-schema.md`; `identityPlan` is an additive expression of the already requested autonomous recognition, not an authentication system.
 

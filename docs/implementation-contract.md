@@ -1,6 +1,6 @@
 # Shared implementation contract
 
-当前0.13.6修复QQ已在线但来信卡在历史会话回放的循环等待，见[QQ回放恢复](0.13.6-qq-replay-recovery.md)。历史助手消息只核对原交付回执，不进入发送队列或重发；本轮按实际重载与消息链路另行验收。0.13.5的技术修复及当时无生产实测范围保留历史，人格自主判断不变。
+当前0.14.0增加只读[3D记忆关联图](memory-graph-3d.md)：展示有实际依据的记录、来源、人物和会话关系，后端有界读取，原文按需详情。图不调用模型、不触发回忆或人格更新；旧版QQ恢复与技术修复保留原范围，最终全量、实机与正式加载另验，不预填成功。
 
 JavaScript ESM core has no DSH imports or external runtime dependency. The native UI client is generated from local ui sources by scripts/build-ui.mjs and shipped with the package. Authoritative behavior and schema: persona-memory/3 documents in plan/persona/. The core never decides personality content through hard rules.
 
@@ -55,3 +55,7 @@ The DSH layer supplies an explicitly configured embeddings port, manual paged pr
 The DSH adapter may prepare a pinned official NapCat Shell in its own directory, start the existing compatible QQ, expose the real QR flow through owner-only qqBridgeSetup actions, then, after owner confirmation, connect the independent QQ account to the current loaded persona in the default autonomous-social mode (both allowedPrivateIds and allowedGroupIds are ['*']). Individually selected scopes remain an optional privacy/test mode; the persona chooses contacts, whether to attempt friend requests and whether to reply. Incoming friend-request approval has an upstream action but is not yet wired into this plugin; proactive friend requests have no verified public action and the native candidates still need an adapter. Neither gap is a personality prohibition. Official QQ Bot and existing OneBot setup remain secondary paths. Installation, online readiness, inbound acceptance, personality choice, platform acknowledgement and client receipt are separate facts.
 
 NapCat HTTP callbacks use a dedicated recoverable HMAC secret and the original bounded JSON bytes; the former Bearer path remains supported. These secrets and native process ownership do not belong to core or model prompts. Recovery cannot change the instance/root/account/scope or download silently; a manual stop clears its resume intent. No stop claim is made without owned-process evidence. Full user steps and pending/current acceptance are maintained in [QQ setup](qq-one-click-setup.md#0110-final-acceptance); old evidence is not promoted.
+
+## 0.14.0 memory graph consumer boundary
+
+The management memory.graph action reads repository.getMemoryGraph for its fixed instance. core/memory-graph.js only projects stored relations; ui/memory-graph.js lays out and draws bounded xyz nodes locally with Canvas2D. Record/source/person/session nodes are distinct, and only records open memory.detail with the same owner instance and recordKey. Instance changes invalidate old graph data/detail selection, hidden or detached views stop rendering work, and browsing never invokes personality/model/retrieval-side learning. Limits and coverage are documented in [the graph guide](memory-graph-3d.md); they do not alter stored memory capacities.
