@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 const canonical = value => value && typeof value === 'object'
   ? Array.isArray(value) ? value.map(canonical) : Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(canonical(value))).digest('base64url');
-const withoutCursor = args => Object.fromEntries(Object.entries(args ?? {}).filter(([key]) => key !== 'cursor'));
+const withoutCursor = args => Object.fromEntries(Object.entries(args ?? {}).filter(([key]) => key !== 'cursor' && key !== 'detailCursor'));
 const copy = value => value === undefined ? undefined : structuredClone(value);
 
 export class ToolCursorError extends Error {
@@ -57,13 +57,14 @@ function compositeIdentity(item) {
 
 /** Search-page identity header. Real subject (id/personId/role/origin/epistemic)
  *  and full first source reference stay on whole rows; deferrable derived
- *  diagnostics (schemaVersion, recordKey encoding, raw score decimals, temporal
- *  eligibility objects) are omitted so a bounded page carries readable items
- *  instead of one item's envelope. */
+ *  diagnostics (recordKey encoding, raw score decimals, temporal eligibility
+ *  objects) are omitted so a bounded page carries readable items instead of one
+ *  item's envelope. schemaVersion stays: the dependency scanner uses it to keep
+ *  explicit memory identity inside tool envelopes (dsh-envelope-dependencies). */
 function memoryHeader(item) {
   const refs = sourceRefs(item);
   const retrieval = item.retrieval ? { channels: item.retrieval.channels, matchedTermCount: item.retrieval.matchedTerms?.length ?? 0, explanationDetailsOmitted: true } : undefined;
-  return { id: item.id ?? null, personId: item.personId ?? null,
+  return { schemaVersion: item.schemaVersion ?? 'persona-memory/3', id: item.id ?? null, personId: item.personId ?? null,
     ...(item.recordType ? { recordType: item.recordType } : {}), ...(item.kind ? { kind: item.kind } : {}),
     ...(item.scope != null ? { scope: item.scope } : {}), ...(item.role != null ? { role: item.role } : {}),
     ...(item.origin != null ? { origin: item.origin } : {}),
@@ -135,6 +136,29 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
       ...(result.needsTarget ? { needsTarget: true } : {}) };
     const page = (rows, i, o = 0) => ({ ...base, items: rows,
       nextCursor: i < material.length ? cursorFor(toolName, query, shape, i, o) : null });
+    // Bounded single-row detail path: pages the COMPLETE row (full identity
+    // envelope incl. every source id, then the text) as an explicit JSON text
+    // fragment. Used when the envelope itself cannot fit a list page — a real,
+    // always-progressing read channel, not a "re-query and hope" hint.
+    const detailShape = hash(shape + ':detail');
+    if (args.detailCursor !== undefined) {
+      const detailAt = readCursor(args.detailCursor, { tool: toolName, query, shape: detailShape, length: items.length });
+      const entry = material[detailAt.index];
+      if (!entry) throw new ToolCursorError('Cursor offset is past the source text');
+      const detailText = JSON.stringify({ ...entry.header, text: entry.text });
+      const points = Array.from(detailText);
+      if (detailAt.offset > points.length) throw new ToolCursorError('Cursor offset is past the source text');
+      const detailPage = to => ({ status: 'bounded_detail', ...compositeIdentity(items[detailAt.index]), ...accounting,
+        detail: { format: 'row_detail_fragment', text: points.slice(detailAt.offset, to).join(''), fragment: { from: detailAt.offset, to, total: points.length, complete: to === points.length } },
+        nextCursor: to < points.length ? cursorFor(toolName, query, detailShape, detailAt.index, to) : null });
+      let low = detailAt.offset + 1, high = points.length, best = null;
+      while (low <= high) {
+        const to = Math.floor((low + high) / 2);
+        if (await fits(detailPage(to))) { best = detailPage(to); low = to + 1; } else high = to - 1;
+      }
+      if (!best) throw budgetError();
+      return best;
+    }
     let index = at.index, offset = at.offset;
     // Phase 1: whole rows (a mid-item continuation repeats the composite identity).
     while (index < material.length) {
@@ -155,11 +179,11 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
       if (best) { out.push(best.row); offset = best.to; if (offset === points.length) { index++; offset = 0; } }
       else {
         // Never all-or-nothing, and never a stuck cursor: the deferred row keeps
-        // the composite identity and an executable re-read path (seedIds puts
-        // this record first in a fresh result with a full page budget), while
-        // the cursor advances past this item so continuation always progresses.
+        // the composite identity and a bounded detail cursor that pages the
+        // complete row (identity envelope + text) with guaranteed progress,
+        // while the list cursor advances past this item.
         const item = items[index];
-        const reference = { ...compositeIdentity(item), ...(item.role != null ? { role: item.role } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}), text: '', fragment: { from: offset, to: offset, total: points.length, complete: false }, textDeferred: 'budget', ...(item.id ? { rereadWithSeedIds: [item.id] } : {}) };
+        const reference = { ...compositeIdentity(item), ...(item.role != null ? { role: item.role } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}), text: '', fragment: { from: offset, to: offset, total: points.length, complete: false }, textDeferred: 'budget', detailCursor: cursorFor(toolName, query, detailShape, index, 0) };
         if (!(await fits(page([reference], index + 1, 0)))) throw budgetError();
         out.push(reference);
         index++; offset = 0;

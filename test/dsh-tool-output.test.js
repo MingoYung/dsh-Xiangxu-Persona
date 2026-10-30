@@ -157,27 +157,43 @@ test('a bounded search page surfaces several D0-shaped matches instead of one en
   for (const item of items) assert.equal(seen.get(item.id), item.text, 'item ' + item.id + ' reconstructed whole');
 });
 
-test('a deferred identity row advances the cursor and offers a seedIds re-read instead of looping', async () => {
+test('a deferred identity row advances the cursor and its detailCursor pages the complete row incl. over-long sources', async () => {
   const utf8 = { method: 'utf8_bytes_estimate', count: text => Buffer.byteLength(text, 'utf8') };
   const longId = 'm_' + 'x'.repeat(60);
-  const mk = (person, i) => ({ ...row('第' + i + '条较长正文。'.repeat(8)), id: longId, personId: person, scope: 'person', recordType: 'chat',
-    srcRefs: [{ sourceSessionId: 'sess_' + 's'.repeat(48), sourceEventId: 'evt_' + 'e'.repeat(48), available: true }] });
-  const items = [mk('person_a', 1), mk('person_b', 2)];
-  let cursor = null, pages = 0, deferred = 0, cursors = new Set(), guard = 0;
+  // A legal but very long sourceSessionId (review 8.4 shape): the identity
+  // envelope alone cannot fit a 1500-byte page, so the row defers.
+  const longSource = 'sess_' + 's'.repeat(1800);
+  const item = { ...row('第' + '一条较长正文。'.repeat(8)), id: longId, personId: 'person_a', scope: 'person', recordType: 'chat',
+    srcRefs: [{ sourceSessionId: longSource, sourceEventId: 'evt_' + 'e'.repeat(48), sourceRole: 'user', available: true }] };
+  const items = [item, { ...row('第二条短正文。'), id: 'm_short', personId: 'person_b', scope: 'person' }];
+  const args = { query: '正文', scope: 'all' };
+  const first = await boundToolOutput('memory_search', { items }, args, { counter: utf8, budget: 1500 });
+  const deferredRow = first.items.find(r => r.textDeferred === 'budget');
+  assert.ok(deferredRow, 'over-long envelope defers');
+  assert.ok(deferredRow.detailCursor, 'deferred row carries a detail cursor');
+  assert.ok(deferredRow.personId !== undefined && deferredRow.recordType !== undefined, 'deferred row keeps composite identity');
+  // Follow the detail cursor: the complete row (identity envelope + text) must
+  // become readable page by page — including the 1800-character source id.
+  let detail = '', detailCursor = deferredRow.detailCursor, pages = 0;
   do {
-    const page = await boundToolOutput('memory_search', { items }, { query: '正文', scope: 'all', cursor }, { counter: utf8, budget: 560 });
-    pages++; assert.ok(pages <= 10, 'pagination must terminate');
-    if (cursor) assert.ok(!cursors.has(cursor), 'cursor must change between pages');
-    cursors.add(cursor);
-    for (const item of page.items) if (item.textDeferred === 'budget') {
-      deferred++;
-      assert.ok(Array.isArray(item.rereadWithSeedIds) && item.rereadWithSeedIds[0] === longId, 'deferred row offers a seedIds re-read');
-      assert.ok(item.personId !== undefined && item.recordType !== undefined && item.scope !== undefined, 'deferred row keeps composite identity');
-    }
-    cursor = page.nextCursor;
-    assert.ok(guard++ < 20);
-  } while (cursor);
-  assert.ok(deferred >= 1, 'the tiny budget defers text but the walk still finishes');
+    const page = await boundToolOutput('memory_search', { items }, { ...args, detailCursor }, { counter: utf8, budget: 1500 });
+    assert.equal(page.status, 'bounded_detail');
+    assert.ok(Buffer.byteLength(JSON.stringify(page), 'utf8') <= 1500);
+    detail += page.detail.text; detailCursor = page.nextCursor;
+    assert.ok(pages++ < 60, 'detail pagination terminates');
+  } while (detailCursor);
+  const parsed = JSON.parse(detail);
+  assert.equal(parsed.id, longId);
+  assert.equal(parsed.srcRefs[0].sourceSessionId, longSource, 'complete over-long source id recovered');
+  assert.equal(parsed.srcRefs[0].sourceEventId, 'evt_' + 'e'.repeat(48));
+  assert.equal(parsed.text, item.text, 'full text recovered through the detail channel');
+  // And the list walk still makes progress past the deferred row.
+  let cursor = first.nextCursor, seen = 0, guard = 0;
+  while (cursor && guard++ < 20) {
+    const page = await boundToolOutput('memory_search', { items }, { ...args, cursor }, { counter: utf8, budget: 1500 });
+    seen += page.items.length; cursor = page.nextCursor;
+  }
+  assert.ok(seen >= 1, 'list walk continues past the deferred row');
 });
 
 test('row fragments disambiguate composite identity when bare ids collide across persons', async () => {
