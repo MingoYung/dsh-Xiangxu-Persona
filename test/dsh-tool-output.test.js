@@ -17,7 +17,12 @@ test('long Chinese and emoji memory pages reconstruct the complete original with
     // A consumer always receives a complete valid JSON object, even when body text is partial.
     assert.deepEqual(JSON.parse(JSON.stringify(page)), page);
     for (const item of page.items) {
-      assert.equal(item.srcRefs[0].sourceEventId, 'source_event'); assert.equal(item.personId, 'a');
+      // Whole rows carry the identity envelope; continuation rows re-identify by
+      // id only, and preview rows are a marked peek whose text is re-delivered
+      // whole on the item's own page, so reconstruction uses non-preview rows.
+      if (item.continuesItem) { assert.ok(item.id); assert.equal(item.srcRefs, undefined); }
+      else if (item.preview) { assert.equal(item.fragment.from, 0); continue; }
+      else { assert.equal(item.srcRefs[0].sourceEventId, 'source_event'); assert.equal(item.personId, 'a'); }
       assert.equal(item.fragment.from, Array.from(joined.get(item.id) ?? '').length);
       assert.ok(!/[\uD800-\uDBFF]$/.test(item.text));
       joined.set(item.id, (joined.get(item.id) ?? '') + item.text);
@@ -104,9 +109,50 @@ test('assistant original and source provenance survive a bounded return alongsid
     srcRefs: [{ sourceSessionId: 'source_session', sourceEventId: 'source_event', sourceKind: 'assistant', sourceRole: 'assistant', sourceOrigin: 'proactive', blockIndex: 2, available: true }] };
   const result = { items: [original, { id: 'sig', personId: 'a', recordType: 'signature', if: '想起那次主动聊天', then: '可能会再次联系他。' }] };
   const all = []; let cursor = null;
-  do { const page = await boundToolOutput('memory_search', result, { query: '主动', cursor }, { counter, budget: 1100 }); assert.ok(size(page) <= 1100); all.push(...page.items); cursor = page.nextCursor; } while (cursor);
+  do { const page = await boundToolOutput('memory_search', result, { query: '主动', cursor }, { counter, budget: 1100 }); assert.ok(size(page) <= 1100); all.push(...page.items.filter(item => !item.preview)); cursor = page.nextCursor; } while (cursor);
   const first = all[0];
   for (const key of ['scope', 'role', 'origin', 'proactiveId', 'sourceAt']) assert.equal(first[key], original[key]);
   assert.deepEqual(first.srcRefs[0], original.srcRefs[0]); assert.equal(first.text, original.text);
   assert.deepEqual(JSON.parse(all[1].text), { if: result.items[1].if, then: result.items[1].then });
+});
+
+test('a bounded search page surfaces several D0-shaped matches instead of one envelope or a budget error', async () => {
+  // Regression shape from run1 D0 (2026-10-30): staging current message ranked
+  // first plus person-scoped history; budget 1500 (schema default retrievalTokens).
+  const utf8 = { method: 'utf8_bytes_estimate', count: text => Buffer.byteLength(text, 'utf8') };
+  const now = 1793362582586;
+  const current = { ...row('阿序，早。昨晚说要戒的东西，今天执行第一天，到现在撑住了。倒是那位五公斤监工，早上六点准时把我踩醒，比闹钟管用。'), id: 'm_current', personId: null, scope: 'staging', sourceAt: now,
+    retrieval: { channels: ['lexical'], matchedTerms: ['戒', '猫'], temporal: { eligible: true }, lexicalScore: 13.199947020331297, rankScore: 0.01639344262295082 } };
+  const history = i => ({ ...row('第' + i + '条：我家猫从键盘上踩过去，差点把气闸踩成气匣，它叫豆包，五公斤。还说好周六高铁回老家看姥姥。'), id: 'm_hist_' + i,
+    personId: 'person_2931743d-4a53-4082-96b1-581b929e27af', scope: 'person', sourceAt: now - 3600e3 + i * 60e3,
+    srcRefs: [{ sourceSessionId: 'natural_a_00f4754e3ce14fa3bd5642b93783013f', sourceEventId: '0000000' + i + '-0000-0000-0000-000000000000', sourceKind: 'user', sourceRole: 'user', sourceOrigin: 'user', available: true }],
+    retrieval: { channels: ['lexical'], matchedTerms: ['猫'], lexicalScore: 9.1 - i, rankScore: 0.01 } });
+  const items = [current, ...Array.from({ length: 9 }, (_, i) => history(i + 1))];
+  const diagnostics = { method: 'lexical+association', semantic: { enabled: false, configured: false, indexed: 0, eligible: 25, coverageComplete: false, reason: 'disabled' } };
+  // Page 1: whole first row with substantially more than the old 20-codepoint
+  // fragment, plus at least one preview row; never TOOL_OUTPUT_BUDGET.
+  const first = await boundToolOutput('memory_search', { items, diagnostics }, { query: '猫 戒 第一天', scope: 'all', mode: 'auto' }, { counter: utf8, budget: 1500 });
+  assert.ok(Buffer.byteLength(JSON.stringify(first), 'utf8') <= 1500);
+  assert.equal(first.totalMatched, 10);
+  const whole = first.items.find(item => !item.preview && !item.continuesItem);
+  assert.ok(whole, 'page carries a whole identity row');
+  assert.ok(Array.from(whole.text).length > 40, 'whole row text exceeds the old 20-codepoint windows');
+  assert.ok(first.items.some(item => item.preview), 'page carries a preview of the next match');
+  // The query that previously failed all-or-nothing now returns a readable row.
+  const lexical = await boundToolOutput('memory_search', { items: items.slice(1), diagnostics }, { query: '猫', scope: 'all', mode: 'lexical' }, { counter: utf8, budget: 1500 });
+  assert.ok(lexical.items.length >= 1); assert.ok(Array.from(lexical.items[0].text).length > 20);
+  // Cursor walk reaches every item's complete text with full identity rows.
+  const seen = new Map();
+  for (const item of first.items) if (!item.preview && !item.continuesItem) seen.set(item.id, (seen.get(item.id) ?? '') + item.text);
+  let cursor = first.nextCursor, guard = 0;
+  while (cursor && guard++ < 60) {
+    const page = await boundToolOutput('memory_search', { items, diagnostics }, { query: '猫 戒 第一天', scope: 'all', mode: 'auto', cursor }, { counter: utf8, budget: 1500 });
+    for (const item of page.items) {
+      if (item.preview || item.continuesItem) continue;
+      seen.set(item.id, (seen.get(item.id) ?? '') + item.text);
+      assert.ok(item.srcRefs?.[0] || item.personId === null);
+    }
+    cursor = page.nextCursor;
+  }
+  for (const item of items) assert.equal(seen.get(item.id), item.text, 'item ' + item.id + ' reconstructed whole');
 });

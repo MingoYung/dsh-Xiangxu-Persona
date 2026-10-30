@@ -11,15 +11,19 @@ export class ToolCursorError extends Error {
 }
 
 function cursorFor(tool, query, shape, index, offset = 0) {
-  return Buffer.from(JSON.stringify({ v: 1, t: tool, q: query, s: shape, i: index, o: offset })).toString('base64url');
+  // 132-bit prefixes keep the tool+args+shape binding (staleness/cross-query
+  // safety) while leaving most of a small page budget for actual content.
+  const short = value => value.slice(0, 22);
+  return Buffer.from(JSON.stringify({ v: 2, t: tool, q: short(query), s: short(shape), i: index, o: offset })).toString('base64url');
 }
 function readCursor(value, { tool, query, shape, length }) {
   if (value == null) return { index: 0, offset: 0 };
   if (typeof value !== 'string' || value.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new ToolCursorError('Malformed tool cursor');
   let cursor;
   try { cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')); } catch { throw new ToolCursorError('Malformed tool cursor'); }
-  if (cursor.v !== 1 || cursor.t !== tool || cursor.q !== query) throw new ToolCursorError('Cursor belongs to another tool, query, target, scope or selection');
-  if (cursor.s !== shape) throw new ToolCursorError('The underlying result changed; restart this query to obtain a consistent page', 'TOOL_CURSOR_STALE');
+  const same = (a, b) => a === b || (typeof a === 'string' && typeof b === 'string' && (a.startsWith(b.slice(0, 22)) || b.startsWith(a.slice(0, 22))));
+  if (cursor.v !== 2 || cursor.t !== tool || !same(cursor.q, query)) throw new ToolCursorError('Cursor belongs to another tool, query, target, scope or selection');
+  if (!same(cursor.s, shape)) throw new ToolCursorError('The underlying result changed; restart this query to obtain a consistent page', 'TOOL_CURSOR_STALE');
   if (!Number.isSafeInteger(cursor.i) || cursor.i < 0 || cursor.i > length || !Number.isSafeInteger(cursor.o) || cursor.o < 0) throw new ToolCursorError('Invalid cursor position');
   return { index: cursor.i, offset: cursor.o };
 }
@@ -39,18 +43,25 @@ function sourceRefs(item) {
     ...(ref.blockIndex != null ? { blockIndex: ref.blockIndex } : {}),
     available: ref.available !== false })) };
 }
-function memoryHeader(item) {
+/** Search-page identity header. Real subject (id/personId/role/origin/epistemic)
+ *  and full first source reference stay on whole rows; deferrable derived
+ *  diagnostics (schemaVersion, recordKey encoding, raw score decimals, temporal
+ *  eligibility objects) are omitted so a bounded page carries readable items
+ *  instead of one item's envelope. Continuation rows re-identify by id only. */
+function memoryHeader(item, { continuation = false } = {}) {
+  if (continuation) return { id: item.id ?? null };
   const refs = sourceRefs(item);
-  return { schemaVersion: item.schemaVersion ?? 'persona-memory/3', id: item.id ?? null, ...(item.recordKey ? { recordKey: item.recordKey } : {}), personId: item.personId ?? null,
+  const retrieval = item.retrieval ? { channels: item.retrieval.channels, matchedTermCount: item.retrieval.matchedTerms?.length ?? 0, explanationDetailsOmitted: true } : undefined;
+  return { id: item.id ?? null, personId: item.personId ?? null,
     ...(item.recordType ? { recordType: item.recordType } : {}), ...(item.kind ? { kind: item.kind } : {}),
     ...(item.scope != null ? { scope: item.scope } : {}), ...(item.role != null ? { role: item.role } : {}),
-    ...(item.origin != null ? { origin: item.origin } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}),
+    ...(item.origin != null ? { origin: item.origin } : {}),
+    ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}),
     ...(item.proactiveId != null ? { proactiveId: item.proactiveId } : {}),
     ...(item.epistemic ? { epistemic: item.epistemic } : {}),
-    ...(item.retrieval ? { retrieval: { channels: item.retrieval.channels, temporal: item.retrieval.temporal, lexicalScore: item.retrieval.lexicalScore, semanticScore: item.retrieval.semanticScore, rankScore: item.retrieval.rankScore, matchedTermCount: item.retrieval.matchedTerms?.length??0, associationPathCount: item.retrieval.associationPaths?.length??0, explanationDetailsOmitted: true } } : {}), ...(item.label ? { label: item.label } : {}),
+    ...(retrieval ? { retrieval } : {}), ...(item.label ? { label: item.label } : {}),
     ...(item.policy ? { policy: item.policy, topic: item.topic } : {}),
-    srcRefs: refs.first, sourceRefCount: refs.count,
-    ...(refs.count > refs.first.length ? { additionalSourceRefsOmitted: refs.count - refs.first.length } : {}) };
+    srcRefs: refs.first, ...(refs.count > 1 ? { sourceRefCount: refs.count } : {}) };
 }
 function memoryBody(item) {
   if (typeof item.text === 'string') return { text: item.text };
@@ -114,23 +125,48 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
     const page = (rows, i, o = 0) => ({ ...base, items: rows,
       nextCursor: i < material.length ? cursorFor(toolName, query, shape, i, o) : null });
     let index = at.index, offset = at.offset;
+    // Phase 1: whole rows (a mid-item continuation repeats only the item id).
     while (index < material.length) {
       const entry = material[index], points = Array.from(entry.text);
       if (offset > points.length) throw new ToolCursorError('Cursor offset is past the source text');
-      const row = { ...entry.header, text: points.slice(offset).join(''), fragment: { from: offset, to: points.length, total: points.length, complete: true } };
+      const header = offset > 0 ? { ...memoryHeader(items[index], { continuation: true }), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), continuesItem: true } : entry.header;
+      const row = { ...header, text: points.slice(offset).join(''), fragment: { from: offset, to: points.length, total: points.length, complete: true } };
       if (await fits(page([...out, row], index + 1))) { out.push(row); index++; offset = 0; continue; }
       if (out.length) break;
+      // First row of this page does not fit whole: bisect its text.
       let low = offset + 1, high = points.length, best = null;
       while (low <= high) {
         const to = Math.floor((low + high) / 2);
-        const candidate = { ...entry.header, text: points.slice(offset, to).join(''), fragment: { from: offset, to, total: points.length, complete: to === points.length } };
+        const candidate = { ...header, text: points.slice(offset, to).join(''), fragment: { from: offset, to, total: points.length, complete: to === points.length } };
         const response = page([candidate], to === points.length ? index + 1 : index, to === points.length ? 0 : to);
         if (await fits(response)) { best = { row: candidate, to }; low = to + 1; } else high = to - 1;
       }
-      if (!best) throw budgetError();
-      out.push(best.row); offset = best.to;
-      if (offset === points.length) { index++; offset = 0; }
+      if (best) { out.push(best.row); offset = best.to; if (offset === points.length) { index++; offset = 0; } }
+      else {
+        // Never all-or-nothing: an identity-only row still tells the reader the
+        // match exists and stays reachable through the cursor.
+        const reference = { id: items[index].id ?? null, personId: items[index].personId ?? null, role: items[index].role ?? null, sourceAt: items[index].sourceAt ?? null, text: '', fragment: { from: offset, to: offset, total: points.length, complete: false }, textDeferred: 'budget' };
+        if (!(await fits(page([reference], index, offset)))) throw budgetError();
+        out.push(reference);
+      }
       break;
+    }
+    // Phase 2: preview rows for following items (minimal identity + text window)
+    // so one page surfaces several matches. The cursor stays at the first item
+    // that was not delivered whole; the next page re-identifies it in full.
+    if (offset === 0) {
+      for (let preview = index; preview < material.length; preview++) {
+        const entry = material[preview], points = Array.from(entry.text);
+        const candidateHeader = { id: items[preview].id ?? null, personId: items[preview].personId ?? null, ...(items[preview].role != null ? { role: items[preview].role } : {}), ...(items[preview].sourceAt != null ? { sourceAt: items[preview].sourceAt } : {}), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), preview: true };
+        let low = 1, high = points.length, best = null;
+        while (low <= high) {
+          const to = Math.floor((low + high) / 2);
+          const candidate = { ...candidateHeader, text: points.slice(0, to).join(''), fragment: { from: 0, to, total: points.length, complete: to === points.length } };
+          if (await fits(page([...out, candidate], index, 0))) { best = { row: candidate, to }; low = to + 1; } else high = to - 1;
+        }
+        if (!best) break;
+        out.push(best.row);
+      }
     }
     const response = page(out, index, offset);
     if (!(await fits(response))) throw budgetError();
