@@ -258,7 +258,10 @@ async function runEngine(options, fixture) {
     const providerRequests=requests.filter(x=>x.kind==='fixture-provider-received-request');
     const thisSessionRequests=(fixture?providerRequests:requests).filter(x=>x.messages.some(m=>textOf(m).includes(sid)));
     report.checks.personaToolsInActualRequest=thisSessionRequests.some(x=>x.tools.includes('persona_decide')&&x.tools.includes('memory_search'));
-    report.checks.personaTextInActualRequest=thisSessionRequests.some(x=>x.messages.some(m=>textOf(m).includes('[environment]')&&textOf(m).includes('[relationship]')));
+    // Since core c20c110, empty sections emit no [name] header: a brand-new persona with an
+    // unassociated speaker legitimately omits [persona]/[anchor]/[relationship]/[self_profile].
+    // [environment] and [recent_memory] are the guaranteed plugin-injected sections (mandatory-context.test.js).
+    report.checks.personaTextInActualRequest=thisSessionRequests.some(x=>x.messages.some(m=>textOf(m).includes('[environment]')&&textOf(m).includes('[recent_memory]')));
     report.requestObservation=fixture?'The deterministic provider received these actual DSH request messages; no external HTTP model was involved.':'Observed llm/stream host request input; external provider HTTP wire was not captured.';
     if(fixture){
       const before=rpc.eventsFor(sid).length;
@@ -340,7 +343,9 @@ async function runEngine(options, fixture) {
           await inactive.waitFor(()=>inactive.eventsFor(sid).some(e=>e.type==='assistant/message'&&textOf(e.data.message).includes('PM_INACTIVE_RESUME')),30000);
           report.checks.inactiveTargetAutoResumed=inactive.eventsFor(sid).some(e=>e.type==='assistant/message'&&textOf(e.data.message).includes('PM_INACTIVE_RESUME'));
           const autoRequests=await readFile(join(inactiveDir,'requests.jsonl'),'utf8').then(s=>s.trim().split('\n').filter(Boolean).map(x=>JSON.parse(x)));
-          report.checks.inactiveResumePersonaRequest=autoRequests.some(x=>x.kind==='fixture-provider-received-request'&&x.tools.includes('persona_decide')&&x.messages.some(m=>textOf(m).includes('[relationship]')));
+          // Auto-resumed turns carry the plugin's mandatory context even for an unassociated speaker:
+          // persona tools plus [environment] (and [anchor] once the persona has grown).
+          report.checks.inactiveResumePersonaRequest=autoRequests.some(x=>x.kind==='fixture-provider-received-request'&&x.tools.includes('persona_decide')&&x.messages.some(m=>textOf(m).includes('[environment]')&&textOf(m).includes('[recent_memory]')));
           const coldControls=inactive.eventsFor(sid).filter(e=>e.type==='user/message'&&e.data.source?.kind==='persona-memory:control');
           report.checks.completedReplyIsNotPendingAgain=coldControls.length>0&&coldControls.every(e=>!(e.data.source.pendingSourceRefs??[]).some(r=>r.sourceEventId===restartReceipt.messageId));
           report.inactiveResumeActivation='Native runtime timer only; SDK initialize, no external session/resume or prompt';
