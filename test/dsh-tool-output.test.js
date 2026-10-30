@@ -156,3 +156,75 @@ test('a bounded search page surfaces several D0-shaped matches instead of one en
   }
   for (const item of items) assert.equal(seen.get(item.id), item.text, 'item ' + item.id + ' reconstructed whole');
 });
+
+test('a deferred identity row advances the cursor and offers a seedIds re-read instead of looping', async () => {
+  const utf8 = { method: 'utf8_bytes_estimate', count: text => Buffer.byteLength(text, 'utf8') };
+  const longId = 'm_' + 'x'.repeat(60);
+  const mk = (person, i) => ({ ...row('第' + i + '条较长正文。'.repeat(8)), id: longId, personId: person, scope: 'person', recordType: 'chat',
+    srcRefs: [{ sourceSessionId: 'sess_' + 's'.repeat(48), sourceEventId: 'evt_' + 'e'.repeat(48), available: true }] });
+  const items = [mk('person_a', 1), mk('person_b', 2)];
+  let cursor = null, pages = 0, deferred = 0, cursors = new Set(), guard = 0;
+  do {
+    const page = await boundToolOutput('memory_search', { items }, { query: '正文', scope: 'all', cursor }, { counter: utf8, budget: 560 });
+    pages++; assert.ok(pages <= 10, 'pagination must terminate');
+    if (cursor) assert.ok(!cursors.has(cursor), 'cursor must change between pages');
+    cursors.add(cursor);
+    for (const item of page.items) if (item.textDeferred === 'budget') {
+      deferred++;
+      assert.ok(Array.isArray(item.rereadWithSeedIds) && item.rereadWithSeedIds[0] === longId, 'deferred row offers a seedIds re-read');
+      assert.ok(item.personId !== undefined && item.recordType !== undefined && item.scope !== undefined, 'deferred row keeps composite identity');
+    }
+    cursor = page.nextCursor;
+    assert.ok(guard++ < 20);
+  } while (cursor);
+  assert.ok(deferred >= 1, 'the tiny budget defers text but the walk still finishes');
+});
+
+test('row fragments disambiguate composite identity when bare ids collide across persons', async () => {
+  const utf8 = { method: 'utf8_bytes_estimate', count: text => Buffer.byteLength(text, 'utf8') };
+  const shared = 'm_shared';
+  const items = [
+    { ...row('阿澈说：这是昨晚的原话，关于猫和行李。'), id: shared, personId: 'person_alice', scope: 'person', recordType: 'chat' },
+    { ...row('另一个人说：完全不同的一句原话。'), id: shared, personId: 'person_bob', scope: 'person', recordType: 'chat' },
+  ];
+  const byComposite = new Map(), originals = new Map(items.map(item => [[item.id, item.personId].join('|'), item.text]));
+  let cursor = null, guard = 0;
+  do {
+    const page = await boundToolOutput('memory_search', { items }, { query: '原话', scope: 'all', cursor }, { counter: utf8, budget: 700 });
+    for (const item of page.items) {
+      assert.ok(item.personId === 'person_alice' || item.personId === 'person_bob', 'every row names its person');
+      const key = [item.id, item.personId].join('|');
+      if (!item.preview && !item.continuesItem) byComposite.set(key, (byComposite.get(key) ?? '') + item.text);
+    }
+    cursor = page.nextCursor; assert.ok(guard++ < 30);
+  } while (cursor);
+  assert.deepEqual([...byComposite.keys()].sort(), [...originals.keys()].sort());
+  for (const [key, text] of originals) assert.equal(byComposite.get(key), text, 'composite ' + key + ' reconstructed distinctly');
+});
+
+test('cursor digests are exactly 22 base64url characters; loose or tampered digests are rejected', async () => {
+  const utf8 = { method: 'utf8_bytes_estimate', count: text => Buffer.byteLength(text, 'utf8') };
+  const items = [row('一段会被分页的较长正文。'.repeat(40))];
+  const args = { query: '正文', scope: 'all' };
+  const first = await boundToolOutput('memory_search', { items }, args, { counter: utf8, budget: 800 });
+  assert.ok(first.nextCursor);
+  const decode = value => JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+  const encode = cursor => Buffer.from(JSON.stringify(cursor)).toString('base64url');
+  const original = decode(first.nextCursor);
+  for (const tamper of [
+    { label: 'empty digest', q: '', s: '' },
+    { label: 'short digest', q: original.q.slice(0, 5), s: original.s.slice(0, 5) },
+    { label: 'oversized digest', q: original.q + original.q, s: original.s + original.s },
+    { label: 'non-digest charset', q: '***not-base64!!!', s: original.s },
+  ]) {
+    const cursor = encode({ ...original, q: tamper.q, s: tamper.s });
+    await assert.rejects(boundToolOutput('memory_search', { items }, { ...args, cursor }, { counter: utf8, budget: 800 }),
+      error => ['INVALID_TOOL_CURSOR', 'TOOL_CURSOR_STALE'].includes(error.code), tamper.label);
+  }
+  // Even with tampered digests, changing the query or the result stays rejected.
+  await assert.rejects(boundToolOutput('memory_search', { items }, { ...args, query: '别的', cursor: first.nextCursor }, { counter: utf8, budget: 800 }), { code: 'INVALID_TOOL_CURSOR' });
+  await assert.rejects(boundToolOutput('memory_search', { items: [row('changed')] }, { ...args, cursor: first.nextCursor }, { counter: utf8, budget: 800 }), { code: 'TOOL_CURSOR_STALE' });
+  // The untouched cursor still pages forward (strict validation keeps the honest path usable).
+  const next = await boundToolOutput('memory_search', { items }, { ...args, cursor: first.nextCursor }, { counter: utf8, budget: 800 });
+  assert.ok(Array.isArray(next.items));
+});

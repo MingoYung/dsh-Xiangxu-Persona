@@ -10,6 +10,7 @@ export class ToolCursorError extends Error {
   constructor(message, code = 'INVALID_TOOL_CURSOR') { super(message); this.name = 'ToolCursorError'; this.code = code; }
 }
 
+const DIGEST = /^[A-Za-z0-9_-]{22}$/;
 function cursorFor(tool, query, shape, index, offset = 0) {
   // 132-bit prefixes keep the tool+args+shape binding (staleness/cross-query
   // safety) while leaving most of a small page budget for actual content.
@@ -21,9 +22,11 @@ function readCursor(value, { tool, query, shape, length }) {
   if (typeof value !== 'string' || value.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new ToolCursorError('Malformed tool cursor');
   let cursor;
   try { cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')); } catch { throw new ToolCursorError('Malformed tool cursor'); }
-  const same = (a, b) => a === b || (typeof a === 'string' && typeof b === 'string' && (a.startsWith(b.slice(0, 22)) || b.startsWith(a.slice(0, 22))));
-  if (cursor.v !== 2 || cursor.t !== tool || !same(cursor.q, query)) throw new ToolCursorError('Cursor belongs to another tool, query, target, scope or selection');
-  if (!same(cursor.s, shape)) throw new ToolCursorError('The underlying result changed; restart this query to obtain a consistent page', 'TOOL_CURSOR_STALE');
+  // Digests are exactly 22 base64url characters; anything else (empty, short,
+  // oversized) is a malformed cursor, never a "compatible prefix".
+  const digest = value => typeof value === 'string' && DIGEST.test(value);
+  if (cursor.v !== 2 || cursor.t !== tool || !digest(cursor.q) || cursor.q !== query.slice(0, 22)) throw new ToolCursorError('Cursor belongs to another tool, query, target, scope or selection');
+  if (!digest(cursor.s) || cursor.s !== shape.slice(0, 22)) throw new ToolCursorError('The underlying result changed; restart this query to obtain a consistent page', 'TOOL_CURSOR_STALE');
   if (!Number.isSafeInteger(cursor.i) || cursor.i < 0 || cursor.i > length || !Number.isSafeInteger(cursor.o) || cursor.o < 0) throw new ToolCursorError('Invalid cursor position');
   return { index: cursor.i, offset: cursor.o };
 }
@@ -43,13 +46,21 @@ function sourceRefs(item) {
     ...(ref.blockIndex != null ? { blockIndex: ref.blockIndex } : {}),
     available: ref.available !== false })) };
 }
+/** Compact composite identity: bare ids are ambiguous across persons and record
+ *  types (memory-record-identity.test.js), so every row fragment — continuation,
+ *  preview or deferred — carries enough to disambiguate the real subject. */
+function compositeIdentity(item) {
+  return { id: item.id ?? null, personId: item.personId ?? null,
+    ...(item.recordType ? { recordType: item.recordType } : {}),
+    ...(item.scope != null ? { scope: item.scope } : {}) };
+}
+
 /** Search-page identity header. Real subject (id/personId/role/origin/epistemic)
  *  and full first source reference stay on whole rows; deferrable derived
  *  diagnostics (schemaVersion, recordKey encoding, raw score decimals, temporal
  *  eligibility objects) are omitted so a bounded page carries readable items
- *  instead of one item's envelope. Continuation rows re-identify by id only. */
-function memoryHeader(item, { continuation = false } = {}) {
-  if (continuation) return { id: item.id ?? null };
+ *  instead of one item's envelope. */
+function memoryHeader(item) {
   const refs = sourceRefs(item);
   const retrieval = item.retrieval ? { channels: item.retrieval.channels, matchedTermCount: item.retrieval.matchedTerms?.length ?? 0, explanationDetailsOmitted: true } : undefined;
   return { id: item.id ?? null, personId: item.personId ?? null,
@@ -125,11 +136,11 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
     const page = (rows, i, o = 0) => ({ ...base, items: rows,
       nextCursor: i < material.length ? cursorFor(toolName, query, shape, i, o) : null });
     let index = at.index, offset = at.offset;
-    // Phase 1: whole rows (a mid-item continuation repeats only the item id).
+    // Phase 1: whole rows (a mid-item continuation repeats the composite identity).
     while (index < material.length) {
       const entry = material[index], points = Array.from(entry.text);
       if (offset > points.length) throw new ToolCursorError('Cursor offset is past the source text');
-      const header = offset > 0 ? { ...memoryHeader(items[index], { continuation: true }), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), continuesItem: true } : entry.header;
+      const header = offset > 0 ? { ...compositeIdentity(items[index]), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), continuesItem: true } : entry.header;
       const row = { ...header, text: points.slice(offset).join(''), fragment: { from: offset, to: points.length, total: points.length, complete: true } };
       if (await fits(page([...out, row], index + 1))) { out.push(row); index++; offset = 0; continue; }
       if (out.length) break;
@@ -143,21 +154,27 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
       }
       if (best) { out.push(best.row); offset = best.to; if (offset === points.length) { index++; offset = 0; } }
       else {
-        // Never all-or-nothing: an identity-only row still tells the reader the
-        // match exists and stays reachable through the cursor.
-        const reference = { id: items[index].id ?? null, personId: items[index].personId ?? null, role: items[index].role ?? null, sourceAt: items[index].sourceAt ?? null, text: '', fragment: { from: offset, to: offset, total: points.length, complete: false }, textDeferred: 'budget' };
-        if (!(await fits(page([reference], index, offset)))) throw budgetError();
+        // Never all-or-nothing, and never a stuck cursor: the deferred row keeps
+        // the composite identity and an executable re-read path (seedIds puts
+        // this record first in a fresh result with a full page budget), while
+        // the cursor advances past this item so continuation always progresses.
+        const item = items[index];
+        const reference = { ...compositeIdentity(item), ...(item.role != null ? { role: item.role } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}), text: '', fragment: { from: offset, to: offset, total: points.length, complete: false }, textDeferred: 'budget', ...(item.id ? { rereadWithSeedIds: [item.id] } : {}) };
+        if (!(await fits(page([reference], index + 1, 0)))) throw budgetError();
         out.push(reference);
+        index++; offset = 0;
       }
       break;
     }
-    // Phase 2: preview rows for following items (minimal identity + text window)
-    // so one page surfaces several matches. The cursor stays at the first item
-    // that was not delivered whole; the next page re-identifies it in full.
+    // Phase 2: preview rows for following items (composite identity + text
+    // window) so one page surfaces several matches. The cursor stays at the
+    // first item that was not delivered whole; the next page re-identifies it
+    // in full.
     if (offset === 0) {
       for (let preview = index; preview < material.length; preview++) {
         const entry = material[preview], points = Array.from(entry.text);
-        const candidateHeader = { id: items[preview].id ?? null, personId: items[preview].personId ?? null, ...(items[preview].role != null ? { role: items[preview].role } : {}), ...(items[preview].sourceAt != null ? { sourceAt: items[preview].sourceAt } : {}), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), preview: true };
+        const item = items[preview];
+        const candidateHeader = { ...compositeIdentity(item), ...(item.role != null ? { role: item.role } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), preview: true };
         let low = 1, high = points.length, best = null;
         while (low <= high) {
           const to = Math.floor((low + high) / 2);
