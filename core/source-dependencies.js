@@ -21,7 +21,7 @@ export function extractSourceDependencies(value) {
     }
     if (!v || typeof v !== 'object') return;
     if (seen.has(v)) return; seen.add(v);
-    if (v.format === 'json_text_fragment' && (v.fragment?.complete === false || (v.fragment?.from ?? 0) > 0 ||
+    if ((v.format === 'json_text_fragment' || v.format === 'row_detail_fragment') && (v.fragment?.complete === false || (v.fragment?.from ?? 0) > 0 ||
       (Number.isFinite(v.fragment?.to) && Number.isFinite(v.fragment?.total) && v.fragment.to < v.fragment.total))) complete = false;
     if (typeof v.sourceSessionId === 'string' && v.sourceSessionId && typeof v.sourceEventId === 'string' && v.sourceEventId) {
       const ref = { sourceSessionId: v.sourceSessionId, sourceEventId: v.sourceEventId }; refs.set(key(ref), ref);

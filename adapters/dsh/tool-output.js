@@ -39,18 +39,21 @@ function counterPort(counter) {
 function sourceRefs(item) {
   const all = item.srcRefs?.length ? item.srcRefs : item.sourceRef ? [item.sourceRef]
     : item.sourceSessionId && item.sourceEventId ? [{ sourceSessionId: item.sourceSessionId, sourceEventId: item.sourceEventId, available: true }] : [];
-  return { count: all.length, first: all.slice(0, 1).map(ref => ({ sourceSessionId: ref.sourceSessionId, sourceEventId: ref.sourceEventId,
+  const shape = refs => refs.map(ref => ({ sourceSessionId: ref.sourceSessionId, sourceEventId: ref.sourceEventId,
     ...(ref.sourceKind != null ? { sourceKind: ref.sourceKind } : {}),
     ...(ref.sourceRole != null ? { sourceRole: ref.sourceRole } : {}),
     ...(ref.sourceOrigin != null ? { sourceOrigin: ref.sourceOrigin } : {}),
     ...(ref.blockIndex != null ? { blockIndex: ref.blockIndex } : {}),
-    available: ref.available !== false })) };
+    available: ref.available !== false }));
+  return { count: all.length, all: shape(all), first: shape(all.slice(0, 1)) };
 }
 /** Compact composite identity: bare ids are ambiguous across persons and record
  *  types (memory-record-identity.test.js), so every row fragment — continuation,
- *  preview or deferred — carries enough to disambiguate the real subject. */
+ *  preview, deferred or detail page — carries enough to disambiguate the real
+ *  subject. schemaVersion stays so the dependency scanner keeps these ids as
+ *  actual memory identities inside tool envelopes (source-dependencies). */
 function compositeIdentity(item) {
-  return { id: item.id ?? null, personId: item.personId ?? null,
+  return { schemaVersion: item.schemaVersion ?? 'persona-memory/3', id: item.id ?? null, personId: item.personId ?? null,
     ...(item.recordType ? { recordType: item.recordType } : {}),
     ...(item.scope != null ? { scope: item.scope } : {}) };
 }
@@ -61,9 +64,23 @@ function compositeIdentity(item) {
  *  objects) are omitted so a bounded page carries readable items instead of one
  *  item's envelope. schemaVersion stays: the dependency scanner uses it to keep
  *  explicit memory identity inside tool envelopes (dsh-envelope-dependencies). */
-function memoryHeader(item) {
+function memoryHeader(item, { allRefs = false } = {}) {
   const refs = sourceRefs(item);
   const retrieval = item.retrieval ? { channels: item.retrieval.channels, matchedTermCount: item.retrieval.matchedTerms?.length ?? 0, explanationDetailsOmitted: true } : undefined;
+  if (allRefs) {
+    // Detail channel identity: the COMPLETE source set travels with the row so a
+    // full walk returns every reference of the record, not just the first.
+    return { schemaVersion: item.schemaVersion ?? 'persona-memory/3', id: item.id ?? null, personId: item.personId ?? null,
+      ...(item.recordType ? { recordType: item.recordType } : {}), ...(item.kind ? { kind: item.kind } : {}),
+      ...(item.scope != null ? { scope: item.scope } : {}), ...(item.role != null ? { role: item.role } : {}),
+      ...(item.origin != null ? { origin: item.origin } : {}),
+      ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}),
+      ...(item.proactiveId != null ? { proactiveId: item.proactiveId } : {}),
+      ...(item.epistemic ? { epistemic: item.epistemic } : {}),
+      ...(retrieval ? { retrieval } : {}), ...(item.label ? { label: item.label } : {}),
+      ...(item.policy ? { policy: item.policy, topic: item.topic } : {}),
+      srcRefs: refs.all, ...(refs.count > 1 ? { sourceRefCount: refs.count } : {}) };
+  }
   return { schemaVersion: item.schemaVersion ?? 'persona-memory/3', id: item.id ?? null, personId: item.personId ?? null,
     ...(item.recordType ? { recordType: item.recordType } : {}), ...(item.kind ? { kind: item.kind } : {}),
     ...(item.scope != null ? { scope: item.scope } : {}), ...(item.role != null ? { role: item.role } : {}),
@@ -145,7 +162,7 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
       const detailAt = readCursor(args.detailCursor, { tool: toolName, query, shape: detailShape, length: items.length });
       const entry = material[detailAt.index];
       if (!entry) throw new ToolCursorError('Cursor offset is past the source text');
-      const detailText = JSON.stringify({ ...entry.header, text: entry.text });
+      const detailText = JSON.stringify({ ...memoryHeader(items[detailAt.index], { allRefs: true }), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), text: entry.text });
       const points = Array.from(detailText);
       if (detailAt.offset > points.length) throw new ToolCursorError('Cursor offset is past the source text');
       const detailPage = to => ({ status: 'bounded_detail', ...compositeIdentity(items[detailAt.index]), ...accounting,
