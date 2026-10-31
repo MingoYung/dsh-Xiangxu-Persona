@@ -179,7 +179,11 @@ export class PersonaRuntime {
       state.execution = { ...state.execution, lastContext: compactContext(this._context(context)) };
       if (own(input, 'nextCheckAt')) state.schedule.nextCheckAt = input.nextCheckAt;
       state.schedule.decisionId = merged.decisionId;
-      if (own(input, 'replyPlan')) state.schedule.recheckOn = [...(input.replyPlan?.recheckOn ?? [])];
+      // replyPlanDecisionId marks WHICH decide explicitly chose the current reply
+      // sub-plan. Sub-plans not provided are carried forward unchanged, so a later
+      // identity-only decide keeps this id — admission gates distinguish a newly
+      // chosen wait/listen from an old plan merely persisting (OBS-1 fix boundary).
+      if (own(input, 'replyPlan')) { state.schedule.recheckOn = [...(input.replyPlan?.recheckOn ?? [])]; state.schedule.replyPlanDecisionId = merged.decisionId; }
       if (own(input, 'sleepPlan')) {
         const plan = input.sleepPlan;
         if (plan?.action === 'sleep') state.sleep = { state: 'sleeping', sleepDecisionId: merged.decisionId,

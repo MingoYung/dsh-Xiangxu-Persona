@@ -687,7 +687,7 @@ export function createDshCoordinator(ctx, config = {}) {
     }
     if (event.type === 'turn/end') {
       state.admittedByTurn.delete(event.data?.turn); state.activeByTurn.delete(event.data?.turn); state.redirectedTurns.delete(event.data?.turn); state.nativeAdmittedTurns.delete(event.data?.turn);
-      state.processDependenciesByTurn.delete(event.data?.turn); state.snapshots.delete(event.data?.turn);
+      state.processDependenciesByTurn.delete(event.data?.turn); state.snapshots.delete(event.data?.turn); state.reconsiderTurns.delete(event.data?.turn);
     }
     return { gap };
   }
@@ -775,7 +775,12 @@ export function createDshCoordinator(ctx, config = {}) {
       if (typeof agent.ctx?.tools?.restrict !== 'function') throw Object.assign(new Error('宿主不能建立陪伴人格的独立工具作用域'), { code: 'PERSONA_SCOPE_UNAVAILABLE' });
       const newChannel = !Object.hasOwn(checkpoints.sessions, agent.session.id);
       const state = { agent, newParticipantIds: new Set(), activeByTurn: new Map(), admittedByTurn: new Map(), redirectedTurns: new Set(), nativeAdmittedTurns: new Set(),
-        currentTurn: null, disposed: false, snapshots: new Map(), processDependenciesByTurn: new Map(), toolResults: new Map(), toolResultBytes: 0 };
+        currentTurn: null, disposed: false, snapshots: new Map(), processDependenciesByTurn: new Map(), toolResults: new Map(), toolResultBytes: 0,
+        // Per-turn reconsideration admission (OBS-1): a legitimately triggered
+        // reconsideration stays admitted across the same turn's tool continuation
+        // steps; an explicit NEW wait/listen/future-reply choice made during the
+        // turn revokes it, an identity-only decide does not. Cleared at turn end.
+        reconsiderTurns: new Map() };
       agents.set(agent.id, state);
       state.environmentSignature = environmentSignature(contextFor(agent).environment);
       if (!initializationError && !Object.hasOwn(checkpoints.sessions, agent.session.id)) {
@@ -843,7 +848,23 @@ export function createDshCoordinator(ctx, config = {}) {
         const plan = current.currentDecision?.replyPlan;
         const hasNewParticipant = messages.some(message => state.newParticipantIds.has(message.id));
         const triggers = plan?.recheckOn ?? [];
-        const mayReconsider = Boolean(notice) || hasNewParticipant && (!plan || plan.action === 'reply' || triggers.includes('new_message'));
+        let mayReconsider = Boolean(notice) || hasNewParticipant && (!plan || plan.action === 'reply' || triggers.includes('new_message'));
+        if (Number.isSafeInteger(payload.turn) && state.reconsiderTurns.has(payload.turn)) {
+          // This turn already entered through a legitimate reconsideration trigger.
+          // Admission persists for the turn's tool continuation steps (OBS-1) —
+          // unless the reply sub-plan was EXPLICITLY re-chosen as wait/listen or a
+          // future reply after admission; identity-only decides keep the admission
+          // (a carried-forward old wait is not a new choice).
+          const admitted = state.reconsiderTurns.get(payload.turn);
+          const replanChooser = current.schedule?.replyPlanDecisionId ?? null;
+          const replanned = replanChooser !== null && replanChooser !== admitted.replyPlanDecisionId;
+          const newPlan = replanned ? current.currentDecision?.replyPlan : null;
+          const revoked = Boolean(newPlan && (newPlan.action === 'wait' || newPlan.action === 'listen' || newPlan.replyAt > Date.now()));
+          if (!revoked) mayReconsider = true; else state.reconsiderTurns.delete(payload.turn);
+        }
+        if (Number.isSafeInteger(payload.turn) && mayReconsider && (plan?.action === 'wait' || plan?.action === 'listen')) {
+          state.reconsiderTurns.set(payload.turn, { replyPlanDecisionId: current.schedule?.replyPlanDecisionId ?? null });
+        }
         if (plan && !mayReconsider && (plan.action === 'wait' || plan.action === 'listen' || plan.replyAt > Date.now())) return { kind: 'reject' };
         entered = await next();
         if (entered.kind === 'enter') {
