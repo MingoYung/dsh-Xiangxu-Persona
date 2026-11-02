@@ -101,7 +101,7 @@ test('impossible framing keeps sources and offsets untouched, does not call the 
 });
 
 test('native decision port receives exactly the single persisted fitted snapshot without an extra model call', async t => {
-  const f = await fixture(t, { hostDecision: true });
+  const f = await fixture(t, { hostDecision: true, inputBudget: 6000 });
   const source = await f.runtime.accept(original('host-control', 'HOST_BEGIN_' + '原始消息'.repeat(3000)), environment);
   const result = await f.runtime.handleSignal('new_message', { personId: 'a', environment, incoming: source.record });
   assert.equal(result.status, 'queued'); assert.equal(f.requests.length, 0); assert.equal(f.hostRequests.length, 1);

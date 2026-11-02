@@ -504,6 +504,23 @@ test('task page only reads metadata and leaves delegation and memory selection t
   assert.equal(ui.calls.filter(call => ['tasks.create', 'tasks.material', 'tasks.configureLimits', 'tasks.cancel'].includes(call.action)).length, 0);
   await ui.button(page, '保存任务容量').emit('click'); assert.equal(ui.calls.filter(call => call.action === 'tasks.configureLimits').length, 0);
 });
+test('an unavailable legacy public report is explained without hiding other tasks or automatically reading its raw archive', async () => {
+  const publicProjection = { available: false, code: 'TASK_PUBLIC_PROJECTION_CAPACITY', message: '旧任务公开视图超过4 MiB处理上限。', originalDocumentId: taskFixtureDoc };
+  const ui = await frontend({ 'tasks.inspect': () => taskUiView,
+    'tasks.list': () => ({ items: [{ taskId: taskFixtureId, title: '旧任务', status: 'completed', documentCount: 1, capture: { complete: true }, publicProjection },
+      { taskId: 'task-' + 'd'.repeat(32), title: '其他正常任务', status: 'completed', summary: { text: '正常公开报告' } }], nextCursor: null }),
+    'tasks.get': () => ({ taskId: taskFixtureId, title: '旧任务', status: 'completed', summary: null, resultDocumentId: null, publicProjection,
+      capture: { complete: true }, documentCount: 1, documents: [{ documentId: taskFixtureDoc, name: 'final-result.json', kind: 'final_report', sha256: taskFixtureSha, bytes: 5000000 }], nextDocumentOffset: null }) });
+  const page = await ui.evaluate("state.page='tasks';tasksPage()");
+  assert.ok(page.textContent.includes('公开报告暂不可用')); assert.ok(page.textContent.includes('其他正常任务'));
+  await ui.button(page, '查看任务与资料').emit('click');
+  const detail = ui.ids.get('detail-content');
+  assert.ok(detail.textContent.includes('公开报告暂不可用；原始资料仍保留'));
+  assert.ok(detail.textContent.includes('TASK_PUBLIC_PROJECTION_CAPACITY'));
+  assert.ok(detail.textContent.includes('原始结果封装（非公开报告）'));
+  assert.ok(ui.button(detail, '按页查看')); assert.ok(ui.button(detail, '下载原文件'));
+  assert.equal(ui.calls.filter(call => ['tasks.read', 'ui.task.download', 'tasks.material', 'tasks.create'].includes(call.action)).length, 0);
+});
 test('task documents use the actual next Unicode offset and replace previews rather than pretending the first page is complete', async () => {
   const ui = await frontend({ 'tasks.inspect': () => taskUiView, 'tasks.list': () => ({ items: [{ taskId: taskFixtureId, title: '隔离任务', status: 'completed', documentCount: 1, capture: { complete: true } }], nextCursor: null }),
     'tasks.get': () => ({ taskId: taskFixtureId, status: 'completed', documentCount: 1, capture: { complete: true }, documents: [{ documentId: taskFixtureDoc, name: 'report.txt', encoding: 'utf8', sha256: taskFixtureSha, bytes: 8 }], nextDocumentOffset: null }),

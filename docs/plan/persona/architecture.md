@@ -6,7 +6,7 @@
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
-版本：`persona-memory/3`。本次修订日期：2026-10-30。字段、枚举、控制决定与引用结构的唯一权威为 [persona-schema.md](persona-schema.md)；本文规定生产、消费、交付和故障恢复顺序。宿主能力的既有证据与未核项目见 [api-surface.md](api-surface.md)，不能把设计伪代码当成已实测 API。
+版本：`persona-memory/3`。本次修订日期：2026-11-03。字段、枚举、控制决定与引用结构的唯一权威为 [persona-schema.md](persona-schema.md)；本文规定生产、消费、交付和故障恢复顺序。宿主能力的既有证据与未核项目见 [api-surface.md](api-surface.md)，不能把设计伪代码当成已实测 API。本批维护确认链、预算、相对时间及旧任务投影，不改变人格自主边界，也未新增真实模型或正式社交验收。
 
 ## 1. 产品边界与执行边界
 
@@ -86,7 +86,7 @@ C1采用统一时间线格式：短期按时间与容量转长期，长期活动
 
 超临时目标时先把后续完整过程保存在宿主可用来源中，以有界 host-trace 指针导航，按需分页读取。到实际安全容量边界可暂停插件新增冗余副本，报告 memory_gap 与回补游标，正常聊天继续。宿主原件不可读就如实记录缺口；不承诺零损失，不因容量强制人格睡觉，也不说“它已经决定睡”。
 
-时间统一采用 epoch ms 与 IANA timezone。区分源事件发生时间与 observedAt；每次决定取同一个 now 并随请求快照传递。时区变化、机器休眠和时钟跳变在恢复时重新计算到期任务，不能依靠上一次进程内计时器的剩余毫秒。时间流逝本身是新事实；人格选择了定时复查时，到点即使无新消息也重新判断。只选择事件型 listen 时保持监听，不强迫周期唤起。
+时间统一采用 epoch ms 与 IANA timezone。区分源事件发生时间与 observedAt；每次决定取同一个 now 并随请求快照传递。人格也可选用nextCheckAfterMs、replyPlan.replyAfterMs、sleepPlan.wakeAfterMs表达时长；执行层仅在持久接纳该决定时按实际时钟换算一次，保存绝对时点。幂等重放与冷恢复不重新起算延迟。时区变化、机器休眠和时钟跳变在恢复时核对已保存的到期时点，不能依靠上一次进程内计时器的剩余毫秒。时间流逝本身是新事实；人格选择了定时复查时，到点即使无新消息也重新判断。只选择事件型 listen 时保持监听，不强迫周期唤起。
 
 动态快照默认总上限2970计数单位，宿主历史另计。下列分段数值是初始分配参考，0.13.0必要人格核心保持完整，可在总帽内调整局部分配；连必要核心与最小近期参考也放不下时明确PERSONA_CONTEXT_BUDGET，不截成缺人格请求。扩展材料按完整条目／字段选择并报告省略。统一计数；输出预留、工具定义和宿主历史一起纳入实际模型窗口，不按固定中文字数估算。材料少时不要求填满。
 
@@ -101,6 +101,10 @@ C1采用统一时间线格式：短期按时间与容量转长期，长期活动
 | 自我资料局部段 | 当前身份核心完整；background与标明initialWishes的用户想法作为扩展，字段完整或省略 | 350参考，包含在2970总额内 |
 | 近期记忆段 | 同库当前对象近况，保留来源、实际Unicode片段及未显示信息，不推进源消费 | 600，包含在2970总额内 |
 | S6 | 宿主对话历史 | 随宿主窗口计算 |
+
+成长后的预算用runtime.preflightConfig与实际组装共用的计数口预检：当前身份、anchor／axes、关系概要、环境／有效计划、deliveryFacts与最小可交付近期原文／完整Unicode片段必须能一起装入；控制／回复完整封装另核硬上限。预检只读，不检索、不存快照、不消费pending或整理游标，不调用模型；计数器不可用时明确UTF-8 bytes estimate，不冒称供应商usage。预算保存不足返回CONFIG_BUDGET_INSUFFICIENT并保持原配置。建议仅在现有完整请求硬顶内有界生成并重新组装验证，必须显式应用；recommendationId过期返回BUDGET_PREFLIGHT_STALE。
+
+整理的最小原文页仍放不下时，保留runId、候选、输入清单与游标，在reviewState.budgetRequirement记录实际阶段／页／偏移和需求并暂停。调整建议不提高完整请求硬顶、不自动续跑或新建批次；硬顶由用户明确调整，继续整理仍需显式选择原run。未测到的未读页不虚构需求，当前路由的预检不保证所有未来关系与成长后请求都能装下。
 
 边界是人格判断材料，不做全量禁忌扫描、never_mention 强拦截或生成后审查。承诺可以记录时间、原话和做过什么，程序不把“未履行”当任务失败。人格可以改变对两者的理解，变更保留来源和版本。
 
@@ -128,9 +132,11 @@ C1采用统一时间线格式：短期按时间与容量转长期，长期活动
 
 源事件 ID 不稳定、读取失败或 C1 写失败时，不伪造“已完整记住”。保留 memory_gap/回补位置；不把该事件的派生更新提交成完整状态，之后由可用宿主来源补齐。若来源已不可恢复，缺口继续可见，聊天不因此中断。
 
+接收、完整原文呈现与回复确认分别记账。原文分页按实际覆盖累计，末页complete:true不证明未读头部也已呈现。原生同会话的旧来信可由replyPlan.pendingEventIds显式选中；只接纳真实、完整呈现且匹配实际目标session／channel／person的编号。随后真实可见assistant最终事件（外部通道另需已送达回执）才确认该轮已准入／明确选中的对应来信。仅摘要交接、工具结果、沉默、unknown发送或其它通道输出不清pending，C1原文始终保留。
+
 ### 4.3 人格控制接口
 
-固定注册 `persona_decide({attention?,replyPlan?,nextCheckAt?,sleepPlan?,retrievePlan?})`，由当前宿主执行上下文补缺省对象与通道。字段结构及决定记录见 persona-schema；工具是人格表达决定的接口，不是外部裁判。
+固定注册 `persona_decide({identityPlan?,attention?,replyPlan?,nextCheckAt?,nextCheckAfterMs?,sleepPlan?,retrievePlan?,consolidationPlan?})`，由当前宿主执行上下文补缺省对象与通道。replyPlan可含replyAfterMs，sleepPlan可含wakeAfterMs；这些可选时长只是时间表示，不增加行为要求。字段结构及决定记录见 persona-schema；工具是人格表达决定的接口，不是外部裁判。
 
 人格可在正常回复轮次同时作决定，也可在必要时单独判断。采集、排队、去重和本地索引打分不调 LLM；人格判断本身可能调用模型，所以不承诺每轮零额外调用。没有决定就保留“未决定”，不能用默认沉默当人格选择；首次需要人格判断的时点由启动/通道接收流程触发，随后按它写下的时间或 recheckOn 事件条件继续。
 
@@ -177,13 +183,13 @@ assistant-stream、tool/result 等钩子是否含可读取 reasoning/完整工�
 
 ## 7. 睡眠、调度与醒来
 
-人格用 sleepPlan 表达入睡及唤醒条件，用 nextCheckAt/replyAt 或 replyPlan.recheckOn 表达重新判断。调度器恢复人格指定的时间和事件监听，卸载时清理；没有固定 10 分钟心跳替人格决定检查频率。到期或选定事件发生表示执行先前决定的再判断或唤醒，不等于自动发消息。listen 可以只等新消息、环境变化或明确唤醒，不必安排墙钟时点。
+人格用 sleepPlan 表达入睡及唤醒条件，用 nextCheckAt/replyAt或其AfterMs输入形式、replyPlan.recheckOn表达重新判断。AfterMs只在接纳时转换，调度器恢复已持久化绝对时点和事件监听，卸载时清理；没有固定10分钟心跳替人格决定检查频率。到期或选定事件发生表示执行先前决定的再判断或唤醒，不等于自动发消息。listen可以只等新消息、环境变化或明确唤醒，不必安排墙钟时点。
 
-sleep.state 与 activeRunId 分开：睡眠是人格业务状态，梳理执行锁属于进程状态。LLM 整理完成不一定等于人格选择醒来，执行异常也不能把 sleeping 永久变成一个无人处理的锁。SleepPlan.wakeCondition 由人格选择 at_time、consolidation_complete 或 explicit_wake；只有选择 at_time 才要求有效 wakeAt。wait/listen 可只给 recheckOn 事件条件，不强迫时点；有定时计划才校验 replyAt/nextCheckAt。无限观察是可执行事件监听，不能当成结构错误。确实无法解析的决定返回具体执行信息错误，不由程序任意填作息或间隔。选择整理完成后醒时，以 RuntimeState.sleep.wakeJobId 关联所选作业及全部子run，全部提交后才触发，不因其他批次完成误醒；旧prepared run保留原wakeRunId兼容；空增量可完成，失败不能假称完成。
+sleep.state 与 activeRunId 分开：睡眠是人格业务状态，梳理执行锁属于进程状态。LLM 整理完成不一定等于人格选择醒来，执行异常也不能把 sleeping 永久变成一个无人处理的锁。SleepPlan.wakeCondition 由人格选择 at_time、consolidation_complete 或 explicit_wake；只有选择at_time才要求有效wakeAt或wakeAfterMs输入。wait/listen可只给recheckOn事件条件，不强迫时点；同一非空绝对时点与对应AfterMs不能同时指定，非法／溢出时长明确拒绝，不猜测或取整。无限观察是可执行事件监听，不能当成结构错误。确实无法解析的决定返回具体执行信息错误，不由程序任意填作息或间隔。选择整理完成后醒时，以 RuntimeState.sleep.wakeJobId 关联所选作业及全部子run，全部提交后才触发，不因其他批次完成误醒；旧prepared run保留原wakeRunId兼容；空增量可完成，失败不能假称完成。
 
 sleeping 期间禁止 assistant 输出。所选择观察范围内到达的消息继续持久排队，按 personId、speaker、channelId/sessionId 保留原文。不能只用一个全局“来了几次”的计数替代不同人的来信。
 
-醒来时一次接收汇总，指向各对象/通道的 pending 和原文；多人内容不合并成同一人的发言。人格再决定回谁、回什么、是否检索和下次何时看。汇总被持久接收与具体消息交付分别确认，不能刚往 inbox 塞一条注记就清空全部 pending。
+醒来时一次接收汇总，指向各对象/通道的pending和原文；多人内容不合并成同一人的发言。人格再决定回谁、回什么、是否检索和下次何时看。acknowledgeWake只确认汇总交接与已呈现源页进度，不把具体来信标为已回复；回复A不隐式清掉同一汇总里B的来信。具体消息确认仍按第4.2／8节的完整呈现与匹配真实交付结算。
 
 agent/pre-step 的 reject 是否重试、是否消费 inbox、会否显示错误、能否仅抑制待生成轮次，仍待 P0 贯通测试。如果不是合适入口，使用宿主实际提供的排队/暂停机制实现睡眠语义，不在未核钩子上许诺“发了消息不会回复、醒来必回一次”。
 
@@ -198,6 +204,8 @@ agent/pre-step 的 reject 是否重试、是否消费 inbox、会否显示错误
 3. 经核实的宿主入口提交，保存 inbox/请求关联。inbox.append 只证明排队；是否启动 idle agent、是否需要唤醒、surface 是否可见，都由 P0 证实。
 4. 用真实 assistant 源事件及通道交付确认结算，写 origin:ai_initiated 的已发正文与 srcRefs；不在 append 返回时假记“已经说过”。宿主没有终端送达回执时区分“宿主已输出”和“用户已收到”。
 5. 重启按 deliveryId 查已知交付与宿主事件，不重复生成/发送。确认状态不明时先核对，无法核对则保留 unknown，不能同时承诺任意故障下 exactly-once 送达。
+
+DSH适配层用host-delivery-facts.json保存有界呈现／输出事实，不复制聊天正文。environment.deliveryFacts提供紧凑数量与状态，persona_introspect(section:state)按需提供详情及关联任务元数据。后来出现输出、依赖引用或相关任务完成都不能证明旧问题已答，answeredByLaterOutput保持not_inferred；这些是人格判断材料，程序不替它追认答案或要求补答。冷恢复只能重放已有真实回执明确记录的settledPendingEventIds。事实历史逐出与任务事实不可用分别报告，不删除C1或把诊断缺失当作没发生。
 
 用户明确要求停止主动时，急停表示执行这项用户意图：取消未交付 outbox、未领取队列和待生成主动工作；发送前检查同一停止状态。已开始的请求按宿主实际取消能力处理，不能以“下次 tick 才生效”敷衍。已实际交付的消息无法撤回则如实说明。此开关不是人格频控，不替代它平时的主动判断；普通用户输入与被动回复是否继续以用户这次停止范围为准。
 
@@ -219,6 +227,8 @@ agent/pre-step 的 reject 是否重试、是否消费 inbox、会否显示错误
 
 对故障分别给出状态：源不可读形成 memory_gap；检索不可用返回明确状态；模型调用失败保留待执行决定与费用；磁盘不足暂停冗余副本；交付不确定保留 outbox unknown；某个派生文件损坏只重建可重建部分。不用一个全局 muted 或 asleep 代替所有故障状态。
 
+Windows/Electron下仅对当前exe旁内置ACL runner匹配的subprocess.spawn安装窄兼容：子进程以Node模式进入、恢复原环境、按需创建隐藏console并还原stdio后调用原runner。原restricted token／ACL／Windows Job与控制字段保留；自定义／已修启动链或不匹配命令直通，释放时不覆盖后来wrapper。它不进入独立核心，不要求重装PowerShell或设置全局环境；原生零模型证据与只读CLM／编码限制见[PowerShell兼容](../../windows-powershell-compat.md)，不冒称本批新增真实模型验证。
+
 ## 11. 工具、模块与费用
 
 工具一次稳定注册，具体字段见 persona-schema：
@@ -226,7 +236,7 @@ agent/pre-step 的 reject 是否重试、是否消费 inbox、会否显示错误
 - `memory_search({query,targetPersonId?,scope?,limit?})`：人格主动取材，可指已知第三人，结果保留真实主体。
 - `memory_forget({ids?,targetPersonId?,before?,reason})`：明确纠正/遗忘的执行入口，解析清楚目标并记录撤销。
 - `persona_introspect({targetPersonId?,section?})`：读取当前人格、关系材料、决定与可用来源说明。
-- `persona_decide({attention?,replyPlan?,nextCheckAt?,sleepPlan?,retrievePlan?})`：提交人格自己的决定，并返回实际执行状态。
+- `persona_decide({identityPlan?,attention?,replyPlan?,nextCheckAt?,nextCheckAfterMs?,sleepPlan?,retrievePlan?,consolidationPlan?})`：提交人格自己的决定，并返回实际执行状态；子计划的可选时长输入见权威schema。
 
 建议模块按环境适配、接收去重、有限存储、检索、请求快照、人格决定、梳理事务、睡眠调度、交付与诊断分开。宿主 API 封装在适配层，未核返回值不扩散到业务模块。现有 dsh-persona 可承载部署底稿，但应明确与 C3 anchor 的合成/版本关系，不保留两份各自漂移的身份权威。
 
@@ -271,6 +281,8 @@ DSH设置沿用宿主颜色、字体和透明背景；第七页“聊天渠道�
 完整委派prompt、宿主实际可取得的会话事件、工具结果与最终报告保存在独立.tasks档案；显式archive_file将所选工作区产物复制成带SHA的快照，不等于自动备份整个工程目录。默认总容量1GiB、单任务与单资料64MiB、任务收据4096条；owner可在“任务与资料”页高级设置调整资源上限。容量满保留旧资料／幂等凭据并明确报错，未归档尾部标capture.complete:false；删除／关闭任务不假称已经保存全部原件。
 
 父会话通过status/read查询实际状态及按需读取；status默认只返回紧凑任务卡，显式documentOffset／documentLimit才附带资料目录页。retain选择真实资料的有界片段送入既有自主整理，不直接写人格、不要求任何模块变化。资料保留真实AI／工具／网页来源与原件定位，完整性、SHA与分页状态分别报告。明确遗忘通过源依赖撤销相关任务档案，旧原始宿主日志或外部副本不被冒称已删除；unknown任务不因重载自动重新执行。
+
+新结果将原生封套与公开文本分别归档。已封存旧final-result.json按需追加final-report.txt公开投影，只调整默认结果／摘要指针，不改旧字节、ID、SHA或来源。该兼容处理先检查原结果4MiB上限；超限、格式不完整或追加容量不足时，单项publicProjection.available:false并给originalDocumentId，默认resultDocumentId／summary在响应中为空；其它任务不被隐藏，原manifest与显式原件read／导出仍可用。公开报告存在、任务completed、capture.complete与对用户回复是独立事实。
 
 完整动作、存储范围、权限与验收口径见[自主委派与任务档案](../../delegation-and-task-archives.md)。工作预设的能力限制继承DSH用户权限；full-access模式下没有额外OS沙箱。普通对话是否关注、回复、主动、睡眠以及是否整理的原有契约未变。
 

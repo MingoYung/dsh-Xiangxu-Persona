@@ -1,6 +1,6 @@
 # 人格与记忆字段契约：persona-memory/3
 
-当前0.14.0兼容增量以第26节为权威：统一persona-timeline/1注释、短期／长期／归档转层与必要人格上下文。第20–25节自我档案、生命周期、检索、受管连接和账号工具按兼容范围继续有效；历史证据不提升为本轮验收。
+当前0.14.0统一时间线、分层与必要人格上下文见第26节；第6–8节现行控制／确认／预算契约和第16节任务资料契约同步维护。第20–25节自我档案、生命周期、检索、受管连接和账号工具按兼容范围继续有效。当前可靠性维护未新增真实模型或正式社交验收，历史证据不提升为本轮验收。
 
 > 0.14.0当前维护：新增只读[3D记忆关联图](../../memory-graph-3d.md)，按复合身份和实际来源／显式关系展示局部；默认派生文档，明确选原件才读对应分片。后端有界读取与显示预算独立于记忆容量，超限只影响本次视图。图不调用模型、不触发回忆或人格更新，布局不冒充神经元／情绪实测；原文、撤销、人格自主和既有QQ恢复保持。最终全量、实机和正式加载另验，不预填成功。
 
@@ -304,6 +304,23 @@ interface EnvironmentSnapshot {
   participantClues: Array<{ externalId: string | null; displayName: string | null; avatarRef: string | null }>;
   visual: { available: boolean; adapterId: string | null; observation: string | null };
   timezone: string;
+  deliveryFacts?: DeliveryFactsSummary; // DSH有界交付事实摘要，不是对旧问题已答的判定
+}
+interface DeliveryFactsSummary {
+  available: boolean;
+  errorCode?: string;
+  pendingCount: number | null;
+  inspectedPendingCount?: number;
+  truncated?: boolean;
+  pendingPreviouslyAdmitted?: number;
+  pendingWithRequestStreamObserved?: number;
+  pendingWithLaterOutput?: number;
+  lastOutput?: { status: "delivered" | "unknown"; deliveredAt: EpochMs | null; sourceSessionId: string; sourceEventId: string } | null;
+  relatedTasksAvailable?: boolean;
+  relatedTaskCount?: number;
+  relatedTasksTruncated?: boolean;
+  answeredByLaterOutputOrTask: "not_inferred";
+  details: "persona_introspect section:state";
 }
 interface RouteBinding {
   schemaVersion: SchemaVersion;
@@ -335,6 +352,9 @@ interface SleepPlan {
   wakeCondition: WakeCondition | null;
   reason: string;
 }
+// 输入时长为非负安全整数毫秒或null；已持久化的ReplyPlan/SleepPlan只留绝对时点。
+type ReplyPlanInput = Omit<ReplyPlan, "replyAt"> & { replyAt?: EpochMs | null; replyAfterMs?: number | null };
+type SleepPlanInput = Omit<SleepPlan, "wakeAt"> & { wakeAt?: EpochMs | null; wakeAfterMs?: number | null };
 interface RetrievePlan {
   action: "search" | "skip";
   query?: string;
@@ -365,12 +385,15 @@ interface PersonaDecideInput {
   consolidationPlan?: ConsolidationPlan | null;
   identityPlan?: IdentityPlan | null;
   attention?: AttentionPlan | null;
-  replyPlan?: ReplyPlan | null;
+  replyPlan?: ReplyPlanInput | null;
   nextCheckAt?: EpochMs | null;
-  sleepPlan?: SleepPlan | null;
+  nextCheckAfterMs?: number | null;
+  sleepPlan?: SleepPlanInput | null;
   retrievePlan?: RetrievePlan | null;
 }
-interface DecisionRecord extends PersonaDecideInput {
+interface DecisionRecord extends Omit<PersonaDecideInput, "nextCheckAfterMs" | "replyPlan" | "sleepPlan"> {
+  replyPlan?: ReplyPlan | null;
+  sleepPlan?: SleepPlan | null;
   schemaVersion: SchemaVersion;
   decisionId: string;
   decidedAt: EpochMs;
@@ -381,11 +404,17 @@ interface DecisionRecord extends PersonaDecideInput {
 
 `registry.json` 保存可修订的 `RouteBinding` 与 `AssignmentRecord` 索引。它记“这次环境下人格把消息指向谁”，不是 `sessionId=身份` 的只增认证表。昵称、头像、平台、房间、时间等给人格判断；视觉只声明当前可用适配器，不假设任意模型已经能接摄像头。识别改变时通过 supersedes 关系重投影，不改写根来源。
 
-`persona_decide` 是人格表达决定的稳定控制接口，不是程序判断人格是否听话的规则引擎。工具可在正常轮次使用；必要时独立唤起一次判断并计费。人格可以按时间醒、等本次整理完成后醒，或等明确唤醒：`sleepPlan.action:"sleep"`选择相应`wakeCondition`，仅`at_time`需要有效`wakeAt`，其余可为`null`。整理完成以本次选择的整理run提交为准，空增量也可以完成，失败不能假称已完成。
+`persona_decide` 是人格表达决定的稳定控制接口，不是程序判断人格是否听话的规则引擎。工具可在正常轮次使用；必要时独立唤起一次判断并计费。人格可以按时间醒、等本次整理完成后醒，或等明确唤醒：`sleepPlan.action:"sleep"`选择相应`wakeCondition`，仅`at_time`需要有效`wakeAt`或非空`wakeAfterMs`输入，其余可为`null`。整理完成以本次选择的整理run提交为准，空增量也可以完成，失败不能假称已完成。
+
+`nextCheckAfterMs`、`replyPlan.replyAfterMs`和`sleepPlan.wakeAfterMs`是可选时间表达，不规定作息或动作。在持久接纳决定时，执行层取同一次实际clock，将非负安全整数时长换算为相应`nextCheckAt/replyAt/wakeAt`，删除AfterMs后保存。0表示立即，null在未同时提供绝对字段时映射为该字段null；省略字段沿既有合并语义处理。同一对非空绝对时点与非空时长同时提供、非整数／负值／溢出时长均返回SCHEMA_INVALID，不猜测或取整；非空wakeAfterMs只接受at_time。相同operationId重放复用原已接纳绝对时点，冷恢复也不重启延迟。
 
 `wait/listen`可以只用`recheckOn`等待新消息、环境变化或明确唤醒，不必给墙钟时间；也可以自主设置`replyAt/nextCheckAt`。校验只确认已表达的触发信号可被执行，不替它填固定3秒/10分钟。选择按时间复查时，过去的时点视为已到期并安排一次恢复判断；到了模型自己选的时点，不能因无新消息继续复用旧决定。选择只听新消息时，程序忠实保留该监听，不强制周期唤起。
 
 观察范围必须是适配器实际可见的渠道；工具不能凭聊天材料擅自扩张系统访问能力。睡中禁止 assistant 输出，已选择观察范围内收到的消息照常排队；醒来按对象和通道汇总一次交给人格，保留原文引用，不把不同人的话合成一个人说的。
+
+`replyPlan.pendingEventIds`可以显式选择同会话旧来信。原生适配只接纳实际存在、完整原文已呈现且匹配实际目标sessionId／channelId／personId的编号；分页覆盖按实际区间累计，不能只按末页complete:true认定整条已提供。仅选择reply计划不清pending；随后真实可见assistant最终事件才确认该轮实际准入和显式选中且仍匹配的来信，外部通道还需delivered回执。摘要交接、工具结果、沉默、其它通道回复和unknown发送都不算确认，C1原文不因pending结算删除。
+
+`environment.deliveryFacts`只提供技术事实摘要。`persona_introspect(section:state)`返回更完整有界视图：pending中有admission、laterOutputCount／latestLaterOutput与`answeredByLaterOutput:"not_inferred"`，outputs记录实际可见输出或外部回执，relatedTasks只声明`relation:"dependency_reference"`及实际任务状态。后来输出或关联任务完成不能替人格追认旧问题已答，也不强制补答。`streamObservedAt`仅说明接纳该原文的回合出现了真实llm/stream；不证明供应商边界逐字收到原文、更不等于语义读懂，摘要字段因此使用pendingWithRequestStreamObserved。
 
 工具稳定注册为：
 
@@ -429,7 +458,7 @@ interface RuntimeState {
     wakeRunId: string | null; // 旧pending run兼容
     wakeJobId?: string | null; // 新所选作业，全部子run提交才完成
   };
-  schedule: { nextCheckAt: EpochMs | null; decisionId: string | null; recheckOn: RecheckTrigger[] };
+  schedule: { nextCheckAt: EpochMs | null; decisionId: string | null; recheckOn: RecheckTrigger[]; replyPlanDecisionId?: string | null };
   activeRunId: string | null;
   ingestCursors: SourceCursor[];
   consolidationCursors: Record<string, ConsolidationCursor>;
@@ -469,6 +498,11 @@ interface ConsolidationRun {
   consumedHotRefs: Array<{ hotRecordId: string; eventId: EventId }>;
   cursorBefore: Record<string, ConsolidationCursor>;
   cursorAfter: Record<string, ConsolidationCursor>;
+  reviewState?: {
+    // 同一run的其它冻结阶段／候选／游标字段沿既有review协议保留。
+    budgetRequirement?: { configuredTokens: number; requiredTokens: number; countingMethod: string; stage: string | null;
+      dataPageIndex: number; dataPartOffset: number; observedAt: EpochMs };
+  };
 }
 interface OutboxRecord {
   schemaVersion: SchemaVersion;
@@ -481,6 +515,7 @@ interface OutboxRecord {
   submittedAt: EpochMs | null;
   deliveredAt: EpochMs | null;
   receiptId: string | null;
+  pendingEventIds: EventId[]; // 本次实际交付可结算的来信编号，不是摘要中全部对象的编号
 }
 ```
 
@@ -491,6 +526,8 @@ interface OutboxRecord {
 `RequestSnapshot` 在请求准备时冻结，绑定具体请求、会话、对象和版本。并发对象各用自己的快照，不能用一个全局 `lastText` 或“当前人”串用注入。诊断快照有界；快照里的文本也要服从明确撤销和总容量，不声称能永久解释任意历史回复。
 
 `OutboxRecord.submitted` 只表示宿主队列接收，真正交付才是 `delivered`。宿主若不给回执，应记录 `unknown` 并对账，不承诺可证明的恰好一次，也不能重启后盲目重发。适配器支持幂等键时复用同一 `deliveryId`。急停设置 `globalMuted` 后取消尚未交付的主动 outbox，并在实际交付前再检查；已交付消息不可假装撤回。急停执行用户停止主动的意图，不引入日常频控。
+
+`acknowledgeWake(wakeId)`只确认汇总交接及源页呈现进度，不清具体待回复来信。DSH的`host-delivery-facts.json`有界保存呈现元数据与实际输出回执，不含对话正文；上限为256条呈现、64条输出及262144字节，逐出明确报告历史不完整。真实回执先记录明确`settledPendingEventIds`再清pending；中断恢复只按这些已有记录与相同目标重放结算，不语义推断旧答案。事实查询默认16、最多64项；关联任务事实请求最多256源引用／16父会话，并报告实际覆盖和截断。事实库损坏或任务服务不可用分别声明available:false，不把诊断缺失当作没有发生，也不阻断正常原生聊天。
 
 `global/state.json`中的`RuntimeState.currentDecision`持久保存当前有效决定的完整快照，包括attention、带目标及pending的replyPlan、retrievePlan和睡眠/复查条件。`persona_decide`的可选字段作为更新输入：未提供字段保留仍有效的旧决定，显式null清除可空字段；提供一个新的子计划时替换该子计划，不能遗留其内部旧时点。合并后的完整快照与派生sleep/schedule在同一提交中保存并返回，供人格看到仍有哪些计划有效。它只保留当前决定，旧决定按有界诊断保留，不无限追加。
 
@@ -584,6 +621,10 @@ interface PersonaConfig {
 人格决定如何理解、补充注释、形成何种记忆及何时整理；短期／长期／归档的时间与容量转层是程序本地执行，不依赖一次模型整理成功。达到实例物理上限或真实磁盘安全边界时保留旧资料，拒绝无法安全提交的新副本，保存可用的有界源指针、MemoryGap与回补位置并明确报告；不自动删归档、不强迫梳理或睡觉。源不可用时如实报告缺口，不能把未保存说成已完整保存。
 
 token必须用实际模型对应的统一计数方法。S6宿主历史、工具定义、输出预留与本插件各段一起纳入请求预算；分段上限不能证明整个请求一定装得下。超预算先少取材料/分页；由人格判断是否需要检索及取什么，不用固定“输入短于30字禁止检索”替代。采集、队列、索引打分为本地过程；人格判断可复用正常轮次或必要独立调用，分别统计判断、梳理、重试和回复费用，不承诺每轮零额外调用或每天固定不超过6次。
+
+预算预检与保存使用同一必需材料组装路径。`runtime.preflightConfig(partial,context)`只读返回当前路由／资料的实际需求、计数方法、分段／完整请求检查、缺口、suggestedConfig、recommendationId及已测pausedRuns／workIssues；不检索、不保存快照、不消费来源或游标、不调用模型。必要人格、环境／有效计划、deliveryFacts和第一份完整近期原文或完整Unicode片段必须容纳，不能截掉人格凑预算。有实际counter时用该计数口；不可用时明确utf8_bytes_estimate，不等于供应商usage或金额。
+
+owner `config.preflight({config?})`检查候选配置；不足的预算保存返回CONFIG_BUDGET_INSUFFICIENT并保留原配置。`config.recoverBudget({recommendationId})`只在建议仍匹配当前资料时显式应用已验证有界suggestedConfig，陈旧返回BUDGET_PREFLIGHT_STALE。建议不提高processingLimits.consolidationRequestTokens，不逐轮自动扩容；完整请求硬顶需明确修改。最小整理页仍超预算时，原run的reviewState.budgetRequirement保存真实页／偏移／需求并按MODEL_INPUT_BUDGET暂停，保留候选与原始清单；调整后继续仍显式使用原runId。未实际到达失败页的暂停作业不虚构需求，预检不保证未来成长、其它路由或全部未读整理页。
 
 ## 9. 校验、迁移与本文件的验收边界
 
@@ -730,6 +771,8 @@ persona_task.action=inspect|create|list|status|read|cancel|retain|archive_file�
 
 状态含prepared／starting／running／completed／failed／cancelled／unknown／revoked。任务执行status与capture:{afterSeq,complete,errorCode?}表示不同事实；completed不能冒充档案已完整采集。默认persona_task.status返回紧凑card，含documentCount、resultDocumentId和至多120字的summary导航预览，不自动返回完整目录；显式documentOffset／documentLimit时附documents页、documentsComplete和nextDocumentOffset。owner tasks.get仍按其目录分页接口工作；完整报告通过resultDocumentId读取。persona_task.read按Unicode offset／maxChars最多8000字符分页，返回nextOffset和complete；后续文档页传offset=nextOffset，完整性与expectedSha256分别核对。通用工具nextCursor通过cursor续同一次有界结果，list.pageCursor只续任务列表；owner／内部archive.read的nextCursor属于其自身文档读取协议。二进制走owner有界readChunk下载，不塞进模型上下文。
 
+新原生结果封套另存native-result.json，公开文本另存final-report.txt。完整封存的旧final-result.json可按需追加公开投影，保留旧文件／ID／SHA／来源及trace引用，只调整默认resultDocumentId和summary.documentId。兼容处理先核旧结果不超过4MiB；这是转换处理上限，不替代64MiB资料容量。超限、JSON不完整或追加容量不足时，响应的resultDocumentId与summary为null，并带`publicProjection:{available:false,code,message,originalDocumentId}`；持久原manifest不改，其它任务可继续列出，原documentId仍可显式分页read或导出。公开视图不可用不自动转出原生过程冒充公开报告，也不触发模型重做。任务完成、来源依赖、原件采集与对用户回复分别报告，不自动清旧pending。
+
 独立档案保留完整委派prompt、实际宿主事件和最终报告；archive_file复制任务工作区内明确文件的当时字节、SHA与指纹，不自动保存整个工程目录或宿主未暴露的内部思考。默认maxTasks=4096、maxArchiveBytes=1073741824、maxTaskBytes=67108864、maxDocumentBytes=67108864，owner可显式configureLimits；分块65536 bytes，任务／总容量及索引元数据帽一起核验。容量不足拒绝新副作用或将未采集尾部明确标为不完整，旧原件和幂等凭据不静默淘汰；增大预算不保证实际磁盘空间。
 
 可信宿主登记worker真实sessionId／parentSessionId／taskId和assistant_delegation来源，不能靠模型消息自报身份。worker即使收到kind:user的原生委派封套，也跳过人格C1／H1。parent任务工具调用和结果的prompt、报告正文、标题／文件名与自由错误文本均不自动进入H1；只留状态、动作、真实任务／资料ID、页范围、完整性等元数据。实时、回放、trace回读沿同一投影；callId来源无法解析时明确sourceResolution:unavailable，原始资料仍按实际保存范围回查。普通主人格回复、思考、其它工具与真实用户原话不被技术话题过滤。
@@ -737,6 +780,8 @@ persona_task.action=inspect|create|list|status|read|cancel|retain|archive_file�
 retain从实际资料中选取有界文本片段，保留taskId／documentId／SHA／offset和真实AI资料sourceRef，沿既有captureHot／自主整理进入候选材料；它不是直接写人格、不是必须记住该片段，也不改变任一主观条目的成立门槛。worker没有共享人格写入工具。明确遗忘按原始sourceRefs／recordIds撤销相关任务与材料，旧资料不能在重启、回读或重建时复活；外部宿主日志和其它副本并未因此保证删除。
 
 owner动作tasks.inspect/list/get/read/readChunk/configureLimits/collect/cancel/archiveFile，list/get/read/download不会新派发模型；新增“任务与资料”页（当前共九页）无默认手动create入口。原始派发权限、工作目录访问、网络与shell仍受DSH用户已有权限控制；工作预设的工具范围不是full-access模式下额外的OS沙箱。完整消费者、资源与验证范围见[任务与资料说明](../../delegation-and-task-archives.md)。
+
+Windows/Electron内置ACL runner的窄启动兼容属于适配实现，未新增人格字段、工具或shell权限。它保留restricted token／ACL／Windows Job，恢复原环境和stdio；精确匹配失效、自定义或已修路径原样通过。维护者原生零模型探针与只读CLM／原UTF8前导warning的边界见[PowerShell兼容说明](../../windows-powershell-compat.md)，不将组件探针冒称完整应用或真实模型验收。
 
 
 ## 0.6.0 自主委派与任务资料隔离
@@ -1254,7 +1299,7 @@ owner管理新增memory.timeline.status与memory.timeline.list。list接受tier=
 
 必要人格背景在模型请求前由程序加载，不依赖人格先主动调用读取工具。当前身份核心（name／pronouns／gender／ageDescription／birthday／selfDescription）、anchor与axes、当前对象身份与关系概要、有效计划／休息事实及有界近期参考必须成功组装；扩展人格、习惯、关系条目、初始用户想法与详细往事按实际预算提供完整条目，并列出省略信息或可读原件。深刻记忆仍为referenceOnly／automaticRecall:false，不强制激活或规定反应。
 
-contextBudget总动态默认2970计数单位，新增recentMemoryTokens局部默认600，仍包含在总额内。必要核心不按局部帽截成残片，超出原局部预算可在总帽内调整；必要内容连总帽也放不下时返回PERSONA_CONTEXT_BUDGET或ESSENTIAL_CONTEXT_BUDGET，不悄悄删核心。近期段保留真实来源和Unicode范围，超长记录标fragment、未显示数量和originalsRemainQueryable；当前来信尚待原始输入分页时，pendingInputReferences只记录该引用，不在近期段重复正文，也不表示整条或未读尾部已消费；参考不推进源消费游标。
+contextBudget总动态默认2970计数单位，新增recentMemoryTokens局部默认600，仍包含在总额内。必要核心不按局部帽截成残片，超出原局部预算可在总帽内调整；必要内容连总帽也放不下时返回PERSONA_CONTEXT_BUDGET或ESSENTIAL_CONTEXT_BUDGET，不悄悄删核心。成长后的预算保存及已测整理缺口按第8节preflight契约检查、建议和显式恢复，不把初始值当永久足够。近期段保留真实来源和Unicode范围，超长记录标fragment、未显示数量和originalsRemainQueryable；当前来信尚待原始输入分页时，pendingInputReferences只记录该引用，不在近期段重复正文，也不表示整条或未读尾部已消费；参考不推进源消费游标。
 
 人格资料／必要近期读取失败返回PERSONA_CONTEXT_UNAVAILABLE并暂停本次人格生成，不退回缺少人格的普通模型请求。DSH assemble与middleware保留同一故障，不吞错继续next；控制、回复和唤醒通过同一核心组装。失败不消耗尚未处理消息，恢复后可以继续。tokenizer不可用时仍明确utf8_bytes_estimate，2970不是整个宿主请求帽；工具、历史和输出预留另计。
 

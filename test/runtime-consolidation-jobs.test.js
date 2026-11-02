@@ -118,7 +118,9 @@ test('a guessed context cursor and a request frame that cannot fit pause without
   await f.runtime.accept(chat('cursor_source'), env()); const run = await f.repository.prepareConsolidation({ personId: 'a' });
   await assert.rejects(f.runtime.consolidate({ runId: run.runId }), error => error.code === 'CONTEXT_CURSOR_INVALID');
   assert.equal((await f.repository.getConsolidationRun(run.runId)).status, 'prepared');
-  await f.runtime.updateConfig({ processingLimits: { consolidationRequestTokens: 100 } });
+  await assert.rejects(f.runtime.updateConfig({ processingLimits: { consolidationRequestTokens: 100 } }), { code: 'CONFIG_BUDGET_INSUFFICIENT' });
+  // Simulate a pre-existing insufficient setting; normal saves now refuse it.
+  f.runtime.config = await f.repository.updateConfig({ processingLimits: { consolidationRequestTokens: 100 } });
   const before = f.requests.length;
   await assert.rejects(f.runtime.consolidate({ runId: run.runId }), error => error.code === 'MODEL_INPUT_BUDGET');
   assert.equal(f.requests.length, before); assert.equal((await f.repository.getPending()).length, 1);

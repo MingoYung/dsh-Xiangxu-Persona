@@ -11,7 +11,9 @@ const freeze = value => {
 };
 
 /** Loading identity is mandatory; selecting or reacting to remembered content remains autonomous. */
-export async function buildContinuitySnapshot({ context = {}, material = {}, state = {}, config, now, counter }) {
+export async function buildContinuitySnapshot(input) { return assembleContinuity(input, false); }
+export async function measureContinuityRequirements(input) { return assembleContinuity(input, true); }
+async function assembleContinuity({ context = {}, material = {}, state = {}, config, now, counter }, measuring) {
   const persona = material.persona ?? {}, relation = material.impression ?? {}, budgets = config.contextBudget;
   const ownId = context.personId ?? null, relevant = entries => (entries ?? []).filter(item => item.scope !== 'person' || item.personId === ownId);
   const facets = relevant(persona.facets), signatures = relevant(persona.signatures), habits = relevant(persona.habits);
@@ -26,12 +28,13 @@ export async function buildContinuitySnapshot({ context = {}, material = {}, sta
     : { available: false, errorCode: capacity?.errorCode ?? null };
   const essential = { now, timezone: context.timezone ?? context.environment?.timezone ?? config.timezone,
     target, sleep: state.sleep?.state ?? 'awake', resources,
+    delivery: context.deliveryFacts ?? context.environment?.deliveryFacts,
     memoryAvailability: context.memoryAvailability ?? material.memoryAvailability ?? { storeContent: 'not_assessed', retrieval: 'not_requested' },
     consolidation: { mode: config.consolidationMode, opportunity: state.execution?.consolidationOpportunity ?? null,
       jobs: Object.values(state.execution?.consolidationJobs ?? {}).slice(-3).map(job => ({ jobId: job.jobId, status: job.status })) } };
   const result = [], adjustments = [], extensions = {};
   const prefix = () => result.map(segment => segment.text).join('');
-  const canFit = async text => await counter.count(prefix() + text) <= budgets.totalTokens;
+  const canFit = async text => measuring || await counter.count(prefix() + text) <= budgets.totalTokens;
   const add = async (name, text, { budget, truncated = false, required = false, ...rest } = {}) => {
     if (!await canFit(text)) throw contextBudgetError('The request budget cannot carry the complete mandatory personality and current background; no incomplete personality was supplied');
     const tokens = await counter.count(text);
@@ -40,7 +43,7 @@ export async function buildContinuitySnapshot({ context = {}, material = {}, sta
       reason: name === 'environment' ? 'preserve_complete_route_and_time' : 'preserve_complete_personality_core' });
   };
   const environmentText = sectionText('environment', essential);
-  if (await counter.count(environmentText) > budgets.totalTokens) throw Object.assign(new Error('The request budget cannot carry the complete current route/time facts; no incomplete target was injected'), { code: 'ESSENTIAL_CONTEXT_BUDGET' });
+  if (!measuring && await counter.count(environmentText) > budgets.totalTokens) throw Object.assign(new Error('The request budget cannot carry the complete current route/time facts; no incomplete target was injected'), { code: 'ESSENTIAL_CONTEXT_BUDGET' });
   await add('environment', environmentText, { budget: budgets.environmentTokens, required: true });
   let selfProfile = await requiredSelfProfile(material.selfProfile, counter);
   await add('self_profile', selfProfile.text, { budget: budgets.selfProfileTokens ?? 350, required: true });
@@ -55,8 +58,13 @@ export async function buildContinuitySnapshot({ context = {}, material = {}, sta
   if (activePlan || state.sleep?.state === 'sleeping') await add('current_state', sectionText('current_state', {
     activePlan, sleep: state.sleep ? { state: state.sleep.state, wakeCondition: state.sleep.wakeCondition, wakeAt: state.sleep.wakeAt } : null }), { required: true });
   const recent = await recentMemorySection(material, context, { counter,
-    budget: Math.min(budgets.recentMemoryTokens ?? 600, Math.max(0, budgets.totalTokens - await counter.count(prefix()))), canFit });
+    budget: measuring ? Infinity : Math.min(budgets.recentMemoryTokens ?? 600, Math.max(0, budgets.totalTokens - await counter.count(prefix()))), canFit,
+    minimumOnly: measuring, measureText: text => counter.count(prefix() + text) });
   await add('recent_memory', recent.text, { budget: budgets.recentMemoryTokens ?? 600, truncated: recent.truncated, required: true });
+  if (measuring) return { requiredTokens: await counter.count(prefix()), recentMinimumTokens: await counter.count(recent.text),
+    countingMethod: counter.method, scope: { personId: ownId, sessionId: target.sessionId, channelId: target.channelId },
+    personaVersion: persona.version ?? 0, segments: result.map(({ name, tokens }) => ({ name, tokens })),
+    note: 'Complete required core plus availability and a first admissible recent source. Optional memories are not forced into this requirement.' };
 
   // Biography and initial wishes may expand a complete identity, never displace
   // an anchor or necessary current background. Each visible value stays whole.

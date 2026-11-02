@@ -72,8 +72,8 @@ test('interrupted cross-target effects persist source IDs instead of another tra
   const effect = Object.values((await f.repository.getRuntime()).execution.pendingEffects)[0];
   assert.deepEqual(effect.context.pendingEventIds, [source.eventId]); assert.ok(!JSON.stringify(effect).includes(source.record.text));
   assert.equal(f.requests.length, 0); assert.equal(f.deliveries.length, 0);
-  // Actual wake admission can finish its pending receipt before the redirected
-  // effect resumes. The retained C1 source remains available without replaying it.
+  // A separately confirmed visible delivery can settle its pending receipt
+  // before this redirected effect resumes. The C1 source remains readable.
   await f.repository.clearPending([source.eventId]);
   f.repository.patchRuntime = patch; await f.runtime.close(); await f.runtime.open(); await f.runtime.idle();
   assert.equal(f.requests.length, 1); assert.equal(f.deliveries.length, 1);

@@ -63,7 +63,7 @@ test('sleep keeps arrivals while model consolidation is running, is silent, and 
   await f.runtime.handleSignal('new_message'); assert.equal(wake.length, 0);
   await f.runtime.handleSignal('explicit_wake'); assert.equal(wake.length, 1);
   assert.deepEqual(wake[0].groups.map(g => g.personId).sort(), ['a', 'b']);
-  assert.equal((await f.repository.getPending()).length, 0);
+  assert.equal((await f.repository.getPending()).length, 2, 'accepting the wake summary does not confirm any visible reply');
 });
 
 test('failed model consolidation does not consume source/hot, next successful batch consumes only selected increment', async t => {
@@ -139,7 +139,7 @@ test('queued host controls survive restart and only a matching actual control ac
   assert.ok(!(await f.repository.getRuntime()).execution.pendingControl);
 });
 
-test('queued wake is acknowledged once and late arrivals remain pending', async t => {
+test('queued wake handoff is acknowledged once while both presented and late originals remain pending', async t => {
   const queued = [];
   const f = await fixture(t, { host: { onWake: payload => { queued.push(payload); return { accepted: true, status: 'queued' }; } } });
   await f.runtime.accept(chat('first'), env());
@@ -148,8 +148,11 @@ test('queued wake is acknowledged once and late arrivals remain pending', async 
   assert.equal((await f.repository.getPending()).length, 1);
   await f.runtime.accept(chat('late'), env());
   const wakeId = queued[0].wakeId; await f.runtime.acknowledgeWake(wakeId);
-  assert.deepEqual((await f.repository.getPending()).map(x => x.sourceEventId), ['late']);
+  assert.deepEqual((await f.repository.getPending()).map(x => x.sourceEventId), ['first', 'late']);
   assert.equal((await f.runtime.acknowledgeWake(wakeId)).accepted, false);
+  await f.runtime.close(); await f.runtime.open();
+  assert.equal(queued.length, 1);
+  assert.deepEqual((await f.repository.getPending()).map(x => x.sourceEventId), ['first', 'late']);
 });
 
 test('timed wake is selected by the personality and explicit-only sleep never gains a fixed clock deadline', async t => {
@@ -342,7 +345,7 @@ test('wake state commits across a real ingestion between refresh and patch witho
   assert.deepEqual(queued[0].pendingEventIds, [first.eventId]);
   assert.deepEqual((await f.repository.getPending()).map(row => row.eventId), [first.eventId, inserted.eventId]);
   await f.runtime.acknowledgeWake(queued[0].wakeId);
-  assert.deepEqual((await f.repository.getPending()).map(row => row.sourceEventId), ['arriving_during_wake_commit']);
+  assert.deepEqual((await f.repository.getPending()).map(row => row.sourceEventId), ['before_wake', 'arriving_during_wake_commit']);
   assert.deepEqual(f.runtime.errors, []);
 });
 

@@ -67,6 +67,7 @@ function runSummary(run) {
   return { kind: 'run', id: run.runId, runId: run.runId, status: run.status, personId: run.personId ?? null,
     commitMarker: run.commitMarker ?? null, inputEndEventId: run.inputEndEventId, modelCalls: run.reviewState?.modelCalls ?? 0,
     pauseReason: run.reviewState?.pauseReason ?? run.validationError?.code ?? null, progressUpdatedAt: run.progressUpdatedAt ?? null,
+    budgetRequirement: run.reviewState?.budgetRequirement ?? null,
     patchCount: run.validatedPatch?.length ?? 0, candidateCount: run.candidatePatch?.entries?.length ?? run.candidatePatch?.length ?? 0 };
 }
 function jobSummary(job) {
@@ -126,6 +127,11 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
   async function command(c, name, args) {
     if (typeof c.executeCommand !== 'function') throw error('MANAGEMENT_CONTROL_UNAVAILABLE', 'The coordinator control port is unavailable');
     return c.executeCommand(name, args);
+  }
+  async function budgetStatus(c) {
+    if (typeof c.runtime?.preflightConfig !== 'function') return null;
+    try { return await c.runtime.preflightConfig(); }
+    catch (cause) { return { available: false, errorCode: cause.code ?? 'BUDGET_PREFLIGHT_UNAVAILABLE', message: short(cause.message, 300) }; }
   }
   async function operationDocument(c) {
     const doc = await c.repository.store.readJson(OPS_PATH, { version: 0, records: [] });
@@ -200,11 +206,32 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
           jobCounts: counts, memoryGapCounts: memoryGapSummary(state.memoryGaps ?? []) },
         capacity, config: safeConfig(c.repository.config), agents: [...(c.agents?.values() ?? [])].slice(0, 100).map(item => {
           const agent = item.agent ?? item, context = c.contextFor?.(agent) ?? {}; return { sessionId: agent.session?.id ?? agent.id, personId: context.personId ?? null, channelId: context.channelId ?? null };
-        }), errors: (c.errors ?? []).slice(-20).map(row => ({ at: row.at, code: row.code, message: short(row.message, 600) })) };
+        }), budgetPreflight: await budgetStatus(c),
+        errors: (c.errors ?? []).slice(-20).map(row => ({ at: row.at, code: row.code, message: short(row.message, 600) })) };
     }
     const repo = c.repository;
     if (action === 'config.get') return safeConfig(repo.config);
-    if (action === 'config.update') return safeConfig(await command(c, 'config', configPatch(args.config ?? args.partial ?? {}, repo.config)));
+    if (action === 'config.preflight') {
+      if (typeof c.runtime?.preflightConfig !== 'function') throw error('BUDGET_PREFLIGHT_UNAVAILABLE', '当前宿主未提供预算预检，请先恢复人格运行服务');
+      return c.runtime.preflightConfig(configPatch(args.config ?? args.partial ?? {}, repo.config));
+    }
+    if (action === 'config.recoverBudget') {
+      if (typeof c.runtime?.preflightConfig !== 'function') throw error('BUDGET_PREFLIGHT_UNAVAILABLE', '当前宿主未提供预算预检');
+      const check = await c.runtime.preflightConfig();
+      if (typeof args.recommendationId !== 'string' || args.recommendationId !== check.recommendationId) throw error('BUDGET_PREFLIGHT_STALE', '资料或建议已变化，未修改预算；请重新检查后再应用');
+      if (!check.requiresExplicitApply) return { applied: false, preflight: check, config: safeConfig(repo.config) };
+      const value = await command(c, 'config', check.suggestedConfig);
+      return { applied: true, config: safeConfig(value), preflight: await c.runtime.preflightConfig() };
+    }
+    if (action === 'config.update') {
+      const partial = configPatch(args.config ?? args.partial ?? {}, repo.config);
+      if (partial.contextBudget || partial.processingLimits?.consolidationRequestTokens !== undefined) {
+        if (typeof c.runtime?.preflightConfig !== 'function') throw error('BUDGET_PREFLIGHT_UNAVAILABLE', '预算预检暂不可用，设置未保存');
+        const check = await c.runtime.preflightConfig(partial);
+        if (!check.ok) throw error('CONFIG_BUDGET_INSUFFICIENT', '设置未保存：当前完整人格与必要近况放不下，请先检查预算并查看有界建议');
+      }
+      return safeConfig(await command(c, 'config', partial));
+    }
     if (action === 'state.get') return pageDetail(action, args, await repo.getRuntime());
     if (action === 'people.list') {
       const needle = String(args.query ?? '').toLocaleLowerCase(), people = (await repo.listPeople()).filter(row => !needle || JSON.stringify(row).toLocaleLowerCase().includes(needle));

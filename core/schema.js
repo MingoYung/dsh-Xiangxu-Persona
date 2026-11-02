@@ -29,6 +29,11 @@ const integer = (v, field) => { num(v, field); if (!Number.isSafeInteger(v)) fai
 const array = (v, field) => { if (!Array.isArray(v)) fail(field + ' must be an array'); };
 const enumeration = (v, values, field) => { if (!values.includes(v)) fail(field + ' has an unknown value; allowed values: ' + values.join(', ')); };
 const nullableTime = (v, field) => { if (v !== null && v !== undefined) integer(v, field); };
+const relativeTime = (value, relative, absolute) => {
+  if (!own(value, relative)) return;
+  if (value[relative] !== null) integer(value[relative], relative);
+  if (value[relative] !== null && value[absolute] != null) fail(relative + ' and ' + absolute + ' cannot both select a time');
+};
 const safeId = (v, field = 'personId') => { str(v, field); if (!/^[A-Za-z0-9_-]{1,160}$/.test(v)) fail(field + ' is not a safe identifier'); return v; };
 export { safeId };
 export function validateSrcRef(ref) {
@@ -168,6 +173,7 @@ export function validatePersona(persona) {
 export function validateDecision(input) {
   object(input, 'decision');
   if (input.nextCheckAt !== undefined) nullableTime(input.nextCheckAt, 'nextCheckAt');
+  relativeTime(input, 'nextCheckAfterMs', 'nextCheckAt');
   if (input.attention !== undefined && input.attention !== null) {
     object(input.attention, 'attention');
     for (const key of ['observeChannelIds', 'targetPersonIds']) if (input.attention[key] !== undefined) { array(input.attention[key], key); input.attention[key].forEach((v) => str(v, key)); }
@@ -175,14 +181,17 @@ export function validateDecision(input) {
   if (input.replyPlan !== undefined && input.replyPlan !== null) {
     const p = input.replyPlan; object(p, 'replyPlan'); enumeration(p.action, ['reply', 'wait', 'listen'], 'reply.action');
     nullableTime(p.replyAt, 'replyAt');
+    relativeTime(p, 'replyAfterMs', 'replyAt');
     if (p.target !== undefined && p.target !== null) { str(p.target.channelId, 'target.channelId'); str(p.target.sessionId, 'target.sessionId'); if (p.target.personId !== null && p.target.personId !== undefined) safeId(p.target.personId); }
     if (p.recheckOn !== undefined) { array(p.recheckOn, 'recheckOn'); p.recheckOn.forEach((v) => enumeration(v, ['new_message', 'environment_change', 'explicit_wake'], 'recheckOn')); }
   }
   if (input.sleepPlan !== undefined && input.sleepPlan !== null) {
     const p = input.sleepPlan; enumeration(p.action, ['sleep', 'wake', 'continue'], 'sleep.action'); nullableTime(p.wakeAt, 'wakeAt');
+    relativeTime(p, 'wakeAfterMs', 'wakeAt');
+    if (p.wakeAfterMs != null && p.wakeCondition !== 'at_time') fail('wakeAfterMs requires at_time');
     if (p.wakeCondition !== null && p.wakeCondition !== undefined) enumeration(p.wakeCondition, ['at_time', 'consolidation_complete', 'explicit_wake'], 'wakeCondition');
     if (p.action === 'sleep' && !p.wakeCondition) fail('sleep requires a chosen wake condition');
-    if (p.wakeCondition === 'at_time' && p.wakeAt == null) fail('at_time requires wakeAt');
+    if (p.wakeCondition === 'at_time' && p.wakeAt == null && p.wakeAfterMs == null) fail('at_time requires wakeAt or wakeAfterMs');
   }
   if (input.retrievePlan !== undefined && input.retrievePlan !== null) {
     enumeration(input.retrievePlan.action, ['search', 'skip'], 'retrieve.action');

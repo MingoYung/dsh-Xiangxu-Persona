@@ -34,6 +34,9 @@ const affected = (task, sources, ids) => task.sourceRefs.some(ref => sources.has
 const safeCode = error => /^TASK_[A-Z0-9_]+$/.test(error?.code ?? '') ? error.code : 'TASK_OPERATION_FAILED';
 const documentMetadata = doc => { const { chunks, ...result } = doc; return { ...result, complete: doc.state !== 'pending' }; };
 const short = (text, chars = 1000) => { let value = '', count = 0; for (const point of text) { if (count++ >= chars) return { text: value, truncated: true }; value += point; } return { text: value, truncated: false }; };
+const publicReportText = (result, fallback = '') => typeof result === 'string' ? result : typeof result?.closingText === 'string' ? result.closingText
+  : typeof result?.text === 'string' ? result.text : Array.isArray(result?.output) ? result.output.filter(block => block?.type === 'text' && typeof block.text === 'string').map(block => block.text).join('\n') : fallback;
+const LEGACY_PROJECTION_BYTES = 4 * 1024 * 1024;
 
 /** Task I/O and lifecycle only. The continuing personality chooses its work and memory. */
 export function createDelegationService({ archiveRoot, host, clock = Date.now, getRevocations = async () => ({ sourceKeys: [], recordIds: [] }), limits, onChange = () => {} } = {}) {
@@ -48,7 +51,36 @@ export function createDelegationService({ archiveRoot, host, clock = Date.now, g
   async function revokeOne(task) { if (task.status !== 'revoked') try { await host.cancel?.({ sessionId: task.sessionId }); } catch {} const result = await archive.revoke(task.taskId); try { await host.forgetTask?.({ taskId: task.taskId, sessionId: task.sessionId }); } catch {} return result; }
   async function syncRevocations() { const value = await revocations(), digest = taskHash(value); if (digest === revocationDigest) return; const sources = new Set(value.sourceKeys), ids = new Set(value.recordIds); for (const card of await archive.allCards()) { const task = await archive.get(card.taskId); if (task.status !== 'revoked' && affected(task, sources, ids)) await revokeOne(task); } revocationDigest = digest; }
   async function getTask(taskId, parentSessionId) { const task = await archive.get(taskId); if (parentSessionId !== undefined && task.parentSessionId !== parentSessionId) throw taskFailure('TASK_SCOPE', '任务不属于当前父会话'); await assertNotRevoked(task); return task; }
-  function safeTask(task, { documentOffset = 0, documentLimit = 20 } = {}) { if (transientErrors.has(task.taskId)) task = { ...task, errorCode: transientErrors.get(task.taskId), capture: { ...task.capture, complete: false, errorCode: transientErrors.get(task.taskId) } }; const documents = task.documents.slice(documentOffset, documentOffset + documentLimit).map(documentMetadata); return { taskId: task.taskId, sessionId: task.sessionId, parentSessionId: task.parentSessionId, title: task.title, status: task.status, createdAt: task.createdAt, updatedAt: task.updatedAt, startedAt: task.startedAt ?? null, finishedAt: task.finishedAt ?? null, errorCode: task.errorCode ?? null, summary: task.summary ?? null, resultDocumentId: task.resultDocumentId ?? null, documentCount: task.documents.length, documents, documentsComplete: documentOffset + documents.length >= task.documents.length, nextDocumentOffset: documentOffset + documents.length >= task.documents.length ? null : documentOffset + documents.length, capture: task.capture, usedBytes: task.bytes }; }
+  async function publicProjection(task) {
+    const old = task.documents.find(doc => doc.documentId === task.resultDocumentId);
+    if (!completeArchive(task) || old?.name !== 'final-result.json' || old.kind !== 'final_report') return task;
+    if (old.bytes > LEGACY_PROJECTION_BYTES) throw taskFailure('TASK_PUBLIC_PROJECTION_CAPACITY', '旧任务公开视图超过4 MiB迁移处理上限；原始档案和编号仍保留，可显式导出查看，未返回原始过程冒充公开结果');
+    const parts = []; let offset = 0;
+    while (true) {
+      const page = await archive.read({ taskId: task.taskId, documentId: old.documentId, offset, maxChars: TASK_PAGE_CHARS, expectedSha256: old.sha256 });
+      parts.push(page.text); if (page.complete) break;
+      if (page.nextOffset <= offset) throw taskFailure('TASK_SOURCE_INVALID', '旧任务结果读取未推进'); offset = page.nextOffset;
+    }
+    let result; try { result = JSON.parse(parts.join('')); } catch { throw taskFailure('TASK_LEGACY_RESULT_INVALID', '旧结果不是完整JSON；原文保持不变，未推断公开内容'); }
+    const text = publicReportText(result, task.summary?.text ?? ''); await assertNotRevoked(task);
+    const projection = await archive.putDocument(task.taskId, { key: 'result-public:' + taskHash(text), name: 'final-report.txt', kind: 'final_report', text, encoding: 'utf8', mime: 'text/plain;charset=utf-8' });
+    await assertNotRevoked(task);
+    // Append a public view and repoint the default; never rewrite or remove the
+    // original document, its ID, content digest or retained trace references.
+    return archive.patch(task.taskId, { resultDocumentId: projection.documentId, summary: { ...(task.summary ?? short(text)), documentId: projection.documentId } });
+  }
+  async function projectedTask(task) {
+    try { return await publicProjection(task); }
+    catch (error) {
+      if (!['TASK_PUBLIC_PROJECTION_CAPACITY', 'TASK_LEGACY_RESULT_INVALID', 'TASK_ARCHIVE_CAPACITY', 'TASK_TASK_CAPACITY', 'TASK_DOCUMENT_CAPACITY', 'TASK_CAPACITY'].includes(error.code)) throw error;
+      // One unavailable legacy view must not hide the remaining task catalog.
+      // This is response metadata only: preserve the old archive pointer/bytes,
+      // but do not advertise raw transport JSON as the public result.
+      return { ...task, resultDocumentId: null, summary: null,
+        publicProjection: { available: false, code: error.code, message: error.message, originalDocumentId: task.resultDocumentId } };
+    }
+  }
+  function safeTask(task, { documentOffset = 0, documentLimit = 20 } = {}) { if (transientErrors.has(task.taskId)) task = { ...task, errorCode: transientErrors.get(task.taskId), capture: { ...task.capture, complete: false, errorCode: transientErrors.get(task.taskId) } }; const documents = task.documents.slice(documentOffset, documentOffset + documentLimit).map(documentMetadata); return { taskId: task.taskId, sessionId: task.sessionId, parentSessionId: task.parentSessionId, title: task.title, status: task.status, createdAt: task.createdAt, updatedAt: task.updatedAt, startedAt: task.startedAt ?? null, finishedAt: task.finishedAt ?? null, errorCode: task.errorCode ?? null, summary: task.summary ?? null, ...(task.publicProjection ? { publicProjection: task.publicProjection } : {}), resultDocumentId: task.resultDocumentId ?? null, documentCount: task.documents.length, documents, documentsComplete: documentOffset + documents.length >= task.documents.length, nextDocumentOffset: documentOffset + documents.length >= task.documents.length ? null : documentOffset + documents.length, capture: task.capture, usedBytes: task.bytes }; }
   const ready = (async () => { await archive.ready; const revoked = await revocations(); for (const card of await archive.allCards()) { let task = await archive.get(card.taskId); if (task.status === 'revoked') { await archive.revoke(task.taskId); task = await archive.get(task.taskId); } if (task.status !== 'revoked' && affected(task, new Set(revoked.sourceKeys), new Set(revoked.recordIds))) { await archive.revoke(task.taskId); task = await archive.get(task.taskId); } else if (['prepared', 'starting', 'running'].includes(task.status)) task = await archive.patch(task.taskId, { status: 'unknown', errorCode: 'TASK_INTERRUPTED_UNKNOWN', capture: { ...task.capture, complete: false } }); await host.registerTask?.({ taskId: task.taskId, sessionId: task.sessionId, parentSessionId: task.parentSessionId, workspace: task.workspace, status: task.status }); } revocationDigest = taskHash(revoked); if (host.onChange) unsubscribe = host.onChange(event => { if (!closing && !closed && event?.sessionId) scheduleCollect(event.sessionId); }); })();
   function scheduleCollect(sessionId) { if (background.has(sessionId)) { background.get(sessionId).again = true; return; } const holder = { again: true }; background.set(sessionId, holder); holder.promise = (async () => { do { holder.again = false; await enqueue(async () => { const card = (await archive.allCards()).find(t => t.sessionId === sessionId); if (card && card.status !== 'revoked') { const value = await collectInternal(card.taskId, { drain: true }); try { await onChange({ taskId: value.taskId, sessionId, status: value.status, captureComplete: value.capture.complete }); } catch {} } }); } while (holder.again && !closing); })().catch(() => {}).finally(() => background.delete(sessionId)); }
   function create(args = {}, links = {}) { return enqueue(async () => { const requestId = taskText(args.requestId, '真实调用编号', 2048), parentSessionId = taskText(args.parentSessionId, '父会话'), prompt = taskText(args.prompt, '任务内容', 262144), title = taskText(args.title ?? '', '任务标题', 128, true), workspace = args.workspace === undefined ? undefined : taskText(args.workspace, '工作目录', 4096); const sources = taskLinks(links), requestHash = taskHash({ parentSessionId, prompt, title, workspace: workspace ?? null }); const sessionId = 'xiangxu-task-' + taskHash([archive.root, requestId]).slice(0, 32); const reserved = await archive.reserve({ requestId, requestHash, sessionId, parentSessionId, title, ...sources }); let task = reserved.task;
@@ -67,7 +99,7 @@ export function createDelegationService({ archiveRoot, host, clock = Date.now, g
     await assertNotRevoked(task);
     if (observed?.result !== undefined && observed.result !== null) {
       const raw = typeof observed.result === 'string' ? observed.result : JSON.stringify(observed.result);
-      const reportText = typeof observed.result === 'string' ? observed.result : typeof observed.result.closingText === 'string' ? observed.result.closingText : typeof observed.result.text === 'string' ? observed.result.text : Array.isArray(observed.result.output) ? observed.result.output.filter(block => block?.type === 'text' && typeof block.text === 'string').map(block => block.text).join('\n') : typeof observed.summary === 'string' ? observed.summary : '';
+      const reportText = publicReportText(observed.result, typeof observed.summary === 'string' ? observed.summary : '');
       const summaryText = typeof observed.summary === 'string' ? observed.summary : reportText;
       // Keep the exact native outcome independently. A result pointer should
       // return public output, while process/event documents remain explicitly
@@ -80,8 +112,41 @@ export function createDelegationService({ archiveRoot, host, clock = Date.now, g
     } catch (error) { if (error.code === 'TASK_SOURCE_REVOKED') throw error; const current = await archive.get(taskId); transientErrors.set(taskId, safeCode(error)); const failed = { ...current, status: observed?.status && terminal(observed.status) ? observed.status : current.status, errorCode: safeCode(error), capture: { ...current.capture, complete: false, errorCode: safeCode(error) } }; try { return safeTask(await archive.patch(taskId, { status: failed.status, errorCode: failed.errorCode, capture: failed.capture })); } catch { return safeTask(failed); } }
   }
   function collect(args = {}) { return enqueue(() => collectInternal(args.taskId, { parentSessionId: args.parentSessionId, drain: args.drain === true })); }
-  function get(args = {}) { return enqueue(async () => { const before = await getTask(args.taskId, args.parentSessionId); if (args.refresh !== false && !completeArchive(before)) await collectInternal(args.taskId, { parentSessionId: args.parentSessionId }); const task = await getTask(args.taskId, args.parentSessionId), documentOffset = args.documentOffset ?? 0, documentLimit = args.documentLimit ?? 20; if (!Number.isSafeInteger(documentOffset) || documentOffset < 0 || !Number.isSafeInteger(documentLimit) || documentLimit < 1 || documentLimit > 20) throw taskFailure('TASK_PAGE', '任务目录页无效'); return safeTask(task, { documentOffset, documentLimit }); }); }
-  function list(args = {}) { return enqueue(async () => { const limit = args.limit ?? 20; if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw taskFailure('TASK_PAGE', '任务列表页无效'); let offset = 0, cards = (await archive.allCards()).filter(t => args.parentSessionId === undefined || t.parentSessionId === args.parentSessionId); const fingerprint = taskHash(cards.map(c => [c.taskId, c.updatedAt, c.status])); if (args.cursor) { let cursor; try { cursor = JSON.parse(Buffer.from(taskText(args.cursor, '任务游标', 2048), 'base64url').toString('utf8')); } catch { throw taskFailure('TASK_CURSOR', '任务游标无效'); } if (cursor.fingerprint !== fingerprint || cursor.parentSessionId !== (args.parentSessionId ?? null) || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0) throw taskFailure('TASK_CURSOR_CHANGED', '任务列表已变化，请重新读取'); offset = cursor.offset; } const items = []; for (const card of cards.slice(offset, offset + limit)) { const task = await archive.get(card.taskId); items.push(safeTask(task, { documentLimit: 0 })); } const next = offset + items.length; return { items, total: cards.length, nextCursor: next >= cards.length ? null : Buffer.from(JSON.stringify({ fingerprint, offset: next, parentSessionId: args.parentSessionId ?? null })).toString('base64url'), complete: next >= cards.length }; }); }
+  function get(args = {}) { return enqueue(async () => { const before = await getTask(args.taskId, args.parentSessionId); if (args.refresh !== false && !completeArchive(before)) await collectInternal(args.taskId, { parentSessionId: args.parentSessionId }); const task = await projectedTask(await getTask(args.taskId, args.parentSessionId)), documentOffset = args.documentOffset ?? 0, documentLimit = args.documentLimit ?? 20; if (!Number.isSafeInteger(documentOffset) || documentOffset < 0 || !Number.isSafeInteger(documentLimit) || documentLimit < 1 || documentLimit > 20) throw taskFailure('TASK_PAGE', '任务目录页无效'); return safeTask(task, { documentOffset, documentLimit }); }); }
+  function list(args = {}) { return enqueue(async () => {
+    const limit = args.limit ?? 20;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw taskFailure('TASK_PAGE', '任务列表页无效');
+    const withinScope = task => args.parentSessionId === undefined || task.parentSessionId === args.parentSessionId;
+    let offset = 0; const cards = (await archive.allCards()).filter(withinScope);
+    let fingerprint = taskHash(cards.map(card => [card.taskId, card.updatedAt, card.status]));
+    if (args.cursor) {
+      let cursor; try { cursor = JSON.parse(Buffer.from(taskText(args.cursor, '任务游标', 2048), 'base64url').toString('utf8')); } catch { throw taskFailure('TASK_CURSOR', '任务游标无效'); }
+      if (cursor.fingerprint !== fingerprint || cursor.parentSessionId !== (args.parentSessionId ?? null) || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0) throw taskFailure('TASK_CURSOR_CHANGED', '任务列表已变化，请重新读取');
+      offset = cursor.offset;
+    }
+    const items = [];
+    for (const card of cards.slice(offset, offset + limit)) items.push(safeTask(await projectedTask(await archive.get(card.taskId)), { documentLimit: 0 }));
+    // Appending a public projection updates metadata, but not creation order.
+    // Bind the next page to the updated snapshot rather than a stale self-hash.
+    fingerprint = taskHash((await archive.allCards()).filter(withinScope).map(card => [card.taskId, card.updatedAt, card.status]));
+    const next = offset + items.length;
+    return { items, total: cards.length, nextCursor: next >= cards.length ? null : Buffer.from(JSON.stringify({ fingerprint, offset: next, parentSessionId: args.parentSessionId ?? null })).toString('base64url'), complete: next >= cards.length };
+  }); }
+  function sourceFacts(args = {}) { return enqueue(async () => {
+    const sourceRefs = taskLinks({ sourceRefs: args.sourceRefs ?? [] }).sourceRefs, selected = new Set(sourceRefs.map(sourceKey));
+    const parents = args.parentSessionIds ?? [], limit = args.limit ?? 8;
+    if (!Array.isArray(parents) || parents.length > 16 || !Number.isSafeInteger(limit) || limit < 1 || limit > 16) throw taskFailure('TASK_PAGE', '任务关联事实查询范围无效');
+    const parentIds = new Set(parents.map(value => taskText(value, '来源父会话')));
+    const cards = (await archive.allCards()).filter(card => card.status !== 'revoked' && (!parentIds.size || parentIds.has(card.parentSessionId)));
+    const scan = cards.slice(-64), items = []; let matched = 0;
+    for (const card of scan) {
+      const task = await getTask(card.taskId), refs = task.sourceRefs.filter(ref => selected.has(sourceKey(ref)));
+      if (!refs.length) continue; matched++;
+      if (items.length < limit) items.push({ taskId: task.taskId, parentSessionId: task.parentSessionId, status: task.status,
+        resultAvailable: Boolean(task.resultDocumentId), captureComplete: task.capture.complete, relation: 'dependency_reference', sourceRefs: refs });
+    }
+    return { items, totalCandidates: cards.length, scannedCandidates: scan.length, truncated: scan.length < cards.length || matched > items.length };
+  }); }
   function read(args = {}) { return enqueue(async () => { const task = await getTask(args.taskId, args.parentSessionId); const value = await archive.read(args); await assertNotRevoked(task); return value; }); }
   function readChunk(args = {}) { return enqueue(async () => { const task = await getTask(args.taskId, args.parentSessionId); const value = await archive.readChunk(args); await assertNotRevoked(task); return value; }); }
   function material(args = {}) { return enqueue(async () => { const task = await getTask(args.taskId, args.parentSessionId), value = await archive.read(args); if (value.encoding !== 'utf8') throw taskFailure('TASK_MATERIAL_BINARY', '二进制文件不能作为文字记忆材料'); await assertNotRevoked(task); const to = value.nextOffset, ref = { sourceSessionId: task.sessionId, sourceEventId: 'task-material:' + value.documentId + ':' + value.sha256 + ':' + value.offset + ':' + to, available: true, sourceKind: 'xiangxu-task-material', sourceRole: 'assistant', sourceOrigin: 'system' }; const traceLocator = TRACE_PREFIX + Buffer.from(JSON.stringify({ taskId: task.taskId, documentId: value.documentId, sha256: value.sha256, from: value.offset, to })).toString('base64url'); return { ...value, sourceRef: ref, traceLocator, hostAvailable: true, sourceRefs: task.sourceRefs, sourceRecordIds: task.sourceRecordIds, memoryWritten: false }; }); }
@@ -94,5 +159,5 @@ export function createDelegationService({ archiveRoot, host, clock = Date.now, g
   function inspect() { return enqueue(async () => ({ ...await archive.inspect(), capabilities: host.capabilities?.() ?? null })); }
   function configureLimits(value) { return enqueue(() => archive.configureLimits(value)); }
   async function close() { if (closeTask) return closeTask; closing = true; try { unsubscribe?.(); } catch {} closeTask = (async () => { await ready; const preempted = new Set(); await Promise.allSettled((await archive.allCards()).filter(card => !terminal(card.status)).map(async card => { try { await host.cancel?.({ sessionId: card.sessionId }); preempted.add(card.sessionId); } catch {} })); await tail; await Promise.allSettled([...background.values()].map(x => x.promise)); for (const card of await archive.allCards()) { if (card.status === 'revoked') continue; const saved = await archive.get(card.taskId); if (terminal(saved.status) && saved.capture.complete && saved.resultDocumentId || saved.errorCode === 'TASK_CANCELLED_BEFORE_START') continue; if (!terminal(card.status) && !preempted.has(card.sessionId)) try { await host.cancel?.({ sessionId: card.sessionId }); } catch {} try { await collectInternal(card.taskId, { drain: true }); } catch {} } try { await host.close?.(); } finally { await archive.close(); closed = true; } })(); return closeTask; }
-  return { archiveRoot: archive.root, ready, create, get, list, read, readChunk, readTrace, material, retain: material, collect, cancel, archiveFile, forgetSources, inspect, configureLimits, close };
+  return { archiveRoot: archive.root, ready, create, get, list, sourceFacts, read, readChunk, readTrace, material, retain: material, collect, cancel, archiveFile, forgetSources, inspect, configureLimits, close };
 }

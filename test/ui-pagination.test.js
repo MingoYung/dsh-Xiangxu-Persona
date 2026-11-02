@@ -469,3 +469,38 @@ test('legacy gap counts stay understandable and a resolved state has no gap warn
   assert.doesNotMatch(content(ui).textContent, /来源核查记录尚未解决/);
   assert.equal(ui.walk(content(ui)).some(node => node.tagName === 'button' && node.textContent === '查看来源状态'), false);
 });
+
+const insufficientBudget = { ok: false, countingMethod: 'utf8_bytes_estimate', requiredTokens: 4300, recentMinimumTokens: 150,
+  configured: { totalTokens: 2970, recentMemoryTokens: 600, requestTokens: 32768 },
+  issues: [{ field: 'contextBudget.totalTokens', configured: 2970, required: 4300 }],
+  requiresExplicitApply: true, recommendationId: 'shown-recommendation', suggestedConfig: { contextBudget: { totalTokens: 5120, recentMemoryTokens: 600 } }, workIssues: [] };
+test('budget recovery displays scope and estimated units, and applies only a separately clicked current recommendation', async () => {
+  const ui = await frontend({ status: () => ({ available: true, runtime: {}, capacity: {}, agents: [], budgetPreflight: insufficientBudget }),
+    'config.recoverBudget': args => { assert.equal(args.recommendationId, 'shown-recommendation'); return { applied: true }; } });
+  await ui.evaluate("navigate('overview')");
+  assert.match(content(ui).textContent, /当前预算不足/); assert.match(content(ui).textContent, /UTF-8 保守估算单位/);
+  assert.match(content(ui).textContent, /只覆盖当前路由与关系/);
+  assert.equal(ui.calls.some(call => call.action === 'config.recoverBudget'), false);
+  await ui.button(content(ui), '应用这份预算建议').emit('click');
+  assert.equal(ui.calls.filter(call => call.action === 'config.recoverBudget').length, 1);
+  assert.equal(ui.calls.some(call => call.action === 'operations.start'), false);
+});
+
+test('budget draft validation refuses saving, fills the displayed suggestion only on click and requires a second explicit save', async () => {
+  const config = defaultConfig(), ui = await frontend({
+    status: () => ({ available: true, runtime: {}, capacity: {}, agents: [], budgetPreflight: insufficientBudget }),
+    'config.get': () => config,
+    'config.preflight': args => args.config.contextBudget.totalTokens >= 5120 ? { ...insufficientBudget, ok: true, issues: [], requiresExplicitApply: false } : insufficientBudget,
+    'config.update': args => { assert.equal(args.config.contextBudget.totalTokens, 5120); return config; },
+  });
+  await ui.evaluate("state.configGroup='4'; navigate('settings','budgets')");
+  ui.ids.get('config-contextBudget-totalTokens').value = '1';
+  await ui.button(content(ui), '保存设置').emit('click');
+  assert.equal(ui.calls.some(call => call.action === 'config.update'), false);
+  await ui.button(content(ui), '将建议填入草稿').emit('click');
+  assert.equal(ui.ids.get('config-contextBudget-totalTokens').value, '5120');
+  assert.equal(ui.calls.some(call => call.action === 'config.update'), false);
+  await ui.button(content(ui), '保存设置').emit('click');
+  assert.equal(ui.calls.filter(call => call.action === 'config.update').length, 1);
+  assert.equal(ui.calls.some(call => call.action === 'operations.start' || call.action === 'config.recoverBudget'), false);
+});

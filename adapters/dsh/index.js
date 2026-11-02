@@ -9,6 +9,8 @@ import { resolve, join, dirname, basename, relative, isAbsolute, sep } from 'nod
 import { MemoryRepository, PersonaRuntime, defaultConfig, observationAllows } from '../../core/index.js';
 import { normalizeDshEvent, dshEnvironment, sourceClassification } from './normalize.js';
 import { createDshModelPort } from './model.js';
+import { createNativeDeliveryFacts } from './native-delivery-facts.js';
+import { installWindowsAclBootstrap } from './compat/windows-acl.js';
 import { openControlPort } from './control.js';
 import { createInstanceManager } from './instances.js';
 import { validateDshMaintenanceExtension } from './maintenance-extensions.js';
@@ -61,6 +63,8 @@ const CONTROL_GUIDANCE = `你有一份跨会话连续的记忆和共同人格，
 需要保存这些决定时调用persona_decide。普通回话可正常表达；如果这轮想等待、只听或睡觉，用工具表达以便程序实际等候。没有每日次数、最短间隔、沉默惩罚、证据资格或强制履约。环境和时间是事实，主观印象可以暂时不准。人类作息是参考；你可以结合经历、当前理解、积压和容量判断是否有必要梳理，不按交流次数或固定天数强制进化，是否睡和怎样醒仍由你选择。
 工具协议：identityPlan={action:'new'|'associate'|'unknown',personId?,displayName?,sourceRefs?,reason?}表达认人，sessionId不是身份。replyPlan={action:'reply'|'wait'|'listen',target:{channelId,sessionId,personId}|null,pendingEventIds:[],replyAt:时间或null,recheckOn?:['new_message'|'environment_change'|'explicit_wake'],reason:说明}。nextCheckAt是epoch毫秒或null；可选择只等事件，不必设钟点。sleepPlan={action:'sleep'|'wake'|'continue',wakeCondition:'at_time'|'consolidation_complete'|'explicit_wake',wakeAt:时间或null,reason:说明}。retrievePlan={action:'search'|'skip',query?,targetPersonId?,scope?:'person'|'global'|'all',limit?}。未提供字段保留仍有效的决定，新子计划替换该子计划；null可清空可空字段。目标通道取本轮环境，不把他人的经历当作当前人的经历。
 identityPlan.sourceRefs选择这次要归属和关联通道的对话原件根，不是认人依据的引用栏；可以省略以识别当前窗口参与者，显式[]不关联历史根。personId表示关系归属和检索分区，role/sourceRole及speakerId表示实际发言来源；助手原件也可关联到某段关系，仍保留assistant角色、原speakerId、原话及来源ID，不会变成那个人说的话。是否关联、关联哪些原件由你选择。多人汇总时省略不会把其他人的来信也归给同一人；认另一组时显式选它的真实来源。只复制材料已有的{sourceSessionId,sourceEventId,available?}，不要猜ID或把引用原话当ID。sessionId直接复制环境target.sessionId，不添加dsh:；channelId是另一个带dsh:的字段。
+时间也可选用nextCheckAfterMs、replyPlan.replyAfterMs、sleepPlan.wakeAfterMs表达相对毫秒；程序按本次实际接纳决定的时钟换算一次，不必自行计算epoch，也不规定必须设时钟或采取行动。
+replyPlan.pendingEventIds可选择本次答复覆盖的完整已呈现原件；实际可见交付后才确认。唤醒摘要接收、任务完成或后来有输出都不自动证明某条旧消息已答。persona_introspect的section:state可查有界deliveryFacts：呈现记录、实际输出/回执和dependency_reference任务线索，缺失或截断会标明；它们不替你判断内容是否已经处理。
 consolidationPlan={action:'run'|'defer',targetPersonIds?:[人物ID或null],reason?}是你自己的梳理决定。run只处理所选对象各一批有界增量，不是以后每条消息自动更新；省略目标为当前人物加未知/global，显式[]不启动工作，null不代表虚构人物。醒着也能梳理；defer可以暂缓，无需达到固定分数或说明充分理由。各模块是否改变由你决定，空变更也有效。on_write呈现合并的机会事实，不强迫每次写入付费整理。选择consolidation_complete睡醒时要有对应所选工作；其它睡眠可以只是休息，不必进化。
 工具结果有nextCursor时，可保留原参数并带cursor继续看同一次结果；这不重复执行原决定或遗忘。fragment说明只看了哪一段，未读尾部仍可查询。
 persona_voice可查看当前设备可用的声音，并保存你选择的voiceId、rate和pitch。用户指定音色模式下，你的选择会保留备用而不覆盖用户设置；没有可用设备音色时可以保持未选。
@@ -131,12 +135,36 @@ function recentMessageIds(agent) {
   const history = agent.session?.deriveMessages?.() ?? [];
   return new Set([...pending, ...history].map(message => message.id));
 }
+function matchesExternalSource(source, external) {
+  return Boolean(external) && source?.kind === 'user' && source.xiangxuChannel?.platform === external.platform &&
+    source.xiangxuChannel?.accountId === external.accountId && source.xiangxuChannel?.conversation?.id === external.conversation.id &&
+    source.xiangxuChannel?.conversation?.type === external.conversation.type && source.xiangxuChannel?.sender?.id === external.sender.id &&
+    typeof source.platformMessageId === 'string' && source.platformMessageId.length > 0;
+}
+function completeMessageSource(message, record, external) {
+  if (message.id !== record.sourceEventId || message.role !== record.role || external && !matchesExternalSource(message.source, external)) return false;
+  const blocks = (Array.isArray(message.content) ? message.content : []).filter(block => block.type === 'text');
+  const structured = message.source?.xiangxuStructured;
+  if (!structured) return blocks.map(block => block.text).join('\n') === record.text;
+  // Only the registered platform's actual sender can use the native structured
+  // projection. Its metadata alone is not evidence that the original appeared.
+  if (record.role !== 'user' || !matchesExternalSource(message.source, external) || structured.rich?.hasStructuredContent !== true ||
+    typeof structured.originalText !== 'string' || structured.originalText !== record.text) return false;
+  const derivedText = '[平台结构化资料：不是用户键入的原话]\n' + JSON.stringify({ mentions: structured.rich.mentions, replies: structured.rich.replies,
+    faces: structured.rich.faces, media: structured.rich.media, forwards: structured.rich.forwards, perception: structured.rich.perception, derived: structured.derived ?? [] });
+  const expected = [...(structured.originalText ? [structured.originalText] : []), derivedText];
+  return blocks.length === expected.length && blocks.every((block, index) => block.text === expected[index]);
+}
+function completeHistorySource(agent, record, external) {
+  return (agent.session?.deriveMessages?.() ?? []).some(message => completeMessageSource(message, record, external));
+}
 function summarizeWake(wake) {
   return JSON.stringify({ wakeId: wake.wakeId, reason: wake.context?.reason ?? null, totalCount: wake.totalCount, remainingCount: wake.remainingCount,
     groups: wake.groups.map(group => ({ personId: group.personId,
       sessionId: group.sessionId, channelId: group.channelId, totalCount: group.totalCount ?? group.records.length,
       messages: group.records.map(record => ({ eventId: record.eventId, sourceSessionId: record.sourceSessionId,
-        sourceEventId: record.sourceEventId, role: record.role, text: record.text, fragment: record.fragment })) })) });
+        sourceEventId: record.sourceEventId, sourceAt: record.sourceAt, timezone: record.timezone,
+        role: record.role, text: record.text, fragment: record.fragment })) })) });
 }
 function sourcePageMetadata(records) {
   return records.map(record => {
@@ -190,6 +218,38 @@ export function createDshCoordinator(ctx, config = {}) {
   const errors = [];
   const report = error => { errors.push({ at: Date.now(), code: error.code ?? null, message: String(error.message ?? error).slice(0, 600) });
     if (errors.length > 50) errors.shift(); ctx.logger?.warn?.(`[persona-memory] ${error.code ?? 'execution_error'}: ${String(error.message ?? error).slice(0, 250)}`); };
+  const nativeDeliveryFacts = createNativeDeliveryFacts({ store: repository.store, clock: () => clock.now(), onError: report });
+  const deliveryViews = new Map();
+  async function getDeliveryFacts({ sessionId, limit = 16 } = {}) {
+    const pending = await repository.getPending();
+    const state = [...agents.values()].find(state => state.agent.session.id === sessionId);
+    const active = state?.activeByTurn.get(state.currentTurn);
+    const referencedIds = new Set([...(state?.admittedByTurn.get(state.currentTurn) ?? []), ...(active?.pendingSourcePage ?? []).map(row => row.eventId)]);
+    const value = nativeDeliveryFacts.inspect({ pending, sessionId, pendingEventIds: [...referencedIds], limit });
+    const scoped = pending.filter(record => !sessionId || record.sourceSessionId === sessionId || referencedIds.has(record.eventId));
+    if (typeof coordinator.tasks?.sourceFacts === 'function') {
+      const parents = [...new Set(scoped.map(record => record.sourceSessionId))], selectedParents = parents.slice(-16), parentSet = new Set(selectedParents);
+      const selected = scoped.filter(record => parentSet.has(record.sourceSessionId)).slice(-256);
+      const requestScope = { totalSourceRefs: scoped.length, inspectedSourceRefs: selected.length, totalParentSessions: parents.length,
+        inspectedParentSessions: selectedParents.length, truncated: selected.length < scoped.length || selectedParents.length < parents.length };
+      try { value.relatedTasks = { available: true, ...await coordinator.tasks.sourceFacts({
+        sourceRefs: selected.map(record => ({ sourceSessionId: record.sourceSessionId, sourceEventId: record.sourceEventId })),
+        parentSessionIds: selectedParents, limit: 8 }), requestScope };
+        value.relatedTasks.truncated ||= requestScope.truncated;
+      } catch (error) { report(error); value.relatedTasks = { available: false, errorCode: error.code ?? 'TASK_SOURCE_FACTS_UNAVAILABLE',
+        items: [], totalCandidates: null, scannedCandidates: 0, truncated: true, requestScope }; }
+    }
+    const items = value.pending.items, last = value.outputs.items.at(-1);
+    deliveryViews.set(sessionId, { available: value.available, ...(value.errorCode ? { errorCode: value.errorCode } : {}),
+      pendingCount: value.pending.total, inspectedPendingCount: items.length, truncated: value.pending.truncated || value.admissionHistoryTruncated,
+      pendingPreviouslyAdmitted: items.filter(item => item.admission?.complete).length,
+      pendingWithRequestStreamObserved: items.filter(item => item.admission?.streamObservedAt).length,
+      pendingWithLaterOutput: items.filter(item => item.laterOutputCount).length,
+      lastOutput: last ? { status: last.status, deliveredAt: last.deliveredAt, sourceSessionId: last.sourceSessionId, sourceEventId: last.sourceEventId } : null,
+      relatedTasksAvailable: value.relatedTasks?.available ?? false, relatedTaskCount: value.relatedTasks?.items?.length ?? 0, relatedTasksTruncated: value.relatedTasks?.truncated ?? false,
+      answeredByLaterOutputOrTask: 'not_inferred', details: 'persona_introspect section:state' });
+    return value;
+  }
   const enqueue = work => { const p = intake.then(work); intake = p.catch(report); return p; };
   const taskHost = createDelegationHost({ ctx, onError: report });
   const taskIsolation = createDelegationIsolation({ lookupWorker: lookupTaskWorker, lookupCall: async ({ sessionId, callId, event }) => {
@@ -243,6 +303,7 @@ export function createDshCoordinator(ctx, config = {}) {
       environment.externalChannel = structuredClone(facts); }
     const inputFacts = agents.get(agent.id)?.externalInput;
     if (facts && inputFacts) environment.externalInput = structuredClone(inputFacts);
+    environment.deliveryFacts = structuredClone(deliveryViews.get(agent.session.id) ?? { available: true, pendingCount: null, details: 'persona_introspect section:state', answeredByLaterOutputOrTask: 'not_inferred' });
     return { environment, sessionId: agent.session.id, channelId: environment.channelId,
       personId: getRoute(agent.session.id)?.personId ?? null, ...extra };
   };
@@ -455,7 +516,7 @@ export function createDshCoordinator(ctx, config = {}) {
     get initializationError() { return initializationError; },
     get mediaInitializationError() { return mediaInitializationError; },
     get taskInitializationError() { return taskInitializationError; },
-    taskHost, taskIsolation,
+    taskHost, taskIsolation, getDeliveryFacts,
     async readyState() { await coordinator.ready; await intake; return repository.getRuntime(); } };
   // The native request envelope is authoritative. Another plugin's complete
   // prompt may replace sections after the assembly waterfall; never pay for a
@@ -485,6 +546,8 @@ export function createDshCoordinator(ctx, config = {}) {
       failure.message += '（技术诊断：' + projectionFailure + '）';
       report(failure); throw failure;
     }
+    void nativeDeliveryFacts.admit(state.presentedSourcesByTurn.get(state.currentTurn) ?? [],
+      { sessionId: state.agent.session.id, turn: state.currentTurn, streamObserved: true }).catch(report);
     return next();
   }) : null;
   coordinator.ready = (async () => {
@@ -492,6 +555,8 @@ export function createDshCoordinator(ctx, config = {}) {
       // Runtime.open can resume queued wake/control work immediately. Routing
       // metadata must be available before those host callbacks are released.
       await repository.open();
+      await nativeDeliveryFacts.open();
+      await nativeDeliveryFacts.recoverSettled({ getPending: () => repository.getPending(), clearPending: ids => repository.clearPending(ids) });
       try {
         coordinator.retrievalProvider = createRetrievalProvider({ file: join(dirname(memoryRoot), basename(memoryRoot) + '.retrieval-provider.json'), repository });
         await coordinator.retrievalProvider.ready;
@@ -563,10 +628,7 @@ export function createDshCoordinator(ctx, config = {}) {
     if (!state || !message?.id || initializationError) return;
     const context = contextFor(agent);
     const external = externalChannels.sessions[agent.session.id], source = message.source;
-    const actualExternal = !external || source?.kind === 'user' && source.xiangxuChannel?.platform === external.platform &&
-      source.xiangxuChannel?.accountId === external.accountId && source.xiangxuChannel?.conversation?.id === external.conversation.id &&
-      source.xiangxuChannel?.conversation?.type === external.conversation.type && source.xiangxuChannel?.sender?.id === external.sender.id &&
-      typeof source.platformMessageId === 'string' && source.platformMessageId.length > 0;
+    const actualExternal = !external || matchesExternalSource(source, external);
     const platformTime = external && actualExternal && Number.isSafeInteger(source.platformSourceAt) && source.platformSourceAt >= 0 ? source.platformSourceAt : undefined;
     if (external && actualExternal) {
       state.externalInput = { ...(source.xiangxuStructured ? { structured: { messageId:source.platformMessageId, perception:source.xiangxuStructured.rich?.perception, mentions:source.xiangxuStructured.rich?.mentions?.length??0, replies:source.xiangxuStructured.rich?.replies?.length??0, faces:source.xiangxuStructured.rich?.faces?.length??0, media:source.xiangxuStructured.rich?.media?.length??0, forwards:source.xiangxuStructured.rich?.forwards?.length??0, derivedCount:source.xiangxuStructured.derived?.length??0 } } : {}), sourceAt: platformTime ?? null, textComplete: source.textComplete !== false,
@@ -669,8 +731,21 @@ export function createDshCoordinator(ctx, config = {}) {
       if (event.type === 'assistant/message' && normalized.dialogue?.text && !event.data.message.content.some(x => x.type === 'tool-call')) {
         if (active?.deliveryId) await runtime.acknowledgeDelivery(active.deliveryId, { ...(external ? receipt : { status: 'delivered', receiptId: `dsh-output:${session.id}:${event.seq}` }),
           sourceSessionId: session.id, sourceEventId: normalized.dialogue.sourceEventId, sourceKind: 'model', text: actualText, deliveredAt: receipt?.deliveredAt ?? event.time });
-        if (delivered) await repository.clearPending([...(state.admittedByTurn.get(event.data.turn) ?? [])]);
-        state.admittedByTurn.delete(event.data.turn); state.activeByTurn.delete(event.data.turn);
+        const candidates = new Set([...(state.admittedByTurn.get(event.data.turn) ?? []), ...(state.selectedPendingByTurn.get(event.data.turn) ?? [])]);
+        const actualTarget = contextFor(state.agent);
+        const settled = delivered ? (await repository.getPending()).filter(record => candidates.has(record.eventId) &&
+          record.sourceSessionId === session.id && record.channelId === actualTarget.channelId &&
+          (record.personId ?? null) === (actualTarget.personId ?? null)).map(record => record.eventId) : [];
+        // Persist exactly which IDs this real final acknowledged before changing
+        // pending, so an interruption can replay this receipt without inference.
+        await nativeDeliveryFacts.recordOutput({ sourceSessionId: session.id, sourceEventId: normalized.dialogue.sourceEventId,
+          channelId: actualTarget.channelId, personId: actualTarget.personId, text: actualText,
+          status: delivered ? 'delivered' : 'unknown', receiptId: receipt?.receiptId ?? (external ? null : `dsh-output:${session.id}:${event.seq}`),
+          deliveredAt: receipt?.deliveredAt ?? event.time ?? Date.now(), settledPendingEventIds: settled,
+          evidence: external ? 'platform_delivery_receipt' : 'native_visible_assistant_event' });
+        if (delivered) await repository.clearPending(settled);
+        state.admittedByTurn.delete(event.data.turn); state.presentedSourcesByTurn.delete(event.data.turn); state.selectedPendingByTurn.delete(event.data.turn); state.activeByTurn.delete(event.data.turn);
+        await getDeliveryFacts({ sessionId: session.id });
       }
       if (event.type === 'assistant/message' && event.data.usage) await repository.recordUsage({
         requestId: `dsh:${session.id}:${event.seq}`, purpose: 'native_turn', model: state.agent.session.requestHeader?.()?.config ?? null,
@@ -686,7 +761,7 @@ export function createDshCoordinator(ctx, config = {}) {
       for (const id of sourceIds) await repository.resolveMemoryGaps({ sourceSessionId: session.id, sourceCursor: event.seq, sourceEventId: id });
     }
     if (event.type === 'turn/end') {
-      state.admittedByTurn.delete(event.data?.turn); state.activeByTurn.delete(event.data?.turn); state.redirectedTurns.delete(event.data?.turn); state.nativeAdmittedTurns.delete(event.data?.turn);
+      state.admittedByTurn.delete(event.data?.turn); state.presentedSourcesByTurn.delete(event.data?.turn); state.selectedPendingByTurn.delete(event.data?.turn); state.activeByTurn.delete(event.data?.turn); state.redirectedTurns.delete(event.data?.turn); state.nativeAdmittedTurns.delete(event.data?.turn);
       state.processDependenciesByTurn.delete(event.data?.turn); state.snapshots.delete(event.data?.turn); state.reconsiderTurns.delete(event.data?.turn);
     }
     return { gap };
@@ -732,7 +807,7 @@ export function createDshCoordinator(ctx, config = {}) {
     const externalTextChannel = Boolean(externalChannels.sessions[agent.session.id]);
     const sections = (value.sections ?? []).filter(section => !externalTextChannel || section.name !== 'genui:fence');
     let snapshot;
-    try { snapshot = await runtime.compose(contextFor(agent, { requestId: 'dsh-' + agent.id + '-' + randomUUID(),
+    try { await getDeliveryFacts({ sessionId: agent.session.id }); snapshot = await runtime.compose(contextFor(agent, { requestId: 'dsh-' + agent.id + '-' + randomUUID(),
       pending: state.claimedSourceRefs ?? [] })); }
     catch (error) { const failure = personaContextFailure(error); report(failure); throw failure; }
     state.latestSnapshot = snapshot; state.snapshots.set(state.currentTurn, snapshot);
@@ -774,7 +849,7 @@ export function createDshCoordinator(ctx, config = {}) {
       if (taskIsolation.isWorkerSession(agent.session.id)) return { status: 'task_worker_isolated' };
       if (typeof agent.ctx?.tools?.restrict !== 'function') throw Object.assign(new Error('宿主不能建立陪伴人格的独立工具作用域'), { code: 'PERSONA_SCOPE_UNAVAILABLE' });
       const newChannel = !Object.hasOwn(checkpoints.sessions, agent.session.id);
-      const state = { agent, newParticipantIds: new Set(), activeByTurn: new Map(), admittedByTurn: new Map(), redirectedTurns: new Set(), nativeAdmittedTurns: new Set(),
+      const state = { agent, newParticipantIds: new Set(), activeByTurn: new Map(), admittedByTurn: new Map(), presentedSourcesByTurn: new Map(), selectedPendingByTurn: new Map(), redirectedTurns: new Set(), nativeAdmittedTurns: new Set(),
         currentTurn: null, disposed: false, snapshots: new Map(), processDependenciesByTurn: new Map(), toolResults: new Map(), toolResultBytes: 0,
         // Per-turn reconsideration admission (OBS-1): a legitimately triggered
         // reconsideration stays admitted across the same turn's tool continuation
@@ -871,11 +946,17 @@ export function createDshCoordinator(ctx, config = {}) {
           entered = { ...entered, messages: entered.messages.filter(message => !excluded.has(message.id)) };
           if (entered.messages.some(message => message.role === 'user' && sourceClassification(message.source?.kind, config.participantSourceKinds ?? ['user']) === 'participant_dialogue')) state.nativeAdmittedTurns.add(payload.turn);
           const admitted = state.admittedByTurn.get(payload.turn) ?? new Set();
-          const visible = new Set(entered.messages.map(message => message.id));
           const pending = await repository.getPending();
-          for (const record of pending) if (record.sourceSessionId === agent.session.id && visible.has(record.sourceEventId)) admitted.add(record.eventId);
+          const presented = [];
+          for (const record of pending) if (record.sourceSessionId === agent.session.id && entered.messages.some(message =>
+            completeMessageSource(message, record, externalChannels.sessions[agent.session.id]))) {
+            admitted.add(record.eventId); presented.push(record);
+          }
           for (const message of entered.messages) {
-            for (const id of message.source?.pendingEventIds ?? []) admitted.add(id);
+            if (message.source?.kind?.startsWith('persona-memory:')) for (const page of message.source.pendingSourcePage ?? []) {
+              const record = pending.find(record => record.eventId === page.eventId && record.sourceSessionId === page.sourceSessionId && record.sourceEventId === page.sourceEventId);
+              if (record) presented.push(rebuildSourceSlice(record, page));
+            }
             if (message.role === 'user' && sourceClassification(message.source?.kind, config.participantSourceKinds ?? ['user']) === 'participant_dialogue') {
               addProcessDependencies(state, payload.turn, { refs: [{ sourceSessionId: agent.session.id, sourceEventId: message.id }] });
             }
@@ -883,7 +964,10 @@ export function createDshCoordinator(ctx, config = {}) {
             if (message.source?.kind === 'runtime-context') addProcessDependencies(state, payload.turn, state.snapshots.get(payload.turn)?.sourceDependencies);
             state.newParticipantIds.delete(message.id);
           }
+          await nativeDeliveryFacts.admit(presented, { sessionId: agent.session.id, turn: payload.turn });
+          for (const record of presented) if (nativeDeliveryFacts.wasAdmitted(record.eventId)) admitted.add(record.eventId);
           state.admittedByTurn.set(payload.turn, admitted);
+          state.presentedSourcesByTurn.set(payload.turn, pending.filter(record => admitted.has(record.eventId)));
           // Check the latest committed surface after asynchronous admission work.
           state.promptProjection = inspectPersonaPromptProjection(agent.session, state.personaPromptTexts);
           if (!closed && !state.disposed && state.promptProjection.startsRequestSeries) entered = { ...entered, startsRequestSeries: true };
@@ -934,6 +1018,17 @@ export function createDshCoordinator(ctx, config = {}) {
               context.pendingEventIds = pending.filter(record => admitted.has(record.eventId) && record.fragment?.complete !== false).map(record => record.eventId);
             }
             result = await runtime.decide(args, context);
+            if (args.replyPlan && !context.executeReply) {
+              const plan = args.replyPlan, here = contextFor(executingAgent);
+              const sameTarget = !plan.target || plan.target.sessionId === executingAgent.session.id && plan.target.channelId === here.channelId &&
+                (plan.target.personId ?? null) === (here.personId ?? null);
+              const selected = plan.action === 'reply' && sameTarget ? (await repository.getPending()).filter(record =>
+                (plan.pendingEventIds ?? []).includes(record.eventId) && record.sourceSessionId === executingAgent.session.id && record.channelId === here.channelId &&
+                (record.personId ?? null) === (here.personId ?? null) &&
+                (admitted.has(record.eventId) || nativeDeliveryFacts.wasAdmitted(record.eventId) || completeHistorySource(executingAgent, record, externalChannels.sessions[executingAgent.session.id]))).map(record => record.eventId) : [];
+              state.selectedPendingByTurn.set(state.currentTurn, new Set(selected));
+              result.pendingConfirmation = { selectedEventIds: selected, confirmedBy: 'actual_visible_delivery_only' };
+            }
             if (args.identityPlan && result.effects?.identity) {
               const facts = contextFor(executingAgent), recognizedPersonId = result.effects.identity.personId ?? null;
               const selectedSourceSessionIds = args.identityPlan.sourceRefs?.length
@@ -1023,7 +1118,8 @@ export function createDshCoordinator(ctx, config = {}) {
               result = await repository.updateSelfProfile({ current: args.selfPatch ?? {} }, { actor: 'persona', expectedVersion: args.expectedVersion, sourceRefs, sourceRecordIds: [...new Set([...(dependencies?.recordIds ?? []), ...(snapshot?.recordIds ?? [])])] });
             } else result = await repository.getSelfProfile();
           }
-          else result = await runtime.introspect(args, context);
+          else { result = await runtime.introspect(args, context);
+            if (toolName === 'persona_introspect' && args.section === 'state') result = { deliveryFacts: await getDeliveryFacts({ sessionId: executingAgent.session.id }), ...result }; }
           }
           const output = await boundToolOutput(toolName, result, args, { counter: runtime.tokenCounter, budget: repository.config.contextBudget.retrievalTokens });
           if (toolName !== 'memory_forget' && sourceEpochAtStart !== sourceResultEpoch) return asToolJson({ status: 'memory_changed', code: toolName === 'persona_task' ? 'TASK_RESULT_INVALIDATED' : 'SOURCE_REVOKED_RESULT', ...(typeof result?.taskId === 'string' && /^task-[a-f0-9]{32}$/.test(result.taskId) ? { taskId: result.taskId } : {}), message: '记忆来源已变更，旧资料结果已失效；请查询实际状态，不要重复提交已执行的操作。' });
@@ -1179,6 +1275,12 @@ export function createDshCoordinator(ctx, config = {}) {
 }
 
 export function apply(ctx, config = {}) {
+  // Cordis scopes the optional compatibility wrapper to these actual services.
+  // The original sandbox/Job remains the command owner; no global env is set.
+  ctx.inject?.(['subprocess', 'sandbox'], scope => {
+    const compatibility = installWindowsAclBootstrap(scope);
+    scope.effect(() => () => compatibility.dispose());
+  });
   const root = resolve(config.memoryRoot ?? process.env.PERSONA_MEMORY_ROOT ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'persona'));
   if (config.role === 'worker') { mountTaskWorkerScope(ctx, { lookupWorker: lookupTaskWorker }); return; }
   if (config.role === 'agent') {

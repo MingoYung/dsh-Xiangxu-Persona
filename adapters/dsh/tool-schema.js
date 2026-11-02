@@ -2,6 +2,7 @@ const string = { type: 'string' };
 const strings = { type: 'array', items: string };
 const nullable = schema => ({ oneOf: [schema, { type: 'null' }] });
 const timestamp = nullable({ type: 'number', description: 'Epoch milliseconds based on the actual environment now. null means no selected wall-clock time.' });
+const chosenDelay = nullable({ type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const sourceRef = { type: 'object', required: ['sourceSessionId', 'sourceEventId'], properties: {
   sourceSessionId: { type: 'string', description: 'Exact source session ID copied from available source material.' },
   sourceEventId: { type: 'string', description: 'Exact stable source message/event ID from provided material; never a quote, person ID or channel ID.' },
@@ -84,13 +85,15 @@ export const TOOL_PARAMETERS = {
       reason: string,
     }, additionalProperties: false }),
     replyPlan: nullable({ type: 'object', required: ['action'], properties: {
-      action: { type: 'string', enum: ['reply', 'wait', 'listen'] }, target, pendingEventIds: strings, replyAt: timestamp, recheckOn, reason: string,
+      action: { type: 'string', enum: ['reply', 'wait', 'listen'] }, target, pendingEventIds: { ...strings, description: 'Optional pending source IDs you choose to address, including older questions in this same session. A matching visible delivered reply can settle these IDs only after their complete original has been presented. Seeing a wake summary or completing a related task alone does not settle them.' }, replyAt: timestamp,
+      replyAfterMs: { ...chosenDelay, description: 'Optional chosen delay in milliseconds, converted once from the actual decision clock. Use this or a non-null replyAt, not both. Zero is immediate; null clears a delay. No delay is required.' }, recheckOn, reason: string,
     }, additionalProperties: false }),
     retrievePlan: nullable({ type: 'object', required: ['action'], properties: {
       action: { type: 'string', enum: ['search', 'skip'] }, query: string, targetPersonId: string,
       scope: { type: 'string', enum: ['person', 'global', 'all'] }, limit: { type: 'integer' }, mode: { type: 'string', enum: ['auto','lexical','hybrid'] }, timeMode: { type: 'string', enum: ['all','current','past','asOf'] }, asOf: { type: 'integer', minimum: 0 }, seedIds: { type: 'array', items: { type: 'string', maxLength: 200 }, maxItems: 16 }, associationDepth: { type: 'integer', minimum: 0, maximum: 2 }, diversity: { type: 'string', enum: ['none','source'] }, reason: string,
     }, additionalProperties: false }),
     nextCheckAt: timestamp,
+    nextCheckAfterMs: { ...chosenDelay, description: 'Optional chosen delay until reconsideration, in milliseconds. Program converts it once using the actual clock; use this or non-null nextCheckAt, not both. No frequency is imposed.' },
     consolidationPlan: nullable({ type: 'object', required: ['action'], properties: {
       action: { type: 'string', enum: ['run', 'defer'], description: 'Choose one bounded memory review when useful, or defer. No required frequency, evidence count or personality change.' },
       targetPersonIds: { type: 'array', items: nullable(string), description: 'Actual known person IDs or null for unknown/global material. Omit for current person plus unknown/global. [] selects no work, not all people.' },
@@ -98,6 +101,7 @@ export const TOOL_PARAMETERS = {
     }, additionalProperties: false }),
     sleepPlan: nullable({ type: 'object', required: ['action'], properties: {
       action: { type: 'string', enum: ['sleep', 'wake', 'continue'] }, wakeAt: timestamp,
+      wakeAfterMs: { ...chosenDelay, description: 'Optional chosen sleep duration in milliseconds for at_time, e.g. 60000 for one minute. Converted once at decision admission and persisted as wakeAt. Use this or non-null wakeAt, not both; rest and duration remain your choice.' },
       wakeCondition: nullable({ type: 'string', enum: ['at_time', 'consolidation_complete', 'explicit_wake'] }), reason: string,
     }, additionalProperties: false }), cursor,
   },

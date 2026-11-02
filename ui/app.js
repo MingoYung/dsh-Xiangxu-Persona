@@ -352,6 +352,32 @@ function overviewQqConnection(instanceId, alive) {
   })();
   return area;
 }
+function budgetPreflightPanel(check, { alive = () => true, draft = false } = {}) {
+  if (!check) return null;
+  if (check.available === false) return notice('预算检查暂不可用：' + (check.message ?? check.errorCode ?? '请重新读取'), 'warning');
+  const unit = check.countingMethod === 'utf8_bytes_estimate' ? 'UTF-8 保守估算单位' : '当前计数器单位';
+  const panel = element('section', { class: 'form-section', 'aria-label': '当前资料预算检查' }, element('h3', {}, '当前资料预算检查'),
+    notice(check.ok ? '当前路由的人格核心与必要近况可以完整载入。' : '当前预算不足；消息和已选整理进度仍保留，尚未因此调用模型。', check.ok ? 'info' : 'warning'),
+    kv({ '最低必要材料': number(check.requiredTokens) + ' ' + unit, '当前材料上限': number(check.configured?.totalTokens), '完整请求上限': number(check.configured?.requestTokens) }),
+    element('p', { class: 'subtle-note' }, '这次检查只覆盖当前路由与关系，未来成长和其他关系的需要可能不同。检查不会发起模型调用，也不删除资料。'));
+  if (check.issues?.length) panel.append(element('ul', {}, check.issues.map(issue => element('li', {},
+    (issue.field === 'contextBudget.totalTokens' ? '人格材料总预算' : issue.field === 'contextBudget.recentMemoryTokens' ? '近期记忆参考预算' : '完整请求预算') + '不足：当前 ' + number(issue.configured) + (issue.required != null ? '，至少需要 ' + number(issue.required) : '，完整封装未能放入；请检查请求上限。')))));
+  if (check.requiresExplicitApply) {
+    const values = check.suggestedConfig?.contextBudget ?? {};
+    panel.append(kv({ '建议材料上限': number(values.totalTokens), '建议近期参考上限': number(values.recentMemoryTokens) }),
+      button(draft ? '将建议填入草稿' : '应用这份预算建议', async () => {
+        if (!alive()) return;
+        if (draft) { state.budgetDraft ??= { instanceId: state.instanceId, values: {} }; for (const [field, value] of Object.entries(values)) state.budgetDraft.values['contextBudget.' + field] = String(value); await renderPage(); return; }
+        await request('config.recoverBudget', { recommendationId: check.recommendationId }); if (!alive()) return;
+        toast('预算建议已应用；未调用模型，整理不会自动重试。'); await renderPage();
+      }, 'secondary'), element('p', { class: 'subtle-note' }, draft ? '填入后仍需点击保存；不会直接改变当前设置。' : '只调整显示的对话预算，仍受完整请求上限约束，不会自动续跑整理。'));
+  }
+  if (check.workIssues?.length) panel.append(notice('还有 ' + number(check.workIssues.length) + ' 份已选整理的完整封装超过处理预算；原批次、候选和进度均保留。调整后请在成长记录中继续同一批，不要另开一批。', 'warning'),
+    element('div', { class: 'record-list' }, check.workIssues.map(issue => kv({ '原批次': issue.runId, '当前完整请求上限': number(issue.configured), '这页至少需要': number(issue.required) }))),
+    button('调整完整请求上限', () => { state.configGroup = String(configGroups.findIndex(([, fields]) => fields.some(([path]) => path === 'processingLimits.consolidationRequestTokens'))); return navigate('settings', 'budgets'); }, 'secondary'),
+    button('查看成长记录', () => navigate('evolution'), 'link'));
+  return panel;
+}
 async function overviewPage() {
   const status = state.status, runtime = status.runtime ?? {}, capacity = status.capacity ?? {}, jobs = runtime.jobCounts ?? {};
   const instanceId = state.instanceId, generation = state.generation;
@@ -397,6 +423,7 @@ async function overviewPage() {
     gaps > 0 ? card('来源状态说明', gapText, element('p', { class: 'small muted' }, '同一来源可能对应多个过程片段或重复记录。已有原件和历史缺口会保留；回补仅处理实际可用的来源。'), button('查看来源诊断', () => navigate('maintenance', 'source-diagnostics'), 'secondary compact')) : null, controls,
     status.agents?.length ? card('已接入的会话', '', status.agents.map(agent => kv({ '会话': agent.sessionId, '关系': personName(agent.personId), '渠道': agent.channelId }))) : empty('还没有接入人格会话', '回到 DSH 对话，选择“相续人格”预设即可开始。'));
   return element('div', {}, overviewQqConnection(instanceId, alive), onboardingHint(), daily,
+    status.budgetPreflight && (!status.budgetPreflight.ok || status.budgetPreflight.workIssues?.length) ? budgetPreflightPanel(status.budgetPreflight, { alive }) : null,
     gaps > 0 ? notice(element('div', {}, element('p', {}, gapText), button('查看来源状态', () => openSection('runtime'), 'secondary compact')), 'warning') : null,
     !status.agents?.length ? element('p', { class: 'getting-started' }, '在 DSH 对话中选择“相续人格”预设，即可开始聊天。') : null,
     destinations(destination('了解相续', '它如何描述自己，以及留下的性格与习惯。', () => navigate('persona')),
@@ -1070,7 +1097,7 @@ async function settingsPage() {
     destination('人格管理', '切换、归档保留或明确清除人格，分别管理已有资料。', () => openSection('instances')),
     destination('交流与时间', '时区，以及整理机会的呈现方式。', () => openSection('general')),
     destination('整理资料助手', '可选的资料保真建议，由人格决定是否采纳。', () => openSection('assistant'), current ? current.reviewAssistant?.enabled ? '已开启' : '已关闭' : '加载后查看'),
-    destination('容量与模型预算', '按需要调整资源上限，通常保持默认即可。', () => openSection('budgets')),
+    destination('容量与模型预算', '先检查当前资料能否完整载入，再按需要调整资源上限。', () => openSection('budgets')),
     destination('数据维护与诊断', '备份、恢复、校验以及运行诊断。', () => navigate('maintenance')),
     destination('报告问题', '复制最小诊断，在 GitHub 提交问题并跟进处理结果。', () => openSection('support')),
     destination('使用说明', '查看日常操作、记忆方式与可选功能的说明。', () => openSection('user-guide'))));
@@ -1116,6 +1143,8 @@ async function settingsPage() {
     for (const [path, label, hint] of definitions) { const input = field('config-' + path.replaceAll('.', '-'), label, budgetDraft[path] ?? getPath(current, path), { type: 'number', min: budgetMinimum(path), hint }); inputs.set(path, input.input); grid.append(input.wrapper); }
     group.append(grid); form.append(group);
   }
+  const budgetFeedback = element('div', { 'aria-live': 'polite' });
+  if (state.view === 'budgets') form.append(budgetPreflightPanel(state.status.budgetPreflight, { alive }), budgetFeedback);
   async function saveSettings() {
     if (!alive()) return;
     const partial = {};
@@ -1124,6 +1153,11 @@ async function settingsPage() {
     if (state.view === 'budgets') { captureBudgetDraft(); for (const [path, raw] of Object.entries(budgetDraft)) { const value = Number(raw), min = budgetMinimum(path); if (!raw.trim() || !Number.isSafeInteger(value) || value < min) throw new Error('请修正未保存的容量值：' + path); if (value !== getPath(current, path)) setPath(partial, path, value); } }
     for (const [path, input] of inputs) { const value = Number(input.value); if (!input.value.trim() || !Number.isSafeInteger(value) || value < Number(input.min)) throw new Error('请输入有效整数：' + path); if (value !== getPath(current, path)) setPath(partial, path, value); }
     if (!Object.keys(partial).length) { toast('没有配置变更。'); return; }
+    if (partial.contextBudget || partial.processingLimits?.consolidationRequestTokens !== undefined) {
+      const check = await request('config.preflight', { config: partial }); if (!alive()) return;
+      replace(budgetFeedback, budgetPreflightPanel(check, { alive, draft: true }));
+      if (!check.ok) { toast('设置尚未保存。请查看预算检查，可将有界建议填入草稿。'); return; }
+    }
     await request('config.update', { instanceId, config: partial });
     if (!alive()) return;
     if (state.view === 'budgets') state.budgetDraft = null;
@@ -2026,8 +2060,11 @@ async function tasksPage() {
     const summary = typeof result.summary === 'string' ? result.summary : result.summary?.text;
     replace($('detail-content'), element('h2', {}, result.title || '独立任务'), pill(result.status),
       summary ? element('div', {}, element('h3', {}, '结果摘要'), element('pre', { class: 'data-preview' }, summary), result.summary?.truncated ? notice('摘要不是完整报告，完整结果在下方资料中。') : null) : null,
+      result.publicProjection?.available === false ? notice('公开报告暂不可用；原始资料仍保留，可在下方资料目录中按页查看或自行下载。' + (result.publicProjection.message ? ' ' + result.publicProjection.message : '') + (result.publicProjection.code ? '（' + result.publicProjection.code + '）' : ''), 'warning') : null,
       result.capture?.complete === false ? notice('任务状态与资料完整性分别记录；当前仍有未收齐资料或来源缺口。', 'warning') : null,
-      element('h3', {}, '原始任务、过程与产物'), (result.documents ?? []).length ? element('div', { class: 'record-list' }, result.documents.map(doc => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, doc.name ?? doc.documentId), tag(doc.kind)), element('p', { class: 'small muted' }, `${number(doc.bytes)} bytes · ${doc.sha256}`), button('按页查看', () => readDocument(taskId, doc), 'secondary compact'), button('下载原文件', () => request('ui.task.download', { instanceId, taskId, documentId: doc.documentId }), 'secondary compact')))) : empty('暂无已归档资料', '只呈现实际保存的数据。'), disclosure({}, element('summary', {}, '任务信息与编号'), kv({ '任务': result.title || result.taskId, '状态': labels[result.status] ?? result.status, '任务编号': result.taskId, '创建': date(result.createdAt), '资料数': number(result.documentCount), '资料已收齐': result.capture?.complete ? '是' : '尚未确认', '实际错误码': result.capture?.errorCode ?? result.errorCode ?? '无' })));
+      element('h3', {}, '原始任务、过程与产物'), (result.documents ?? []).length ? element('div', { class: 'record-list' }, result.documents.map(doc => element('div', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, doc.name ?? doc.documentId), tag(doc.kind)),
+        result.publicProjection?.available === false && doc.documentId === result.publicProjection.originalDocumentId ? element('p', { class: 'small muted' }, '原始结果封装（非公开报告）') : null,
+        element('p', { class: 'small muted' }, `${number(doc.bytes)} bytes · ${doc.sha256}`), button('按页查看', () => readDocument(taskId, doc), 'secondary compact'), button('下载原文件', () => request('ui.task.download', { instanceId, taskId, documentId: doc.documentId }), 'secondary compact')))) : empty('暂无已归档资料', '只呈现实际保存的数据。'), disclosure({}, element('summary', {}, '任务信息与编号'), kv({ '任务': result.title || result.taskId, '状态': labels[result.status] ?? result.status, '任务编号': result.taskId, '创建': date(result.createdAt), '资料数': number(result.documentCount), '资料已收齐': result.capture?.complete ? '是' : '尚未确认', '实际错误码': result.capture?.errorCode ?? result.errorCode ?? '无' })));
     replace($('detail-footer'), result.nextDocumentOffset != null ? button('下一页资料', () => openTask(taskId, result.nextDocumentOffset), 'secondary') : null,
       documentOffset > 0 ? button('返回首批资料', () => openTask(taskId), 'secondary') : null,
       button('刷新实际状态', () => openTask(taskId, documentOffset), 'secondary'),
@@ -2038,7 +2075,9 @@ async function tasksPage() {
   async function load(cursor) {
     const generation = ++listGeneration, result = await request('tasks.list', { instanceId, limit: 10, ...(cursor ? { cursor } : {}) }); if (!current() || generation !== listGeneration) return;
     pageNumber = cursor ? pageNumber + 1 : 1;
-    replace(listing, getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(task => element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, task.title || task.taskId), tag(labels[task.status] ?? task.status)), element('p', { class: 'small muted' }, `${date(task.createdAt)} · ${number(task.documentCount)} 份资料 · ${task.capture?.complete ? '资料已收齐' : '资料完整性待确认'}`), button('查看任务与资料', () => openTask(task.taskId), 'secondary compact')))) : empty('尚无独立任务', '相续可以自主选择委派。浏览此页不会创建任务或调用模型。'), paginator(result, load, { pageNumber }));
+    replace(listing, getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(task => element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, task.title || task.taskId), tag(labels[task.status] ?? task.status)), element('p', { class: 'small muted' }, `${date(task.createdAt)} · ${number(task.documentCount)} 份资料 · ${task.capture?.complete ? '资料已收齐' : '资料完整性待确认'}`),
+      task.publicProjection?.available === false ? notice('公开报告暂不可用，原始资料仍保留；打开任务查看。', 'warning') : null,
+      button('查看任务与资料', () => openTask(task.taskId), 'secondary compact')))) : empty('尚无独立任务', '相续可以自主选择委派。浏览此页不会创建任务或调用模型。'), paginator(result, load, { pageNumber }));
   }
   container.append(card('自主委派与独立资料', '相续决定是否委派、读哪些结果、记住什么。子任务使用独立工作预设，详细过程单独保存；查询资料本身不会写入人格记忆。',
     view.host?.available === false ? notice('当前宿主的原生派发服务尚不可用；已有档案仍可查看。', 'warning') : null,

@@ -41,7 +41,7 @@ export async function fitStructuredSection(name, groups, { counter, budget, canF
 }
 
 /** A bounded view of the same originals, never a consumption or a new summary. */
-export async function recentMemorySection(material, context, { counter, budget, canFit }) {
+export async function recentMemorySection(material, context, { counter, budget, canFit, minimumOnly = false, measureText = text => counter.count(text) }) {
   const source = material.recentMemory ?? { items: material.recent ?? [], total: (material.recent ?? []).length,
     omitted: 0, preferredDays: null, asOf: null, originalsRemainQueryable: true };
   const items = (source.items ?? []).filter(record => !Object.hasOwn(record, 'personId') || record.personId === (context.personId ?? null));
@@ -67,6 +67,16 @@ export async function recentMemorySection(material, context, { counter, budget, 
       const annotation = Object.fromEntries(['title', 'background', 'process', 'outcome', 'details', 'feltThen', 'meaningNow', 'indexCodes']
         .filter(key => record.timeline[key] && (!Array.isArray(record.timeline[key]) || record.timeline[key].length)).map(key => [key, record.timeline[key]]));
       if (Object.keys(annotation).length) entry.timeline = annotation;
+    }
+    if (minimumOnly) {
+      const points = Array.from(record.text ?? ''), fragment = { ...entry, text: points.slice(0, 1).join(''),
+        fragment: { from: 0, to: Math.min(1, points.length), total: points.length, complete: points.length <= 1 }, annotationsOmitted: Boolean(entry.timeline) };
+      delete fragment.timeline;
+      selected.push(entry); const fullCost = await measureText(render()); selected.pop();
+      selected.push(fragment); const fragmentCost = await measureText(render()); selected.pop();
+      const chosen = fullCost <= fragmentCost ? entry : fragment;
+      selected.push(chosen); if (chosen.fragment) fragments.push({ id: chosen.id, ...chosen.fragment });
+      break;
     }
     selected.push(entry);
     if (await fits()) continue;

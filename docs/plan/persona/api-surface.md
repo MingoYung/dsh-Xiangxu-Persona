@@ -6,9 +6,9 @@
 
 0.6.0历史布局与继续保留的能力（当前导航已在0.8.0重组）：产品名`dsh-Xiangxu-Persona`，包名`dsh-xiangxu-persona`，预设展示名“相续人格”；内部presetId `persona-memory`与数据契约`persona-memory/3`保留兼容。原生九页设置沿用DSH宿主样式，保留QQBot／微信iLink扫码、实际能力许可与形象创作，新增“任务与资料”。主人格通过persona_task自主派发，子任务显式使用xiangxu-task-worker独立工作预设，任务过程、原始资料与完整报告存独立档案，父会话按需读取并自主选择retain片段供原有记忆整理。主预设共八工具，保留继承工具mask；工作预设不自动挂共享人格写入工具，也不把AI委派指令当真人原话。是否委派、记什么及怎样成长仍由人格决定。其它预设不变，既有平台与真实供应商验证边界保留。当前接口和分级证据见[任务与资料](../../delegation-and-task-archives.md)、[管理说明](../../management-ui.md)、[渠道接入](../../channel-integration.md)与[形象创作](../../media-and-identity.md)。
 
-修订日期：2026-10-30。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
+修订日期：2026-11-03。插件格式统一为 `persona-memory/3`，正式业务字段见 [persona-schema.md](persona-schema.md)，执行顺序见 [architecture.md](architecture.md)。
 
-本文保留上一轮从本机安装包、官方 README 和既有插件读取的宿主出处，同时收回把“接口存在”直接写成“端到端行为成立”的结论。本次文档修订没有运行宿主探针，不能据此声称事件完整性、idle agent 自动启动、睡眠静默、请求作用域或最终送达已经实测。
+本文保留上一轮从安装包、官方README和既有插件读取的宿主出处，接口存在不等于端到端行为成立。当前维护同步已取得的零模型函数／注册工具证据与PowerShell原生组件探针；本批未新增真实模型或正式社交验收。确定性宿主fixture、原生组件和真实模型行为分别记录，不据文档或局部探针声称所有事件、睡眠、主动与最终送达已全面复验。
 
 ## 1. 取证对象与证据边界
 
@@ -84,13 +84,17 @@ ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => { /* ... */ })
 
 P0 记录“提交→入队→领取→请求→assistant 源事件→通道回执”的对应关系，以稳定 deliveryId 对账。同一对象多个 session/channel 必须先解析目标。关闭会话、已销毁 agent、进程重启、请求中急停、领取后崩溃分别测试。只有 inbox 已接收时状态为 submitted；有实际交付确认才为 delivered；不明为 unknown，不盲目重发。
 
+现行确认链将acknowledgeWake与具体来信结算拆开：汇总接收只记录交接／源页进度；完整原文呈现按累计区间核实，末页complete不覆盖未读头部。原生persona_decide.replyPlan.pendingEventIds可明确选同会话旧来信，仅在真实、完整呈现且匹配实际session／channel／person时接纳。真实可见assistant最终事件或外部delivered回执，才结算该轮实际准入／选中的匹配来信；工具、沉默、unknown或回复其它通道均不清pending，也不删除C1原话。
+
+适配层getDeliveryFacts({sessionId,limit})供当前会话和本轮实际呈现的来源查询；environment.deliveryFacts是紧凑摘要，persona_introspect(section:state)提供有界详情。host-delivery-facts.json上限256条呈现／64条输出／262144字节，不含正文，历史逐出明确报告。streamObservedAt只证明该接纳回合出现真实llm/stream，不证明供应商逐字接收原文或语义读懂；对应摘要字段为pendingWithRequestStreamObserved。后来输出、相关任务completed与dependency_reference不是旧问题已答的证明，answeredByLaterOutput保持not_inferred；冷恢复只重放真实回执明确记录的settledPendingEventIds，不替人格追认。任务事实不可用单独报available:false，不阻断普通聊天。
+
 ### D. 生成控制与睡眠
 
 前轮列出的相关钩子有 agent/pre-step、agent/turn-stopping、agent/assistant-stream、agent/status、agent/created、agent/disposed。记录中的 agent/pre-step 可返回 `{kind:'reject'}` 或 `{kind:'enter',messages,startsRequestSeries?}`。这些是待复核的宿主形状；ArchivedSessionGate 的相似用法不足以证明“reject 等于睡觉时静默保留队列”。
 
 必须实测 reject 是否显示错误、重试、消费 inbox 或已经开始一个 turn；enter 的 messages 是追加还是替换、何时持久化；取消生成是否仍产生部分 assistant 事件。根据实际结果实现睡中无输出、醒来一次接收汇总与用户停止主动。若此钩子不合适，用宿主实际提供的排队/暂停入口，不用未核返回值假装语义成立。
 
-persona_decide 是插件计划新增的稳定工具，不是宿主已提供 API。它把人格决定持久化到 DecisionRecord，再由适配层执行 attention/replyPlan/sleepPlan/nextCheckAt/retrievePlan。决定字段见 persona-schema；宿主真实执行接口和返回状态在 P0 确认。人格可选择定时或事件型执行条件：ReplyPlan.recheckOn 支持 new_message/environment_change/explicit_wake；SleepPlan.wakeCondition 支持 at_time/consolidation_complete/explicit_wake。只有 at_time 需要 wakeAt；listen 可只等事件，无需墙钟。程序恢复对应监听，不填固定作息替代它。
+persona_decide是本插件注册的稳定工具，不是宿主内置API。它把人格决定持久化到DecisionRecord，再由适配层执行identityPlan／attention／replyPlan／sleepPlan／nextCheckAt／retrievePlan／consolidationPlan。决定字段见persona-schema，宿主真实执行接口和结果按各层证据核验。人格可选择定时或事件型条件：ReplyPlan.recheckOn支持new_message／environment_change／explicit_wake；SleepPlan.wakeCondition支持at_time／consolidation_complete／explicit_wake。只有at_time需要wakeAt或wakeAfterMs输入；listen可只等事件，无需墙钟。程序恢复对应监听，不填固定作息替代它。
 
 ### E. 工具注册与结果上下文
 
@@ -120,6 +124,8 @@ ctx.effect(() => {
 
 可复用的是“资源随插件释放清理”的范式，本方案不照搬固定轮询频率。调度器按人格已持久化的 nextCheckAt/wakeAt 安排定时任务，同时恢复 recheckOn 及 wakeCondition 的事件监听；整理完成唤醒需对应 run 已提交。热重载、进程重启、机器休眠后重新对账。人格选择定时复查时，时间经过就是到期执行条件，无新消息也不能跳过；选择仅等事件时忠实恢复监听。
 
+persona_decide的nextCheckAfterMs、replyPlan.replyAfterMs、sleepPlan.wakeAfterMs允许人格表达时长，非负安全整数毫秒在持久接纳时按同一次实际时钟换算一次；DecisionRecord和调度器只保存／恢复绝对时点。幂等operationId重放和冷恢复不重启延迟。同一对非空绝对／相对值冲突或时长无效明确拒绝；0为立即，null和省略沿权威schema，不填默认等待或频率。
+
 已有 `@deepseek-ai/dsh-schedule` 包，前轮只确认 schedule/change、delivery-history 与 README 存在，未细读公开接口。本期可用 effect 管理一次性定时器，仍须验证调度恢复与目标 agent 唤起；如后续使用 schedule 包，先核具体语义，不能把它写成已完成依赖。
 
 ### G. 持久化、历史与完整临时过程
@@ -138,7 +144,13 @@ agent/assistant-stream 与 tool/result 是否暴露完整原件、不同供应�
 
 新插件可以与它组合，但须明确部署底稿和 C3 anchor 的权威关系，避免两个身份基调各自漂移。section 名独立仅解决命名冲突，不解决共同人格的一致来源，也不解决每个请求的动态材料作用域。
 
+### I. Windows PowerShell与原生受限启动
+
+DSH适配层installWindowsAclBootstrap(ctx)仅在Windows/Electron与当前exe旁内置ACL runner精确匹配时包装同步subprocess.spawn。子进程补Node入口、恢复原环境、按需创建隐藏console并还原stdio，然后执行原runner；ACL／restricted token／Windows Job与控制字段保留，不改变shell权限或人格判断。非匹配、自定义、独立Node或已提供Node标记的调用直通；dispose按引用计数释放，不覆盖后装wrapper。用户不需重装PS7或设置永久环境。具体原生组件证据、未覆盖的完整SDK／控制FD回环及只读CLM／原UTF8前导限制见[PowerShell兼容](../../windows-powershell-compat.md)。
+
 ## 4. 本插件必须自己补的能力
+
+现行owner预算接口为config.preflight({config?})与config.recoverBudget({recommendationId})。前者走核心runtime.preflightConfig，使用真实组装和计数口，只读检查当前路由下必要人格／近况与完整请求；不检索、不存snapshot、不消费pending／游标、不调模型。后者只显式应用当前资料仍匹配的有界建议，陈旧返回BUDGET_PREFLIGHT_STALE；config.update保存不足先返回CONFIG_BUDGET_INSUFFICIENT。建议不提高完整请求硬上限，也不自动续跑整理。已暂停run的budgetRequirement显示实际阶段／页／偏移／需求；硬顶需用户明确调整，继续工作仍显式选择原runId，不假装纯预检已覆盖所有未读页或未来成长。
 
 以下是插件设计任务，不能记作“宿主原生已经保证”：
 
@@ -194,6 +206,8 @@ DSH设置沿用宿主颜色、字体和透明背景；第七页“聊天渠道�
 完整委派prompt、宿主实际可取得的会话事件、工具结果与最终报告保存在独立.tasks档案；显式archive_file将所选工作区产物复制成带SHA的快照，不等于自动备份整个工程目录。默认总容量1GiB、单任务与单资料64MiB、任务收据4096条；owner可在“任务与资料”页高级设置调整资源上限。容量满保留旧资料／幂等凭据并明确报错，未归档尾部标capture.complete:false；删除／关闭任务不假称已经保存全部原件。
 
 父会话通过status/read查询实际状态及按需读取；status默认只返回紧凑任务卡，显式documentOffset／documentLimit才附带资料目录页。retain选择真实资料的有界片段送入既有自主整理，不直接写人格、不要求任何模块变化。资料保留真实AI／工具／网页来源与原件定位，完整性、SHA与分页状态分别报告。明确遗忘通过源依赖撤销相关任务档案，旧原始宿主日志或外部副本不被冒称已删除；unknown任务不因重载自动重新执行。
+
+公开结果与原生封套分开：新原生结果另存native-result.json，默认报告为final-report.txt。完整旧final-result.json按需追加公开视图，只调整默认结果与摘要指针，旧字节／ID／SHA／来源不变。转换前核4MiB处理上限；超限、无效JSON或容量不足时单项publicProjection.available:false并保留originalDocumentId，响应resultDocumentId／summary为空，不阻断其它任务。显式原件read／导出仍可用，未借迁移重调模型、删原件或声称旧来信已答。
 
 完整动作、存储范围、权限与验收口径见[自主委派与任务档案](../../delegation-and-task-archives.md)。工作预设的能力限制继承DSH用户权限；full-access模式下没有额外OS沙箱。普通对话是否关注、回复、主动、睡眠以及是否整理的原有契约未变。
 

@@ -60,17 +60,18 @@ test('partial control notice retains every source ID and exact Unicode slice wit
   assert.equal((await f.a.handlers.get('agent/pre-step')({ messages: [], turn: 1 }, async () => ({ kind: 'enter', messages: [] }))).kind, 'reject');
 });
 
-test('a wake source remains available to a cross reply after native admission legitimately clears the complete pending receipt', async t => {
+test('a wake source remains pending after summary admission and remains available to a cross reply', async t => {
   const f = await fixture(t), source = await f.incoming('A complete sleep-time source that remains an original after wake acknowledgement.');
   await f.runtime.decide({ sleepPlan: { action: 'sleep', wakeCondition: 'explicit_wake', wakeAt: null } }, f.coordinator.contextFor(f.a));
   await f.runtime.idle(); await f.runtime.handleSignal('explicit_wake', f.coordinator.contextFor(f.a));
   const notice = f.a.inbox.nextTurn.shift(); assert.equal(notice.source.kind, 'persona-memory:wake');
   assert.equal(notice.source.pendingSourcePage[0].fragment.complete, true);
-  await f.admit(f.a, notice, 1); assert.equal((await f.repository.getPending()).length, 0);
+  await f.admit(f.a, notice, 1); assert.deepEqual((await f.repository.getPending()).map(record => record.eventId), [source.eventId], 'summary handoff is not a visible reply');
   const result = await f.cross(); assert.notEqual(result.status, 'memory_error');
   const body = JSON.parse(f.replies[0].messages.at(-1).content);
   assert.equal(body.pending[0].text, source.record.text); assert.equal(body.pending[0].sourceSessionId, f.a.id);
   assert.equal(f.replies[0].context.environment.sessionId, f.b.id);
+  assert.deepEqual((await f.repository.getPending()).map(record => record.eventId), [source.eventId], 'a reply sent to another session cannot acknowledge the original recipient');
   assert.equal((await f.repository.getContext({ personId: null })).records.filter(record => record.sourceEventId === source.record.sourceEventId).length, 1);
 });
 

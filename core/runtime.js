@@ -1,8 +1,10 @@
-import { SCHEMA_VERSION, defaultConfig, mergeConfig, validateDecision, observationAllows, newId, emptyRuntime } from './schema.js';
+import { SCHEMA_VERSION, defaultConfig, mergeConfig, validateConfig, validateDecision, observationAllows, newId, emptyRuntime } from './schema.js';
 import { detached, freeze, createTokenCounter, buildSnapshot, controlMessages, replyMessages, consolidationMessages, consolidationContextPage, conversationPage } from './prompts.js';
 import { createHash } from 'node:crypto';
 import { reviewAssistantMessages, reviewAssistantReport, visibleContextRecordIds } from './review-assistant.js';
 import { countStringValues, serializedBytes } from './capacity.js';
+import { resolveDecisionTimes } from './decision-time.js';
+import { measureContinuityRequirements } from './request-snapshot.js';
 
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const terminal = status => status === 'delivered' || status === 'cancelled';
@@ -170,8 +172,10 @@ export class PersonaRuntime {
       if (pending) return { pending };
       const identityScope = this._resolveIdentityScope(input.identityPlan, this._context(context));
       await this._validateIdentitySources(input.identityPlan, { ...context, ...identityScope });
+      const decidedAt = this.now();
+      input = resolveDecisionTimes(input, decidedAt);
       const merged = { ...detached(previous), ...detached(input), schemaVersion: SCHEMA_VERSION,
-        decisionId: newId('decision'), decidedAt: this.now(), contextVersion: context.environment?.version ?? context.contextVersion ?? 0,
+        decisionId: newId('decision'), decidedAt, contextVersion: context.environment?.version ?? context.contextVersion ?? 0,
         srcRefs: detached(context.srcRefs ?? previous.srcRefs ?? []) };
       if (input.identityPlan?.action === 'new') merged.identityPlan = { ...input.identityPlan, personId: input.identityPlan.personId ?? newId('person') };
       validateDecision(merged);
@@ -309,7 +313,7 @@ export class PersonaRuntime {
   async search(input, context = {}) { return this.repository.search(input, { personId: this._person(context) }); }
   async forget(input, context = {}) { return this.repository.forget(input, { personId: this._person(context) }); }
   async introspect(input = {}, context = {}) { return this.repository.introspect(input, { personId: this._person(context) }); }
-  async compose(context = {}, { contextTokenLimit, persist = true } = {}) {
+  async compose(context = {}, { contextTokenLimit, persist = true, configOverride = this.config, measureOnly = false } = {}) {
     this._requireOpen(); const state = detached(await this.repository.getRuntime()), ctx = { ...this._context(context) };
     const material = await this.repository.getContext({ personId: ctx.personId });
     if (!material || !material.persona || typeof material.persona !== 'object' || !material.persona.anchor) {
@@ -332,18 +336,19 @@ export class PersonaRuntime {
       retrieval: suppliedMemories ? 'provided' : plan?.action === 'search' ? (ctx.memories.length ? 'found' : 'no_matches') : 'not_requested',
       returnedItems: ctx.memories.length };
     if (contextTokenLimit !== undefined && (!Number.isSafeInteger(contextTokenLimit) || contextTokenLimit < 1)) throw new RangeError('Internal context token limit must be a positive integer');
-    const totalTokens = Math.min(this.config.contextBudget.totalTokens, contextTokenLimit ?? Infinity);
-    const config = totalTokens === this.config.contextBudget.totalTokens ? this.config
-      : { ...this.config, contextBudget: { ...this.config.contextBudget, totalTokens } };
+    if (measureOnly) return measureContinuityRequirements({ context: ctx, material, state, config: configOverride, now: this.now(), counter: this.tokenCounter });
+    const totalTokens = Math.min(configOverride.contextBudget.totalTokens, contextTokenLimit ?? Infinity);
+    const config = totalTokens === configOverride.contextBudget.totalTokens ? configOverride
+      : { ...configOverride, contextBudget: { ...configOverride.contextBudget, totalTokens } };
     let snapshot = await buildSnapshot({ context: ctx, material, state, config, now: this.now(), counter: this.tokenCounter });
-    if (totalTokens !== this.config.contextBudget.totalTokens) snapshot = freeze({ ...snapshot,
-      budgetAdjustments: [...snapshot.budgetAdjustments, { segment: 'total', configured: this.config.contextBudget.totalTokens, applied: totalTokens, reason: 'preserve_request_framing_and_pending_source' }] });
+    if (totalTokens !== configOverride.contextBudget.totalTokens) snapshot = freeze({ ...snapshot,
+      budgetAdjustments: [...snapshot.budgetAdjustments, { segment: 'total', configured: configOverride.contextBudget.totalTokens, applied: totalTokens, reason: 'preserve_request_framing_and_pending_source' }] });
     if (persist) await this.repository.saveSnapshot(detached(snapshot)); return snapshot;
   }
-  async _prepareConversationRequest(context, { purpose, offsets = {}, preparedPage, transformPage } = {}) {
-    const inputBudget = this._inputBudget();
+  async _prepareConversationRequest(context, { purpose, offsets = {}, preparedPage, transformPage, configOverride = this.config, persist = true } = {}) {
+    const inputBudget = this._inputBudget(configOverride);
     const attempt = async contextTokenLimit => {
-      const snapshot = await this.compose(context, { contextTokenLimit, persist: false });
+      const snapshot = await this.compose(context, { contextTokenLimit, persist: false, configOverride });
       let page = preparedPage ? detached(preparedPage) : await conversationPage(snapshot, context, { purpose,
         counter: this.tokenCounter, maxTokens: inputBudget, offsets });
       if (transformPage) page = transformPage(page);
@@ -356,13 +361,13 @@ export class PersonaRuntime {
       return { snapshot, page: { ...page, messages, tokens }, messages, requestContext };
     };
     let selected, failure;
-    try { selected = await attempt(this.config.contextBudget.totalTokens); }
+    try { selected = await attempt(configOverride.contextBudget.totalTokens); }
     catch (error) { if (error.code !== 'MODEL_INPUT_BUDGET') throw error; failure = error; }
     if (!selected) {
       // The local context cap is separate from the complete serialized request.
       // Probe only optional context size, never model calls or source offsets.
       // buildSnapshot protects complete route/time/identity facts at every cap.
-      let low = 1, high = this.config.contextBudget.totalTokens - 1;
+      let low = 1, high = configOverride.contextBudget.totalTokens - 1;
       while (low <= high) {
         const limit = Math.floor((low + high) / 2);
         // Stop at the first complete fit. Searching upward to the last possible
@@ -376,7 +381,7 @@ export class PersonaRuntime {
       }
       if (!selected) throw failure;
     }
-    await this.repository.saveSnapshot(detached(selected.snapshot));
+    if (persist) await this.repository.saveSnapshot(detached(selected.snapshot));
     return selected;
   }
   _capacityFacts(value, state) {
@@ -528,7 +533,8 @@ export class PersonaRuntime {
     const wake = (await this.repository.getRuntime()).execution?.pendingWake;
     if (!wake || wake.wakeId !== wakeId) return { accepted: false };
     if (wake.pendingPage) await this._ackPendingPage(wake.pendingPage, false);
-    await this.repository.clearPending(wake.pendingEventIds);
+    // Accepting a wake summary only confirms its handoff. It is not a visible
+    // reply receipt and must not settle the participant's pending originals.
     await this._lock(async () => { const state = await this._refresh();
       if (state.execution?.pendingWake?.wakeId === wakeId) { delete state.execution.pendingWake; await this._save(state); }
     });
@@ -684,14 +690,69 @@ export class PersonaRuntime {
     return detached(this.state);
   }
   async resumeProactive() { await this._lock(async () => { const state = await this._refresh(); state.globalMuted = false; await this._save(state); }); this._schedule(); return detached(this.state); }
-  async updateConfig(partial) { const stored = await this.repository.updateConfig(partial); this.config = detached(stored); this._schedule(); return detached(this.config); }
+  async updateConfig(partial) {
+    if (partial?.contextBudget || partial?.processingLimits?.consolidationRequestTokens !== undefined) {
+      const check = await this.preflightConfig(partial);
+      if (!check.ok) throw Object.assign(new Error('预算不足以承载当前完整人格与必要近况；原设置、消息和整理进度均已保留。请先检查并应用有界建议。'),
+        { code: 'CONFIG_BUDGET_INSUFFICIENT', budgetPreflight: check });
+    }
+    const stored = await this.repository.updateConfig(partial); this.config = detached(stored); this._schedule(); return detached(this.config);
+  }
+  async preflightConfig(partial = {}, context = {}) {
+    this._requireOpen();
+    const candidate = validateConfig(mergeConfig(this.config, partial)), ctx = { ...this._context(context), memories: [] };
+    // Never perform semantic retrieval, save snapshots, select work, or call a
+    // model while checking a configuration draft.
+    ctx.pending ??= await this.repository.getPending({ personId: ctx.personId ?? null });
+    const requirement = await this.compose(ctx, { configOverride: candidate, measureOnly: true, persist: false });
+    const issues = [], checks = [], requestLimit = this._inputBudget(candidate);
+    const issue = (field, configured, required, code) => issues.push({ field, configured, required, code });
+    if (candidate.contextBudget.totalTokens < requirement.requiredTokens) issue('contextBudget.totalTokens', candidate.contextBudget.totalTokens, requirement.requiredTokens, 'PERSONA_CONTEXT_BUDGET');
+    if (candidate.contextBudget.recentMemoryTokens < requirement.recentMinimumTokens) issue('contextBudget.recentMemoryTokens', candidate.contextBudget.recentMemoryTokens, requirement.recentMinimumTokens, 'RECENT_CONTEXT_BUDGET');
+    if (!issues.length) for (const purpose of ['control', 'reply']) {
+      try { const value = await this._prepareConversationRequest(ctx, { purpose, configOverride: candidate, persist: false }); checks.push({ purpose, ok: true, requestTokens: value.page.tokens, contextTokens: value.snapshot.tokens }); }
+      catch (error) { if (!['MODEL_INPUT_BUDGET', 'PERSONA_CONTEXT_BUDGET', 'ESSENTIAL_CONTEXT_BUDGET'].includes(error.code)) throw error;
+        checks.push({ purpose, ok: false, code: error.code }); issue('processingLimits.consolidationRequestTokens', requestLimit, null, error.code); }
+    }
+    const suggestedConfig = {}, round = n => Math.ceil(n / 256) * 256;
+    const total = Math.max(candidate.contextBudget.totalTokens, round(requirement.requiredTokens * 1.15));
+    const recent = Math.max(candidate.contextBudget.recentMemoryTokens, round(requirement.recentMinimumTokens * 1.15));
+    if (issues.some(item => item.field.startsWith('contextBudget.')) && total <= requestLimit) suggestedConfig.contextBudget = { totalTokens: total, recentMemoryTokens: recent };
+    // A recommendation is explicitly applied by the user; never increase an
+    // existing per-request ceiling or consume the rest of the model context.
+    const state = await this.repository.getRuntime(), pausedRuns = [], workIssues = [];
+    for (const job of Object.values(state.execution?.consolidationJobs ?? {})) for (const child of job.children ?? []) if (child.status === 'paused' && child.runId && pausedRuns.length < 32) {
+      const run = await this.repository.getConsolidationRun(child.runId), requirement = run?.reviewState?.budgetRequirement ?? null;
+      const fits = requirement ? requestLimit >= requirement.requiredTokens : null;
+      const row = { jobId: job.jobId, runId: child.runId, personId: child.personId ?? null, code: job.error?.code ?? null, budgetRequirement: requirement, fits };
+      pausedRuns.push(row); if (fits === false) workIssues.push({ runId: child.runId, configured: requestLimit, required: requirement.requiredTokens, code: 'MODEL_INPUT_BUDGET' });
+    }
+    if (partial.processingLimits?.consolidationRequestTokens !== undefined) for (const work of workIssues) {
+      issue('processingLimits.consolidationRequestTokens', requestLimit, work.required, 'SELECTED_WORK_INPUT_BUDGET');
+    }
+    if (Object.keys(suggestedConfig).length) {
+      const proposed = validateConfig(mergeConfig(candidate, suggestedConfig));
+      try { for (const purpose of ['control', 'reply']) await this._prepareConversationRequest(ctx, { purpose, configOverride: proposed, persist: false }); }
+      catch (error) { if (!['MODEL_INPUT_BUDGET', 'PERSONA_CONTEXT_BUDGET', 'ESSENTIAL_CONTEXT_BUDGET'].includes(error.code)) throw error;
+        // Do not offer an unverified one-click expansion. The operator may
+        // inspect the measured requirement and adjust the explicit ceiling.
+        delete suggestedConfig.contextBudget; checks.push({ purpose: 'recommendation', ok: false, code: error.code }); }
+    }
+    return { ok: issues.length === 0, countingMethod: this.tokenCounter.method, coverage: 'current_route_and_relationship_only',
+      scope: requirement.scope, personaVersion: requirement.personaVersion, requiredTokens: requirement.requiredTokens,
+      recentMinimumTokens: requirement.recentMinimumTokens, segments: requirement.segments, checks, issues,
+      configured: { totalTokens: candidate.contextBudget.totalTokens, recentMemoryTokens: candidate.contextBudget.recentMemoryTokens, requestTokens: requestLimit },
+      suggestedConfig, recommendationId: fingerprint({ scope: requirement.scope, personaVersion: requirement.personaVersion, requiredTokens: requirement.requiredTokens, suggestedConfig }),
+      requiresExplicitApply: Object.keys(suggestedConfig).length > 0, pausedRuns, workIssues,
+      note: '仅核当前路由与已保存资料；不保证未来成长或其他关系的需求。计数器缺失时为UTF-8保守估算，不等于供应商计费。' };
+  }
   _processing() {
     return { consolidationInputChars: 16000, consolidationRequestTokens: 32768, consolidationContextChars: 4000,
       consolidationOutputTokens: 16384, controlOutputTokens: 4096, replyOutputTokens: 4096,
       consolidationCallsPerSegment: 8, maxQueuedConsolidations: 8, maxTargetsPerJob: 8, ...this.config.processingLimits };
   }
-  _inputBudget() {
-    return Math.min(this._processing().consolidationRequestTokens, Number.isFinite(this.model.maxInputTokens) ? this.model.maxInputTokens : Infinity);
+  _inputBudget(config = this.config) {
+    return Math.min(config.processingLimits?.consolidationRequestTokens ?? 32768, Number.isFinite(this.model.maxInputTokens) ? this.model.maxInputTokens : Infinity);
   }
   async _saveJob(job) {
     return this._lock(async () => {
@@ -909,22 +970,26 @@ export class PersonaRuntime {
           const reservation = () => assistantSpace ? reviewAssistantReport({ observations: [{ category: 'possible_fidelity_issue', detail: 'x'.repeat(reserveChars), recordIds: [] }] }, { maxChars: reserveChars })
             : remainingCalls < 2 ? skippedAdvice : omittedAdvice;
           let reservedAdvice = assistantEnabled ? reservation() : null;
+          let lastMeasuredRequired = null;
           const fits = async partChars => {
             const assembly = makeAssembly(partChars);
-            if (!assistantEnabled) return await this.tokenCounter.count(JSON.stringify(makeMessages(assembly, null))) <= requestBudget;
+            if (!assistantEnabled) { lastMeasuredRequired = await this.tokenCounter.count(JSON.stringify(makeMessages(assembly, null))); return lastMeasuredRequired <= requestBudget; }
             // Reserve the same real source page for both calls before paying the assistant.
             // Both possible dispatch counts are tested; the actual one is rebuilt below.
-            for (const used of [budget.used, Math.min(budget.limit, budget.used + 1)]) for (const advice of [reservedAdvice, omittedAdvice]) {
-              if (await this.tokenCounter.count(JSON.stringify(makeMessages(assembly, advice, used))) > requestBudget) return false;
-            }
-            return true;
+            const counts = [];
+            for (const used of [budget.used, Math.min(budget.limit, budget.used + 1)]) for (const advice of [reservedAdvice, omittedAdvice]) counts.push(await this.tokenCounter.count(JSON.stringify(makeMessages(assembly, advice, used))));
+            lastMeasuredRequired = Math.max(...counts); return lastMeasuredRequired <= requestBudget;
           };
           const minimum = chars > 0 ? 1 : 0;
           while (!await fits(minimum)) {
-            if (!assistantEnabled || !assistantSpace) { await pause('MODEL_INPUT_BUDGET'); throw Object.assign(new Error('The frozen context, advice status and framing cannot fit the configured request budget; no model call was made for this page'), { code: 'MODEL_INPUT_BUDGET' }); }
+            if (!assistantEnabled || !assistantSpace) {
+              review.budgetRequirement = { configuredTokens: requestBudget, requiredTokens: lastMeasuredRequired, countingMethod: this.tokenCounter.method,
+                stage: review.stage ?? null, dataPageIndex: dataIndex, dataPartOffset: review.dataPartOffset, observedAt: this.now() };
+              await pause('MODEL_INPUT_BUDGET'); throw Object.assign(new Error('The frozen context, advice status and framing cannot fit the configured request budget; no model call was made for this page'), { code: 'MODEL_INPUT_BUDGET', budgetRequirement: detached(review.budgetRequirement) }); }
             reserveChars = Math.max(1, Math.floor(reserveChars / 2)); reservedAdvice = reservation();
             if (!reservedAdvice.observations?.length) { assistantSpace = false; reservedAdvice = omittedAdvice; }
           }
+          delete review.budgetRequirement;
           let low = minimum, high = chars, best = minimum;
           while (low <= high) {
             const partChars = Math.floor((low + high) / 2);
@@ -979,7 +1044,12 @@ export class PersonaRuntime {
               messages = makeMessages(assemblyContext, advice);
             }
             if (await this.tokenCounter.count(JSON.stringify(messages)) > requestBudget) messages = makeMessages(assemblyContext, omittedAdvice);
-            if (await this.tokenCounter.count(JSON.stringify(messages)) > requestBudget) { await pause('MODEL_INPUT_BUDGET'); throw Object.assign(new Error('The actual advice status and shared call budget cannot fit; source progress remains unconsumed'), { code: 'MODEL_INPUT_BUDGET' }); }
+            const actualInputTokens = await this.tokenCounter.count(JSON.stringify(messages));
+            if (actualInputTokens > requestBudget) {
+              review.budgetRequirement = { configuredTokens: requestBudget, requiredTokens: actualInputTokens, countingMethod: this.tokenCounter.method,
+                stage: review.stage ?? null, dataPageIndex: dataIndex, dataPartOffset: review.dataPartOffset, observedAt: this.now() };
+              await pause('MODEL_INPUT_BUDGET'); throw Object.assign(new Error('The actual advice status and shared call budget cannot fit; source progress remains unconsumed'), { code: 'MODEL_INPUT_BUDGET', budgetRequirement: detached(review.budgetRequirement) });
+            }
 
           }
           if (this.closed || this.closing) return pause('RUNTIME_CLOSED');
