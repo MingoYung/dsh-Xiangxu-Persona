@@ -53,6 +53,12 @@ export function apply(ctx,config){
     adapter.prepareCall=async function(...args){
       const call=await original.apply(this,args),dispatch=call.stream.bind(call);
       return {...call,stream:options=>(async function*(){
+        // Whole-set deadline: checked on EVERY provider dispatch (not just say entry).
+        // The value is passed at engine start; the harness's say() and watchdog
+        // check the persistent file for cross-batch changes.
+        if(Number.isFinite(config.wholeDeadline)&&Date.now()>=config.wholeDeadline){save('dispatch-budget.jsonl',{at:Date.now(),reason:'WHOLE_DEADLINE_PASSED',wholeDeadline:config.wholeDeadline,blockedBeforeProviderInvocation:true});throw Object.assign(new Error('Whole-set deadline passed; no further model request'),{code:'WHOLE_DEADLINE_PASSED'});}
+        // Whole-set attempt cap: engine's own dispatches + baseline consumed.
+        if(Number.isSafeInteger(config.wholeMaxAttempts)&&actualDispatches+config.wholeAttemptsBaseline>=config.wholeMaxAttempts){save('dispatch-budget.jsonl',{at:Date.now(),reason:'WHOLE_ATTEMPTS_EXCEEDED',actualDispatches,baseline:config.wholeAttemptsBaseline,cap:config.wholeMaxAttempts,blockedBeforeProviderInvocation:true});throw Object.assign(new Error('Whole-set attempt cap reached; no further model request'),{code:'WHOLE_ATTEMPTS_EXCEEDED'});}
         if(Number.isSafeInteger(config.maxActualDispatches)&&actualDispatches>=config.maxActualDispatches){save('dispatch-budget.jsonl',{at:Date.now(),actualDispatches,limit:config.maxActualDispatches,blockedBeforeProviderInvocation:true});throw Object.assign(new Error('Dedicated verification reached its actual dispatch budget; no further model request was sent'),{code:'TEST_DISPATCH_BUDGET'});}
         actualDispatches++;const requestId='real_'+randomUUID(),startedAt=Date.now();
         const messagesJson=JSON.stringify(options.messages??[]),toolsJson=JSON.stringify(options.tools??[]);
@@ -117,7 +123,7 @@ export class Engine{
 }
 export async function start(options,dir,memoryRoot){
   await mkdir(dir,{recursive:true});const observer=join(options.artifacts,'real-observer.mjs');await writeFile(observer,observerSource);
-  const overlay=join(dir,'overlay.yml');await writeFile(overlay,JSON.stringify([{id:'tools',config:{mode:'native'}},{insert:[{id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'}},{id:'persona-real-observer',name:pathToFileURL(observer).href,config:{artifacts:dir,provider:options.provider,model:options.model,sourceProbes:options.sourceProbes??[],maxActualDispatches:options.maxActualDispatches??null}}]}],null,2));
+  const overlay=join(dir,'overlay.yml');await writeFile(overlay,JSON.stringify([{id:'tools',config:{mode:'native'}},{insert:[{id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'}},{id:'persona-real-observer',name:pathToFileURL(observer).href,config:{artifacts:dir,provider:options.provider,model:options.model,sourceProbes:options.sourceProposes??options.sourceProbes??[],maxActualDispatches:options.maxActualDispatches??null,...(Number.isFinite(options.wholeDeadline)?{wholeDeadline:options.wholeDeadline}:{}),...(Number.isSafeInteger(options.wholeMaxAttempts)?{wholeMaxAttempts:options.wholeMaxAttempts}:{}),...(Number.isSafeInteger(options.wholeAttemptsBaseline)?{wholeAttemptsBaseline:options.wholeAttemptsBaseline}:{})}}]}],null,2));
   const e=new Engine(options,dir,memoryRoot,overlay);if(!await e.wait(()=>e.ready,30000))throw new Error('Real provider observation did not become ready; no model prompt sent');
   await e.request('initialize',{cwd:projectRoot,provider:options.provider,model:options.model,maxTokens:4096});return e;
 }
