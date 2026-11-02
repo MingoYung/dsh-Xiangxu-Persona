@@ -17,7 +17,7 @@ const lines=async p=>{try{return (await readFile(p,'utf8')).split('\n').filter(B
 const text=m=>(m?.content??[]).filter(x=>x.type==='text').map(x=>x.text).join('\n');
 const summaryError=e=>safe({code:e.code??'UNKNOWN',message:e.message,data:e.data??null});
 
-const observerSource=String.raw`
+export const observerSource=String.raw`
 import {appendFileSync,mkdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
@@ -25,7 +25,7 @@ export const inject=['llm','agentDefaultModel','personaMemory'];
 export function apply(ctx,config){
   mkdirSync(config.artifacts,{recursive:true});
   const save=(name,value)=>appendFileSync(join(config.artifacts,name),JSON.stringify(value,(k,v)=>k==='signal'?undefined:v)+'\n');
-  let wrapped=false,actualDispatches=0;
+  let wrapped=false,actualDispatches=0,localPendingSlots=0;
   const observedRuntimes=new WeakSet();
   const observeRuntime=coordinator=>{
     const runtime=coordinator.runtime;if(!runtime||observedRuntimes.has(runtime))return;observedRuntimes.add(runtime);
@@ -59,8 +59,17 @@ export function apply(ctx,config){
         if(Number.isFinite(config.wholeDeadline)&&Date.now()>=config.wholeDeadline){save('dispatch-budget.jsonl',{at:Date.now(),reason:'WHOLE_DEADLINE_PASSED',wholeDeadline:config.wholeDeadline,blockedBeforeProviderInvocation:true});throw Object.assign(new Error('Whole-set deadline passed; no further model request'),{code:'WHOLE_DEADLINE_PASSED'});}
         // Whole-set attempt cap: engine's own dispatches + baseline consumed.
         if(Number.isSafeInteger(config.wholeMaxAttempts)&&actualDispatches+config.wholeAttemptsBaseline>=config.wholeMaxAttempts){save('dispatch-budget.jsonl',{at:Date.now(),reason:'WHOLE_ATTEMPTS_EXCEEDED',actualDispatches,baseline:config.wholeAttemptsBaseline,cap:config.wholeMaxAttempts,blockedBeforeProviderInvocation:true});throw Object.assign(new Error('Whole-set attempt cap reached; no further model request'),{code:'WHOLE_ATTEMPTS_EXCEEDED'});}
-        if(Number.isSafeInteger(config.maxActualDispatches)&&actualDispatches>=config.maxActualDispatches){save('dispatch-budget.jsonl',{at:Date.now(),actualDispatches,limit:config.maxActualDispatches,blockedBeforeProviderInvocation:true});throw Object.assign(new Error('Dedicated verification reached its actual dispatch budget; no further model request was sent'),{code:'TEST_DISPATCH_BUDGET'});}
-        actualDispatches++;const requestId='real_'+randomUUID(),startedAt=Date.now();
+        if(Number.isSafeInteger(config.maxActualDispatches)&&actualDispatches+localPendingSlots>=config.maxActualDispatches){save('dispatch-budget.jsonl',{at:Date.now(),actualDispatches,localPendingSlots,limit:config.maxActualDispatches,blockedBeforeProviderInvocation:true});throw Object.assign(new Error('Dedicated verification reached its actual dispatch budget; no further model request was sent'),{code:'TEST_DISPATCH_BUDGET'});}
+        localPendingSlots++; // claim synchronously before the shared file lock awaits
+        const requestId='real_'+randomUUID();let startedAt=Date.now(),wholeBudget=null;
+        if(Object.hasOwn(config,'wholeStatePath')){
+          try{
+            wholeBudget=await import(config.wholeBudgetModule);
+            const reserved=await wholeBudget.reserveWholeAttempt(config.wholeStatePath,{requestId});
+            startedAt=reserved.requests[requestId].startedAt;
+          }catch(error){localPendingSlots--;save('dispatch-budget.jsonl',{at:Date.now(),reason:error.code??'WHOLE_GATE_FAILED',blockedBeforeProviderInvocation:true});throw error;}
+        }
+        localPendingSlots--;actualDispatches++;
         const messagesJson=JSON.stringify(options.messages??[]),toolsJson=JSON.stringify(options.tools??[]);
         save('provider-bound.jsonl',{kind:'actual-provider-adapter-input',requestId,startedAt,provider:options.provider,model:options.model,purpose:options.purpose,maxTokens:options.maxTokens,reasoningEffort:options.reasoningEffort,temperature:options.temperature,topP:options.topP,requestSize:{messagesJsonUtf8Bytes:Buffer.byteLength(messagesJson,'utf8'),messagesJsonCodePoints:Array.from(messagesJson).length,toolsJsonUtf8Bytes:Buffer.byteLength(toolsJson,'utf8'),tokenCount:null,accounting:'actual serialized adapter inputs; UTF-8 bytes/code points are not tokenizer counts or external HTTP wire size'},tools:options.tools,messages:options.messages});
         let usage=null,finish=null;
@@ -68,7 +77,7 @@ export function apply(ctx,config){
           save('provider-chunks.jsonl',{requestId,at:Date.now(),chunk});
           if(chunk.type==='usage')usage=chunk.usage;if(chunk.type==='finish')finish=chunk.reason;
           yield chunk;
-        }}finally{save('provider-usage.jsonl',{requestId,startedAt,finishedAt:Date.now(),provider:options.provider,model:options.model,usage,finish});}
+        }}finally{try{save('provider-usage.jsonl',{requestId,startedAt,finishedAt:Date.now(),provider:options.provider,model:options.model,usage,finish});}finally{if(wholeBudget)await wholeBudget.settleWholeAttempt(config.wholeStatePath,requestId,usage);}}
       })()};
     };
     if(adapter.prepareCall===original)throw new Error('Real provider observation wrapper was not installed');
@@ -123,9 +132,16 @@ export class Engine{
 }
 export async function start(options,dir,memoryRoot){
   await mkdir(dir,{recursive:true});const observer=join(options.artifacts,'real-observer.mjs');await writeFile(observer,observerSource);
-  const overlay=join(dir,'overlay.yml');await writeFile(overlay,JSON.stringify([{id:'tools',config:{mode:'native'}},{insert:[{id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'}},{id:'persona-real-observer',name:pathToFileURL(observer).href,config:{artifacts:dir,provider:options.provider,model:options.model,sourceProbes:options.sourceProposes??options.sourceProbes??[],maxActualDispatches:options.maxActualDispatches??null,...(Number.isFinite(options.wholeDeadline)?{wholeDeadline:options.wholeDeadline}:{}),...(Number.isSafeInteger(options.wholeMaxAttempts)?{wholeMaxAttempts:options.wholeMaxAttempts}:{}),...(Number.isSafeInteger(options.wholeAttemptsBaseline)?{wholeAttemptsBaseline:options.wholeAttemptsBaseline}:{})}}]}],null,2));
+  const overlay=join(dir,'overlay.yml');await writeFile(overlay,JSON.stringify([{id:'tools',config:{mode:'native'}},{insert:[{id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'}},{id:'persona-real-observer',name:pathToFileURL(observer).href,config:observerConfig(options,dir)}]}],null,2));
   const e=new Engine(options,dir,memoryRoot,overlay);if(!await e.wait(()=>e.ready,30000))throw new Error('Real provider observation did not become ready; no model prompt sent');
   await e.request('initialize',{cwd:projectRoot,provider:options.provider,model:options.model,maxTokens:4096});return e;
+}
+export function observerConfig(options,dir){
+  return {artifacts:dir,provider:options.provider,model:options.model,sourceProbes:options.sourceProbes??[],maxActualDispatches:options.maxActualDispatches??null,
+    ...(Object.hasOwn(options,'wholeStatePath')?{wholeStatePath:options.wholeStatePath,wholeBudgetModule:pathToFileURL(join(projectRoot,'scripts','dsh-test-budget.mjs')).href}:{}),
+    ...(Number.isFinite(options.wholeDeadline)?{wholeDeadline:options.wholeDeadline}:{}),
+    ...(Number.isSafeInteger(options.wholeMaxAttempts)?{wholeMaxAttempts:options.wholeMaxAttempts}:{}),
+    ...(Number.isSafeInteger(options.wholeAttemptsBaseline)?{wholeAttemptsBaseline:options.wholeAttemptsBaseline}:{})};
 }
 async function operator(options,memoryRoot,command,value,dir,waitOverride){
   const waitMs=waitOverride??(command==='consolidate'?180000:30000);
