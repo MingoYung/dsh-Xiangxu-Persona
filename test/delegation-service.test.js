@@ -52,7 +52,8 @@ test('grown context provenance is retained past 32 sources and tail forgetting s
   const manifest=JSON.parse(await fs.readFile(path.join(f.root,task.taskId,'manifest.json'),'utf8'));
   assert.deepEqual(manifest.sourceRefs,sourceRefs);assert.equal(manifest.sourceRecordIds.length,100);
   f.revoked={sourceKeys:[JSON.stringify(['real-session','source-99'])],recordIds:[]};
-  assert.equal((await f.service.get({taskId:task.taskId})).status,'revoked');
+  await assert.rejects(f.service.get({taskId:task.taskId}),{code:'TASK_SOURCE_REVOKED'});
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.root,task.taskId,'manifest.json'),'utf8')).status,'revoked');
   await assert.rejects(f.service.create({...args,requestId:'overflow'},{sourceRefs:Array.from({length:257},(_,i)=>({sourceSessionId:'s',sourceEventId:'e'+i}))}),{code:'TASK_SOURCE_CAPACITY'});
 });
 
