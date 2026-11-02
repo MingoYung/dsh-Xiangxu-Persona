@@ -142,7 +142,7 @@ export async function start(options,dir,memoryRoot){
   await mkdir(dir,{recursive:true});const observer=join(options.artifacts,'real-observer.mjs');await writeFile(observer,observerSource);
   const overlay=join(dir,'overlay.yml');await writeFile(overlay,JSON.stringify([{id:'tools',config:{mode:'native'}},{insert:[{id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'}},{id:'persona-real-observer',name:pathToFileURL(observer).href,config:observerConfig(options,dir)}]}],null,2));
   const e=new Engine(options,dir,memoryRoot,overlay);if(!await e.wait(()=>e.ready,30000))throw new Error('Real provider observation did not become ready; no model prompt sent');
-  await e.request('initialize',{cwd:options.cwd??projectRoot,provider:options.provider,model:options.model,maxTokens:4096});return e;
+  await e.request('initialize',{cwd:options.cwd??projectRoot,provider:options.provider,model:options.model,...(options.reasoningEffort?{reasoningEffort:options.reasoningEffort}:{}),maxTokens:4096});return e;
 }
 export function observerConfig(options,dir){
   return {artifacts:dir,provider:options.provider,model:options.model,sourceProbes:options.sourceProbes??[],maxActualDispatches:options.maxActualDispatches??null,
