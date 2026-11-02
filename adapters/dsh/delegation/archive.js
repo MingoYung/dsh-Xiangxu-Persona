@@ -5,6 +5,7 @@ import { atomicReplaceWithRetry } from '../../../core/store.js';
 
 export const DELEGATION_LIMITS = Object.freeze({ maxTasks: 4096, maxArchiveBytes: 1073741824, maxTaskBytes: 67108864, maxDocumentBytes: 67108864 });
 export const TASK_PAGE_CHARS = 8000;
+export const TASK_SOURCE_LIMITS = Object.freeze({ refs: 256, recordIds: 512 });
 const CHUNK_BYTES = 65536, META_BYTES = 8388608, INDEX_BYTES = 67108864;
 const TASK = /^task-[a-f0-9]{32}$/, DOC = /^doc-[a-f0-9]{32}$/, SHA = /^[a-f0-9]{64}$/;
 export const taskFailure = (code, message) => Object.assign(new Error(message), { code });
@@ -15,7 +16,8 @@ const object = value => value && typeof value === 'object' && !Array.isArray(val
 export function taskText(value, name, max = 256, empty = false) { if (typeof value !== 'string' || !empty && !value || Array.from(value).length > max || !value.isWellFormed() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) fail('TASK_INVALID', name + '无效'); return value; }
 export function taskLinks(value = {}) {
   const refs = value.sourceRefs ?? [], ids = value.sourceRecordIds ?? [];
-  if (!Array.isArray(refs) || refs.length > 32 || !Array.isArray(ids) || ids.length > 64) fail('TASK_SOURCE_CAPACITY', '任务来源超过容量');
+  if (!Array.isArray(refs) || !Array.isArray(ids)) fail('TASK_SOURCE_CAPACITY', '任务来源引用必须是数组');
+  if (refs.length > TASK_SOURCE_LIMITS.refs || ids.length > TASK_SOURCE_LIMITS.recordIds) fail('TASK_SOURCE_CAPACITY', `任务来源引用超过容量：来源 ${refs.length}/${TASK_SOURCE_LIMITS.refs}，记录 ${ids.length}/${TASK_SOURCE_LIMITS.recordIds}；不是模型额度或任务数量限制，未截断来源`);
   return { sourceRefs: [...new Map(refs.map(r => { if (!object(r)) fail('TASK_INVALID', '任务来源无效'); const clean = { sourceSessionId: taskText(r.sourceSessionId, '来源会话'), sourceEventId: taskText(r.sourceEventId, '来源事件') }; return [JSON.stringify([clean.sourceSessionId, clean.sourceEventId]), clean]; })).values()], sourceRecordIds: [...new Set(ids.map(id => taskText(id, '来源记录')))] };
 }
 function limits(value = {}, prior = DELEGATION_LIMITS) {

@@ -394,7 +394,7 @@ test('an uncommitted real-shaped candidate and validation error survive without 
   assert.equal(failure.code, 'SCHEMA_INVALID');
   const saved = await repository.recordConsolidationAttempt(run.runId, { candidatePatch: candidate, validationError: failure });
   assert.equal(saved.status, 'prepared'); assert.equal(saved.commitMarker, null); assert.deepEqual(saved.validatedPatch, []);
-  assert.deepEqual(saved.candidatePatch, candidate); assert.equal(saved.validationError.message, 'memory.kind has an unknown value');
+  assert.deepEqual(saved.candidatePatch, candidate); assert.equal(saved.validationError.message, 'memory.kind has an unknown value; allowed values: fact, preference, decision, pattern');
   assert.deepEqual(await repository.getRuntime(), before.runtime); assert.deepEqual(await repository.getPending(), before.pending); assert.deepEqual(await repository.getPersona(), before.persona);
   const retryPrompt = consolidationMessages(saved, { personId: 'a' });
   const retryData = JSON.parse(retryPrompt.at(-1).content);
