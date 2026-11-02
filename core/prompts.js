@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, newId } from './schema.js';
+import { SCHEMA_VERSION, newId, RELATION_EVENT_VALUES } from './schema.js';
 import { buildContinuitySnapshot } from './request-snapshot.js';
 import { conversationOrientation } from './onboarding.js';
 
@@ -130,6 +130,7 @@ export function consolidationMessages(run, context = {}) {
     coordinates: { optional_name: { desc: 'A subjective dimension', value: null, srcRefs: meta.srcRefs } },
     relationEvent: { ...meta, type: 'interaction', text: 'What happened or was understood', who: 'both', mentionedTime: null,
       state: 'remembered', reaction: 'not_observed', reactionTo: null },
+    relationEventValues: RELATION_EVENT_VALUES,
     interpretation: { ...meta, text: 'A tentative understanding, usable without an evidence quorum', questions: [] },
     retired: { entry: { ...globalMeta, id: 'prior_entry_id', schemaVersion: SCHEMA_VERSION, createdAt: 0, updatedAt: 0, retractedBy: null,
       kind: 'tendency', desc: 'An older description' }, retiredAt: 0, reason: 'Why you chose to retire it' },

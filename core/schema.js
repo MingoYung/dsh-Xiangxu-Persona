@@ -3,6 +3,10 @@ import { DEFAULT_RETRIEVAL_CONFIG, validateRetrievalConfig } from './retrieval-c
 import { DEFAULT_CAPACITY_LIMITS, DEFAULT_PROCESSING_LIMITS, DEFAULT_DEEP_MEMORY_LIMITS } from './capacity.js';
 
 export const SCHEMA_VERSION = 'persona-memory/3';
+export const RELATION_EVENT_VALUES = Object.freeze(Object.fromEntries(Object.entries({
+  type: ['interaction', 'commitment'], who: ['ai', 'person', 'both'],
+  state: ['remembered', 'open', 'done', 'cancelled'], reaction: ['replied', 'not_observed', 'explicitly_rejected', 'other'],
+}).map(([key, values]) => [key, Object.freeze(values)])));
 export class SchemaError extends Error {
   constructor(message) { super(message); this.name = 'SchemaError'; this.code = 'SCHEMA_INVALID'; }
 }
@@ -111,10 +115,10 @@ export function validateFacet(item) {
   return item;
 }
 export function validateRelationEvent(item) {
-  validateMeta(item); enumeration(item.type, ['interaction', 'commitment'], 'relation.type');
-  str(item.text, 'relation.text', true); enumeration(item.who, ['ai', 'person', 'both'], 'relation.who');
-  enumeration(item.state, ['remembered', 'open', 'done', 'cancelled'], 'relation.state');
-  enumeration(item.reaction, ['replied', 'not_observed', 'explicitly_rejected', 'other'], 'relation.reaction');
+  validateMeta(item); enumeration(item.type, RELATION_EVENT_VALUES.type, 'relation.type');
+  str(item.text, 'relation.text', true); enumeration(item.who, RELATION_EVENT_VALUES.who, 'relation.who');
+  enumeration(item.state, RELATION_EVENT_VALUES.state, 'relation.state');
+  enumeration(item.reaction, RELATION_EVENT_VALUES.reaction, 'relation.reaction');
   nullableTime(item.mentionedTime, 'mentionedTime');
   if (item.reactionTo !== null && item.reactionTo !== undefined) str(item.reactionTo, 'reactionTo');
   return item;
