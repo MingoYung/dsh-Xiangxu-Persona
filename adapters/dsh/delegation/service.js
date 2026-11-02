@@ -67,12 +67,13 @@ export function createDelegationService({ archiveRoot, host, clock = Date.now, g
     await assertNotRevoked(task);
     if (observed?.result !== undefined && observed.result !== null) {
       const raw = typeof observed.result === 'string' ? observed.result : JSON.stringify(observed.result);
-      const summaryText = typeof observed.summary === 'string' ? observed.summary : typeof observed.result === 'string' ? observed.result : typeof observed.result.closingText === 'string' ? observed.result.closingText : typeof observed.result.text === 'string' ? observed.result.text : Array.isArray(observed.result.output) ? observed.result.output.filter(block => block?.type === 'text' && typeof block.text === 'string').map(block => block.text).join('\n') : '';
+      const reportText = typeof observed.result === 'string' ? observed.result : typeof observed.result.closingText === 'string' ? observed.result.closingText : typeof observed.result.text === 'string' ? observed.result.text : Array.isArray(observed.result.output) ? observed.result.output.filter(block => block?.type === 'text' && typeof block.text === 'string').map(block => block.text).join('\n') : typeof observed.summary === 'string' ? observed.summary : '';
+      const summaryText = typeof observed.summary === 'string' ? observed.summary : reportText;
       // Keep the exact native outcome independently. A result pointer should
       // return public output, while process/event documents remain explicitly
       // available for full archive inspection and selected material recovery.
       if (typeof observed.result !== 'string') await archive.putDocument(taskId, { key: 'native-result:' + taskHash(raw), name: 'native-result.json', kind: 'native_result', text: raw, encoding: 'utf8', mime: 'application/json' });
-      const result = await archive.putDocument(taskId, { key: 'result-public:' + taskHash(summaryText), name: 'final-report.txt', kind: 'final_report', text: summaryText, encoding: 'utf8', mime: 'text/plain;charset=utf-8' });
+      const result = await archive.putDocument(taskId, { key: 'result-public:' + taskHash(reportText), name: 'final-report.txt', kind: 'final_report', text: reportText, encoding: 'utf8', mime: 'text/plain;charset=utf-8' });
       task = await archive.patch(taskId, { resultDocumentId: result.documentId, summary: { ...short(summaryText), documentId: result.documentId } });
     }
     const status = ['running', 'completed', 'failed', 'cancelled', 'unknown'].includes(observed?.status) ? observed.status : task.status; task = await archive.patch(taskId, { status, ...(terminal(status) ? { finishedAt: task.finishedAt ?? clock() } : {}), errorCode: null, capture: { ...task.capture, complete: !remaining && task.capture.complete } }); await assertNotRevoked(task); transientErrors.delete(taskId); return safeTask(task);
