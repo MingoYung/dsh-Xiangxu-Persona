@@ -7,6 +7,35 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createDelegationService } from '../adapters/dsh/delegation/service.js';
 import { createTaskArchive, taskHash } from '../adapters/dsh/delegation/archive.js';
 
+test('native final result projects public text while exact process stays in its separate archive', async t => {
+  const f = await setup(t), task = await f.service.create(args);
+  const raw = {output:[{type:'reasoning',text:'fixture-private-process-marker'},{type:'text',text:'public task answer'}],stopReason:'completed'};
+  const s = f.fixture.sessions.get(task.sessionId); s.result=raw;s.status='completed';
+  f.fixture.add(task.sessionId,'assistant/message',{message:{content:raw.output}});
+  f.fixture.add(task.sessionId,'turn/end',{reason:{kind:'completed'}});
+  const result=await f.service.collect({taskId:task.taskId,drain:true});
+  assert.equal(result.status,'completed');assert.equal(result.capture.complete,true);
+  assert.equal(await allText(f.service,task.taskId,result.resultDocumentId),'public task answer');
+  assert.equal(result.summary.text,'public task answer');
+  const rawDoc=result.documents.find(d=>d.kind==='native_result');assert.ok(rawDoc);
+  assert.deepEqual(JSON.parse(await allText(f.service,task.taskId,rawDoc.documentId)),raw);
+  await f.service.close();const reopened=f.open();await reopened.ready;
+  const recovered=await reopened.get({taskId:task.taskId});
+  assert.equal(await allText(reopened,task.taskId,recovered.resultDocumentId),'public task answer');
+  assert.deepEqual(JSON.parse(await allText(reopened,task.taskId,rawDoc.documentId)),raw);
+});
+
+test('a failed reasoning-only native outcome keeps an empty public result and its honest status', async t => {
+  const f=await setup(t),task=await f.service.create(args);
+  const s=f.fixture.sessions.get(task.sessionId);s.result={output:[{type:'reasoning',text:'fixture-hidden-only'}],stopReason:'max-tokens'};s.status='failed';
+  f.fixture.add(task.sessionId,'turn/end',{reason:{kind:'max-tokens'}});
+  const result=await f.service.collect({taskId:task.taskId,drain:true});
+  assert.equal(result.status,'failed');assert.equal(result.summary.text,'');
+  assert.equal(await allText(f.service,task.taskId,result.resultDocumentId),'');
+  const native=result.documents.find(d=>d.kind==='native_result');assert.ok(native);
+  assert.deepEqual(JSON.parse(await allText(f.service,task.taskId,native.documentId)),s.result);
+});
+
 function hostFixture() { const sessions = new Map(), listeners = new Set(), registered = new Map(); let starts = 0, cancels = 0, ackLost = false, artifact = Buffer.from('file😀\n'.repeat(20000)), artifactChanged = false; const event = (s, type, data) => { s.events.push({ type, seq: s.events.length, time: 100 + s.events.length, data }); for (const listener of listeners) listener({ sessionId: s.sessionId, status: s.status }); };
   const host = { registerTask: async task => { registered.set(task.sessionId, task); }, onChange: fn => { listeners.add(fn); return () => listeners.delete(fn); }, start: async args => { starts++; const s = { sessionId: args.sessionId, status: 'running', events: [] }; sessions.set(args.sessionId, s); event(s, 'user/message', { id: 'delegated-instruction', source: { kind: 'user' }, content: [{ type: 'text', text: args.prompt }] }); if (ackLost) throw Error('acknowledgement lost after creation'); return { sessionId: args.sessionId, messageId: 'delegated-instruction', status: 'running' }; }, inspect: async ({ sessionId }) => { const s = sessions.get(sessionId); return s ? { exists: true, status: s.status, summary: s.summary, result: s.result } : { exists: false, status: 'unknown' }; }, readEvents: async ({ sessionId, afterSeq, limit }) => { const s = sessions.get(sessionId); const selected = s.events.filter(e => e.seq > afterSeq).slice(0, limit); return { events: selected, hasMore: selected.length > 0 && selected.at(-1).seq < s.events.at(-1).seq, complete: true }; }, cancel: async ({ sessionId }) => { const s = sessions.get(sessionId); if (!s) return { status: 'unknown' }; if (s.status === 'running') { cancels++; s.status = 'cancelled'; s.result = 'cancelled final tail'; event(s, 'turn/end', { status: 'cancelled' }); } return { status: s.status }; }, readArtifact: async ({ cursor, expectedFingerprint, maxBytes }) => { const fingerprint = artifactChanged && cursor > 0 ? 'changed' : 'stable'; if (expectedFingerprint && fingerprint !== expectedFingerprint) throw Object.assign(Error('changed'), { code: 'TASK_SOURCE_CHANGED' }); const end = Math.min(artifact.length, cursor + maxBytes); return { bytes: artifact.subarray(cursor, end), size: artifact.length, filename: 'output.txt', fingerprint, nextCursor: end === artifact.length ? null : end, complete: end === artifact.length }; }, close: async () => {} };
   return { host, sessions, registered, get starts() { return starts; }, get cancels() { return cancels; }, set ackLost(value) { ackLost = value; }, set artifactChanged(value) { artifactChanged = value; }, get artifact() { return artifact; }, complete(sessionId, text = 'complete report') { const s = sessions.get(sessionId); s.status = 'completed'; s.summary = text; s.result = text; event(s, 'assistant/message', { message: { id: 'final', content: [{ type: 'text', text }] } }); event(s, 'turn/end', { status: 'completed' }); }, add(sessionId, type, data) { event(sessions.get(sessionId), type, data); } };

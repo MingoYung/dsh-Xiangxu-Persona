@@ -122,6 +122,7 @@ export function consolidationMessages(run, context = {}) {
     habit: { ...globalMeta, text: 'An expression or habit in your own words' },
     memoryItem: { ...meta, kind: 'pattern', text: 'An important interpretation or memory', keys: [], importance: null,
       aboutPersonIds: context.personId ? [context.personId] : [], validFrom: null, validTo: null, supersedesIds: [] },
+    memoryImportanceRule: 'memoryItem.importance is null or a finite number from 0 through 1 inclusive. This is the serialized field range, not a rule for what matters or which value to choose.',
     deepMemory: { ...globalMeta, title: 'A remembered experience', reference: 'Your short reference, not an automatic trigger', experience: 'What you remember happening', feltThen: 'How you described feeling then', meaningNow: 'Your present understanding, which may change', cues: [], aboutPersonIds: context.personId ? [context.personId] : [], relatedMemoryIds: [], supersedesIds: [] },
     code: { ...globalMeta, label: 'An optional common short expression', meaning: 'Its generalized remembered meaning', cues: [], expandIds: [], occurrences: 1, lastUsedAt: null },
     personCode: personMeta ? { ...personMeta, label: 'An optional expression in this relationship', meaning: 'Its remembered meaning with this person', cues: [], expandIds: [], occurrences: 1, lastUsedAt: null } : null,
