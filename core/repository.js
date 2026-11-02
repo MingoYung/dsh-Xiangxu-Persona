@@ -997,6 +997,11 @@ export class MemoryRepository {
   }
   async _patchSourceCatalogue(run, meta) {
     const sources = new Map();
+    const variants = new Map(), fields = ['sourceKind', 'sourceRole', 'sourceOrigin'];
+    const acceptVariant = ref => {
+      const key = sourceKey(ref), rows = variants.get(key) ?? new Map();
+      rows.set(JSON.stringify(fields.map(field => ref[field] ?? null)), { ...ref }); variants.set(key, rows);
+    };
     for (const [key, receipt] of Object.entries(meta.sources)) {
       const [sourceSessionId, sourceEventId] = JSON.parse(key);
       sources.set(key, { sourceSessionId, sourceEventId, available: false,
@@ -1012,9 +1017,14 @@ export class MemoryRepository {
       Object.values(value).forEach(walk);
     };
     walk(run.input);
-    for (const record of await this._hot(meta)) sources.set(sourceKey(record.sourceRef), { ...record.sourceRef, available: record.content?.available !== false });
-    for (const record of await this._records(meta)) sources.set(sourceKey(record), sourceRef(record));
-    return { sources, hotKeys: Object.keys(meta.hotSources) };
+    for (const record of run.input.chat ?? []) if (accepted(record)) acceptVariant(sourceRef(record));
+    for (const record of run.input.hot ?? []) if (accepted(record.sourceRef)) acceptVariant(record.sourceRef);
+    for (const record of await this._hot(meta)) {
+      const ref = { ...record.sourceRef, available: record.content?.available !== false };
+      sources.set(sourceKey(ref), ref); acceptVariant(ref);
+    }
+    for (const record of await this._records(meta)) { const ref = sourceRef(record); sources.set(sourceKey(ref), ref); acceptVariant(ref); }
+    return { sources, variants, hotKeys: Object.keys(meta.hotSources) };
   }
   _normalizePatchReferences(value, catalogue) {
     if (Array.isArray(value)) return value.map(item => this._normalizePatchReferences(item, catalogue));
@@ -1029,6 +1039,12 @@ export class MemoryRepository {
         let actual = catalogue.sources.get(source);
         if (!actual && catalogue.hotKeys.some(key => key.startsWith(source + ':'))) actual = { sourceSessionId: ref.sourceSessionId, sourceEventId: ref.sourceEventId, available: false };
         if (!actual) throw new SchemaError('srcRefs must identify an actually accepted source; omit references for an unreferenced interpretation');
+        // A single native assistant event can produce reasoning and task-only
+        // tool metadata with different kinds. Match one complete accepted
+        // provenance tuple; never combine fields from unrelated variants.
+        const fields = ['sourceRole', 'sourceOrigin', 'sourceKind'];
+        const match = [...(catalogue.variants?.get(source)?.values() ?? [])].find(value => fields.every(field => ref[field] === undefined || ref[field] === value[field]));
+        if (match) actual = match;
         for (const field of ['sourceRole', 'sourceOrigin', 'sourceKind']) if (ref[field] !== undefined && ref[field] !== actual[field]) throw new SchemaError('Source metadata disagrees with the actual source: ' + field);
         refs.set(source, { ...ref, ...actual });
       }
