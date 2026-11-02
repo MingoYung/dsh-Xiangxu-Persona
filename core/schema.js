@@ -23,7 +23,7 @@ const str = (v, field, empty = false) => { if (typeof v !== 'string' || (!empty 
 const num = (v, field, min = 0) => { if (!Number.isFinite(v) || v < min) fail(field + ' must be a finite number >= ' + min); };
 const integer = (v, field) => { num(v, field); if (!Number.isSafeInteger(v)) fail(field + ' must be a safe integer'); };
 const array = (v, field) => { if (!Array.isArray(v)) fail(field + ' must be an array'); };
-const enumeration = (v, values, field) => { if (!values.includes(v)) fail(field + ' has an unknown value'); };
+const enumeration = (v, values, field) => { if (!values.includes(v)) fail(field + ' has an unknown value; allowed values: ' + values.join(', ')); };
 const nullableTime = (v, field) => { if (v !== null && v !== undefined) integer(v, field); };
 const safeId = (v, field = 'personId') => { str(v, field); if (!/^[A-Za-z0-9_-]{1,160}$/.test(v)) fail(field + ' is not a safe identifier'); return v; };
 export { safeId };
