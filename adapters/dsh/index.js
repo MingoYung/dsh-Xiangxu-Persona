@@ -132,7 +132,7 @@ function recentMessageIds(agent) {
   return new Set([...pending, ...history].map(message => message.id));
 }
 function summarizeWake(wake) {
-  return JSON.stringify({ wakeId: wake.wakeId, totalCount: wake.totalCount, remainingCount: wake.remainingCount,
+  return JSON.stringify({ wakeId: wake.wakeId, reason: wake.context?.reason ?? null, totalCount: wake.totalCount, remainingCount: wake.remainingCount,
     groups: wake.groups.map(group => ({ personId: group.personId,
       sessionId: group.sessionId, channelId: group.channelId, totalCount: group.totalCount ?? group.records.length,
       messages: group.records.map(record => ({ eventId: record.eventId, sourceSessionId: record.sourceSessionId,
@@ -346,7 +346,7 @@ export function createDshCoordinator(ctx, config = {}) {
       // Originals are already durably held in C1/pending. Do not let the native
       // next-turn queue start one reply per original before the grouped wake page.
       await parkAcceptedInputs();
-      const text = `（你已按自己的计划醒来。这是睡眠期间已接收消息的一次分组汇总；消息原件仍能从记忆查回。由你判断如何回应。）\n${summarizeWake(wake)}`;
+      const text = `（唤醒事件已发生，原因：${wake.context?.reason ?? '未记录'}。这是宿主的唤醒事件，不是用户新说的话。下面是已接收消息的一次分组汇总；消息原件仍能从记忆查回。由你判断如何回应或接下来怎样安排。）\n${summarizeWake(wake)}`;
       await submit(wake.context, text, { kind: 'persona-memory:wake', wakeId: wake.wakeId,
         pendingEventIds: wake.pendingEventIds ?? [], pendingPage: wake.pendingPage ?? null,
         pendingSourcePage: sourcePageMetadata(wake.groups.flatMap(group => group.records)),

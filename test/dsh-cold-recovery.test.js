@@ -16,7 +16,7 @@ test('cold inactive wake recovery loads delayed host metadata before resolving a
   const repository = new MemoryRepository({ root }); await repository.open();
   try {
     const identity = await repository.upsertPerson({ personId: 'known_person', displayName: 'Known acquaintance' });
-    const context = { personId: identity.personId, sessionId: 'inactive_session', channelId: 'channel_a' };
+    const context = { personId: identity.personId, sessionId: 'inactive_session', channelId: 'channel_a', reason: 'explicit_wake' };
     const state = await repository.getRuntime();
     state.execution = { lastContext: context, pendingWake: {
       wakeId: 'persisted_wake', groups: [], totalCount: 0, remainingCount: 0, pendingEventIds: [],
@@ -62,6 +62,9 @@ test('cold inactive wake recovery loads delayed host metadata before resolving a
   assert.deepEqual(coordinator.errors, []);
   assert.equal(queued.length, 1); assert.equal(queued[0].id, 'persisted_wake');
   assert.equal(queued[0].source.kind, 'persona-memory:wake');
+  const wakeText = queued[0].content.filter(block => block.type === 'text').map(block => block.text).join('\n');
+  assert.ok(wakeText.includes('原因：explicit_wake'));
+  assert.equal(JSON.parse(wakeText.slice(wakeText.indexOf('\n') + 1)).reason, 'explicit_wake');
   assert.equal(coordinator.contextFor(agent).personId, 'known_person');
   assert.equal((await coordinator.repository.getRuntime()).execution.pendingWake.wakeId, 'persisted_wake');
   assert.ok(tools.has('persona_decide'));
