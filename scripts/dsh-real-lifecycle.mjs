@@ -88,10 +88,18 @@ export function apply(ctx,config){
   ctx.on('llm/adapters-updated',observe);observe();
   ctx.on('llm/stream',(options,next)=>{save('host-requests.jsonl',{at:Date.now(),provider:options.provider,model:options.model,tools:options.tools,messages:options.messages});return next();});
   ctx.on('agent/created',async({agent,source})=>{
+    const manager=ctx.get('personaMemory');if(!manager)throw new Error('Missing persona coordinator');
+    await manager.ready;
+    const coordinator=typeof manager.getCoordinator==='function'?manager.getCoordinator():manager.current??manager;
+    if(!coordinator){save('agent-role-observation.jsonl',{sessionId:agent.session.id,source,role:'persona-inactive',personaPresetChanged:false});return;}
+    await coordinator.tasks?.ready;
+    if(typeof coordinator.taskIsolation?.isWorkerSession!=='function')throw Object.assign(new Error('Observer cannot verify trusted worker identity'),{code:'OBSERVER_ROLE_LOOKUP_UNAVAILABLE'});
+    if(coordinator.taskIsolation.isWorkerSession(agent.session.id)){
+      save('agent-role-observation.jsonl',{sessionId:agent.session.id,source,role:'delegated-worker',personaPresetChanged:false});return;
+    }
     const presets=ctx.get('agentPresets');
     if(source==='resume')await presets.mount(agent.ctx,'persona-memory');else await presets.select(agent,'persona-memory');
-    const coordinator=ctx.get('personaMemory');if(!coordinator)throw new Error('Missing persona coordinator');
-    await coordinator.attachAgent(agent);observeRuntime(coordinator);
+    await manager.attachAgent(agent);observeRuntime(coordinator);
     const compaction=presets.serviceFor?.(agent,'compaction'),pruner=presets.serviceFor?.(agent,'toolResultPruner');
     const policyKeys=['thresholdRatio','headroomTokens','retainRatio','retainTokens','maxTokens','compactionRetries','maxOverflowRetries','modelPolicies','auto'];
     save('native-history-policy.jsonl',{at:Date.now(),sessionId:agent.session.id,preset:presets.composedPreset(agent.ctx),presetCompactionPresent:Boolean(compaction),presetPrunerPresent:Boolean(pruner),compactionConfig:compaction?Object.fromEntries(policyKeys.filter(key=>compaction.config?.[key]!==undefined).map(key=>[key,compaction.config[key]])):null,prunerConfig:pruner?.config??null,compositionIsolation:(presets.inspectCompositions?.(agent.ctx)??[]).map(row=>({id:row.id,leakedServices:row.leakedServices,modules:row.modules})),note:'Actual native preset service instances and resolved non-sensitive policies; presence alone does not prove a summary executed or a strict request cap.'});

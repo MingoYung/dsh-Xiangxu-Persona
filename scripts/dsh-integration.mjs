@@ -150,7 +150,8 @@ export function apply(ctx, config) {
         const target={channelId:'dsh:'+sid,sessionId:sid,personId:null};
         if(which==='sleep'&&!has('persona_decide')) block=tool('persona_decide',{consolidationPlan:{action:'run'},sleepPlan:{action:'sleep',wakeCondition:'at_time',wakeAt:Date.now()+5000,reason:'fixture model chooses five second sleep'},nextCheckAt:null});
         else if(which==='event_sleep'&&!has('persona_decide')) block=tool('persona_decide',{sleepPlan:{action:'sleep',wakeCondition:'explicit_wake',wakeAt:null,reason:'fixture chooses event-based sleep'},nextCheckAt:null});
-        else if(which.startsWith('queued')||which==='sleep'||which==='event_sleep') block={type:'text',text:'PM_WAKE queued messages received after fixture sleep'};
+        else if(which==='complete_sleep'&&!has('persona_decide')) block=tool('persona_decide',{consolidationPlan:{action:'run'},sleepPlan:{action:'sleep',wakeCondition:'consolidation_complete',wakeAt:null,reason:'fixture chooses its selected job completion'},nextCheckAt:null});
+        else if(which.startsWith('queued')||which==='sleep'||which==='event_sleep'||which==='complete_sleep') block={type:'text',text:'PM_WAKE queued messages received after fixture sleep'};
         else if(which==='inactive'&&!has('persona_decide')) block=tool('persona_decide',{replyPlan:{action:'listen',target,pendingEventIds:[],replyAt:null,recheckOn:['explicit_wake'],reason:'fixture chooses a timer across process restart'},nextCheckAt:Date.now()+6000});
         else if(which==='inactive'&&!calls.some(c=>{try{return c.name==='persona_decide'&&JSON.parse(c.arguments).replyPlan?.action==='reply';}catch{return false;}})) block=tool('persona_decide',{replyPlan:{action:'reply',target,pendingEventIds:[],replyAt:null,reason:'fixture replies after inactive target recovery'},nextCheckAt:null});
         else if(which==='inactive') block={type:'text',text:'PM_INACTIVE_RESUME scheduled decision recovered without SDK resume'};
@@ -296,6 +297,8 @@ async function runEngine(options, fixture) {
       const observed=await readFile(join(dir,'requests.jsonl'),'utf8').then(s=>s.trim().split('\n').filter(Boolean).map(x=>JSON.parse(x)));
       report.checks.rejectedOriginalInProviderRequest=observed.some(x=>x.kind==='fixture-provider-received-request'&&x.at>=report.recheckAt&&x.messages.some(m=>textOf(m).includes(marker)));
       report.checks.timedRecheckProducedVisibleReply=rpc.eventsFor(sid).some(e=>e.type==='assistant/message'&&e.time>=report.recheckAt&&textOf(e.data.message).includes('PM_WAIT_RECHECK'));
+      const grownProjection=rows=>rows.some(x=>x.kind==='fixture-provider-received-request'&&x.tools.includes('persona_decide')&&x.messages.some(m=>m.role==='system'&&textOf(m).includes('[anchor]')&&textOf(m).includes(grown.anchor.text)));
+      report.checks.committedPersonaEntersNextNativeRequest=grownProjection(observed);
       const operatorStatus=await operatorCommand(memoryRoot,'status',dir);report.checks.operatorStatus=operatorStatus.result?.available===true;
       await operatorCommand(memoryRoot,'mute',dir);
       const muted=await operatorCommand(memoryRoot,'status',dir);report.checks.operatorMute=muted.result?.runtime?.globalMuted===true;
@@ -309,6 +312,18 @@ async function runEngine(options, fixture) {
       await rpc.waitFor(()=>rpc.eventsFor(sid).some(e=>e.type==='assistant/message'&&e.time>=explicitStart&&textOf(e.data.message).includes('PM_WAKE')),30000);
       await rpc.request('session/wait',{sessionId:sid});
       report.checks.operatorExplicitWake=(await readJson(join(memoryRoot,'global','state.json')))?.sleep?.state==='awake';
+      const previousJobs=new Set(Object.keys((await readJson(join(memoryRoot,'global','state.json')))?.execution?.consolidationJobs??{}));
+      const completeAt=Date.now(),completeEventsStart=rpc.eventsFor(sid).length;
+      await rpc.request('session/prompt',{sessionId:sid,contentBlocks:[{type:'text',text:'PM_SESSION '+sid+' PM_CASE complete_sleep. Select an incremental consolidation job and sleep until that selected job completes.'}]});
+      const completed=await rpc.waitFor(async()=>{
+        const s=await readJson(join(memoryRoot,'global','state.json'));
+        const job=Object.values(s?.execution?.consolidationJobs??{}).find(j=>!previousJobs.has(j.jobId)&&j.status==='completed');
+        const wake=rpc.eventsFor(sid).slice(completeEventsStart).some(e=>e.type==='assistant/message'&&e.time>=completeAt&&textOf(e.data.message).includes('PM_WAKE'));
+        return job&&s.sleep.state==='awake'&&wake?{job,sleep:s.sleep}:null;
+      },30000);
+      await rpc.request('session/wait',{sessionId:sid});
+      report.selectedCompletionWake=completed;
+      report.checks.selectedConsolidationCompletionWakes=Boolean(completed.job.sleepDecisionId)&&completed.job.children.length>0&&completed.job.children.every(c=>c.status==='committed');
       await rpc.close();
       // Native session/wait drains the agent loop, not the plugin's async intake.
       // Shutdown disposes the coordinator and waits for intake before this baseline.
@@ -346,6 +361,7 @@ async function runEngine(options, fixture) {
           // Auto-resumed turns carry the plugin's mandatory context even for an unassociated speaker:
           // persona tools plus [environment] (and [anchor] once the persona has grown).
           report.checks.inactiveResumePersonaRequest=autoRequests.some(x=>x.kind==='fixture-provider-received-request'&&x.tools.includes('persona_decide')&&x.messages.some(m=>textOf(m).includes('[environment]')&&textOf(m).includes('[recent_memory]')));
+          report.checks.committedPersonaSurvivesNativeColdRecovery=grownProjection(autoRequests);
           const coldControls=inactive.eventsFor(sid).filter(e=>e.type==='user/message'&&e.data.source?.kind==='persona-memory:control');
           report.checks.completedReplyIsNotPendingAgain=coldControls.length>0&&coldControls.every(e=>!(e.data.source.pendingSourceRefs??[]).some(r=>r.sourceEventId===restartReceipt.messageId));
           report.inactiveResumeActivation='Native runtime timer only; SDK initialize, no external session/resume or prompt';

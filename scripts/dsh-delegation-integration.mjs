@@ -9,6 +9,7 @@ import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import { observerSource, observerConfig } from './dsh-real-lifecycle.mjs';
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const unsupported = message => Object.assign(new Error(message), { code: 'DSH_TEST_UNSUPPORTED' });
@@ -20,7 +21,8 @@ function argumentsFrom(argv) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') { values.help = true; continue; }
     if (arg === '--prepare-only') { values.prepareOnly = true; continue; }
-    if (!['--install', '--home', '--artifacts'].includes(arg) || !argv[i + 1] || argv[i + 1].startsWith('--')) throw ownError('INVALID_ARGUMENT', 'Supported options: --install PATH --home NEW_PATH --artifacts PATH --prepare-only --help. This entry is always fixture-only.');
+    if (arg === '--with-real-observer') { values.withRealObserver = true; continue; }
+    if (!['--install', '--home', '--artifacts'].includes(arg) || !argv[i + 1] || argv[i + 1].startsWith('--')) throw ownError('INVALID_ARGUMENT', 'Supported options: --install PATH --home NEW_PATH --artifacts PATH --prepare-only --with-real-observer --help. This entry is always fixture-only.');
     values[arg.slice(2)] = argv[++i];
   }
   return values;
@@ -62,7 +64,7 @@ async function prepareProfile(options) {
 }
 async function run() {
 const args = argumentsFrom(process.argv.slice(2));
-if (args.help) { console.log('Usage: node scripts/dsh-delegation-integration.mjs [--install PATH] [--home NEW_PATH] [--artifacts PATH] [--prepare-only]\nAlways fixed-response fixture-only. DSH_TEST_INSTALL, DSH_TEST_HOME and DSH_TEST_ARTIFACTS supply matching defaults. A new isolated home is required; no production profile or model credentials are used. Missing Windows/DSH returns unsupported (exit 2).'); return; }
+if (args.help) { console.log('Usage: node scripts/dsh-delegation-integration.mjs [--install PATH] [--home NEW_PATH] [--artifacts PATH] [--prepare-only] [--with-real-observer]\nAlways fixed-response fixture-only. DSH_TEST_INSTALL, DSH_TEST_HOME and DSH_TEST_ARTIFACTS supply matching defaults. A new isolated home is required; no production profile or model credentials are used. Missing Windows/DSH returns unsupported (exit 2).'); return; }
 if (process.platform !== 'win32') throw unsupported('This installed-DSH integration entry currently supports Windows only.');
 const install = resolve(args.install ?? process.env.DSH_TEST_INSTALL ?? join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs', 'DSH NEXT'));
 const exe = join(install, 'DSH NEXT.exe');
@@ -91,16 +93,18 @@ async function digests() { return Object.fromEntries(await Promise.all(sourceNam
 async function runtimeSourceNames(dir,prefix){const rows=[];for(const entry of await readdir(dir,{withFileTypes:true})){const name=prefix+'/'+entry.name;if(entry.isDirectory())rows.push(...await runtimeSourceNames(join(dir,entry.name),name));else if(entry.isFile()&&entry.name.endsWith('.js'))rows.push(name);}return rows;}
 for(const name of [...await runtimeSourceNames(join(source,'adapters/dsh'),'adapters/dsh'),...await runtimeSourceNames(join(source,'core'),'core')].sort())if(!sourceNames.includes(name))sourceNames.push(name);
 const sourceDigests = await digests();
-const harnessDigests=Object.fromEntries(await Promise.all(['scripts/dsh-delegation-integration.mjs','scripts/fixtures/delegation-fixture.mjs'].map(async name=>[name,createHash('sha256').update(await readFile(join(source,name))).digest('hex')])));
+const harnessDigests=Object.fromEntries(await Promise.all(['scripts/dsh-delegation-integration.mjs','scripts/fixtures/delegation-fixture.mjs',...(args.withRealObserver?['scripts/dsh-real-lifecycle.mjs']:[])].map(async name=>[name,createHash('sha256').update(await readFile(join(source,name))).digest('hex')])));
 const workspace=join(dir,'workspace');await mkdir(workspace,{recursive:true});await writeFile(join(workspace,'input.txt'),'ACTUAL_WORKER_READ_BYTES 主体保真🙂');
 await writeFile(join(dir,'executed-fixture.mjs'),await readFile(join(source,'scripts','fixtures','delegation-fixture.mjs')));
 await writeFile(join(dir,'executed-runner.mjs'),await readFile(fileURLToPath(import.meta.url)));
 const overlay = join(dir, 'test-overlay.yml');
+const extraObservers=[];
+if(args.withRealObserver){const file=join(dir,'executed-real-observer.mjs');await writeFile(file,observerSource);extraObservers.push({id:'persona-real-observer',name:pathToFileURL(file).href,config:observerConfig({provider:'persona-delegation-fixture',model:'fixture-v1'},dir)});}
 await writeFile(overlay, JSON.stringify([
   { id: 'tools', config: { mode: 'native' } },
   { id: 'persona-memory-coordinator', config: { provider: 'persona-delegation-fixture', model: 'fixture-v1', operatorControl: true } },
   { insert: [{ id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'persona-memory' } },
-    { id: 'persona-delegation-fixture-probe', name: pathToFileURL(join(dir, 'executed-fixture.mjs')).href, config: { artifacts: dir, workspace } }] },
+    { id: 'persona-delegation-fixture-probe', name: pathToFileURL(join(dir, 'executed-fixture.mjs')).href, config: { artifacts: dir, workspace } }, ...extraObservers] },
 ], null, 2));
 const child = spawn(options.exe, [options.cli, '--profile', options.profile, '--patch', overlay], { cwd: source, windowsHide: true,
   env: options.env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -241,6 +245,13 @@ try {
   requests = await readLines(join(dir, 'requests.private.jsonl'));
   check('onlyFixedFixtureModelWasUsed', requests.length > 0 && requests.every(row => row.provider === 'persona-delegation-fixture' && row.model === 'fixture-v1'));
   summary.observation = { hostRequests: requests.filter(row => row.kind === 'host-llm-stream-input').length, fixtureRequests: requests.filter(row => row.kind === 'fixture-provider-received-request').length, workerRequests: workerRequests.length, realModelRequests: 0 };
+  if(args.withRealObserver){
+    const roles=await readLines(join(dir,'agent-role-observation.jsonl'));
+    check('realObserverSkipsTrustedWorkerWithoutChangingPreset',roles.some(row=>row.sessionId===summary.task.workerSessionId&&row.role==='delegated-worker'&&row.personaPresetChanged===false));
+    check('realObserverSkipsResumedRevokedWorker',roles.some(row=>row.sessionId===summary.task.workerSessionId&&row.source==='resume'&&row.role==='delegated-worker'&&row.personaPresetChanged===false));
+    summary.observation.realObserverEnabled=true;
+    summary.observation.workerRoleObservations=roles.filter(row=>row.role==='delegated-worker').length;
+  }
   await control('/unload', 'POST', {});
   check('sourceDigestsStillMatch', JSON.stringify(sourceDigests) === JSON.stringify(await digests())); summary.status = 'passed';
 

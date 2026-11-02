@@ -160,6 +160,8 @@ node scripts/persona-cli.mjs recover
 
 ## 文档与验证
 
+2026-11-02的[核心功能链验证](docs/core-function-validation.md)单列112项核心定向回归、18项观察器／预算回归、当前安装DSH的29项生命周期与37项带真实观察器的委派检查；全部使用固定模型响应，真实LLM调用为0。它修复测试观察器误挂worker预设的问题，并验证提交后的下一原生请求和冷恢复实际加载，不冒充当前版本真实模型的自然主动、睡醒、整理成长或委派验收。
+
 0.13.0的时间线与必要上下文历史验证见[时间线说明](docs/memory-timeline-and-context.md)。0.13.4完成140项登录恢复、201项界面、38项渠道／进程及5项管理宿主模块定向回归，构建、语法、文档与打包检查通过；普通desktop已加载补修，当前QQ仍需本人扫码，新聊天往返待验，见[本轮回执](docs/verification/0.13.4-qq-login-recovery.json)与[恢复说明](docs/qq-login-recovery.md)。0.13.3的完整1400/1400仍只属于[上一版验收](docs/verification/0.13.3-qq-profile-output.json)，不计作本版全量。QQ资料变更由用户自行测试，其他社交入口继续标未测试；0.12.0的[账号能力与当时待验收表](docs/account-capabilities.md#0120-current-acceptance)、0.11.0的[好友／聊天历史结果](docs/qq-one-click-setup.md#0110-final-acceptance)保留原范围。实际PR与审核状态见[收录记录](docs/market-submission.md)，不能由本地测试推断已获收录。
 
 0.12.0历史阶段的真实Flash早期验证已完成lexical／association记忆检索、QQ账号只读检查与已有好友查询，模型自主选择不改资料、不发空间，真实写入未验收。冻结源码完整回归1289／1289与实际ownership残锁自动恢复已通过；累计17次真实模型请求，修后3次工具调用已核当前QQ／B站未登录的能力状态与明确错误。本次新受控QQ和B站仍等待本人扫码，OneBot API尚不可用，登录后材料、平台写入和新群消息往返待验；前阶段在线不代表当前已登录。结果见[本轮观测](docs/account-capabilities.md#0120-stage-observations)与[公开收据](docs/verification/0.12.0-account-recovery.json)。
