@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {spawn} from 'node:child_process';
-import {initializeWholeBudget, readWholeBudget, reserveWholeAttempt, settleWholeAttempt, clearWholeBudget} from '../scripts/dsh-test-budget.mjs';
+import {createWholeBudgetState, validateWholeBudgetState, initializeWholeBudget, readWholeBudget, reserveWholeAttempt, settleWholeAttempt, clearWholeBudget} from '../scripts/dsh-test-budget.mjs';
 import {observerSource, observerConfig} from '../scripts/dsh-real-lifecycle.mjs';
 
 async function fixture(t, limits = {}) {
@@ -166,4 +166,33 @@ test('clear preserves a fixed previous state and does not write an invalid empty
   await clearWholeBudget(file);
   assert.equal(await readWholeBudget(file, {allowMissing: true}), null);
   assert.equal(JSON.parse(await readFile(file + '.previous.json', 'utf8')).wholeAttemptsUsed, 1);
+});
+
+test('token-only schema 2 persists no count/time cap beyond old 20/30 limits', async t => {
+  const {file} = await fixture(t, {attempts: null, tokens: 250, wallMs: null});
+  for (let i = 0; i < 25; i++) {
+    await reserveWholeAttempt(file, {requestId: 'token-only-' + i, startedAt: Date.now() - 86400000});
+    await settleWholeAttempt(file, 'token-only-' + i, {totalTokens: 10});
+  }
+  const state = await readWholeBudget(file);
+  assert.equal(state.schema, 2);
+  assert.equal(state.wholeAttemptsCap, null);
+  assert.equal(state.wholeWallMs, null);
+  assert.equal(state.wholeDeadline, null);
+  assert.equal(state.wholeAttemptsUsed, 25);
+  assert.equal(state.wholeTokensUsed, 250);
+  validateWholeBudgetState(JSON.parse(JSON.stringify(state)));
+  await assert.rejects(reserveWholeAttempt(file, {requestId: '26'}), {code: 'WHOLE_TOKENS_EXCEEDED'});
+});
+
+test('nullable count/time caps do not weaken required token or legacy schema validation', () => {
+  const valid = createWholeBudgetState({attempts: null, tokens: 10000000, wallMs: null});
+  validateWholeBudgetState(valid);
+  assert.throws(() => validateWholeBudgetState({...valid, schema: 1}), {code: 'WHOLE_STATE_INVALID'});
+  for (const field of ['attempts', 'tokens', 'wallMs']) {
+    const args = {attempts: null, tokens: 10000000, wallMs: null};
+    delete args[field];
+    assert.throws(() => createWholeBudgetState(args), {code: 'WHOLE_PARAMS_INVALID'});
+  }
+  for (const tokens of [null, NaN, 0, 1.5]) assert.throws(() => createWholeBudgetState({attempts: null, tokens, wallMs: null}), {code: 'WHOLE_PARAMS_INVALID'});
 });

@@ -5,12 +5,13 @@ import {randomUUID} from 'node:crypto';
 const failure = (code, message) => Object.assign(new Error(message), {code});
 export const validTokenTotal = value => Number.isSafeInteger(value) && value >= 0;
 const positive = value => Number.isSafeInteger(value) && value > 0;
+const optionalLimit = value => value === null || positive(value);
 const timestamp = value => Number.isSafeInteger(value) && value >= 0;
 
 export function createWholeBudgetState({attempts, tokens, wallMs, startCumulative = null, now = Date.now()}) {
-  if (!positive(attempts) || !positive(tokens) || !positive(wallMs) || !timestamp(now))
-    throw failure('WHOLE_PARAMS_INVALID', 'Whole budget limits must be positive safe integers');
-  return {schema: 1, wholeAttemptsCap: attempts, wholeTokensCap: tokens, wholeWallMs: wallMs,
+  if (!optionalLimit(attempts) || !positive(tokens) || !optionalLimit(wallMs) || !timestamp(now))
+    throw failure('WHOLE_PARAMS_INVALID', 'Token limit must be positive; attempt/time limits must be positive or explicit null');
+  return {schema: attempts === null || wallMs === null ? 2 : 1, wholeAttemptsCap: attempts, wholeTokensCap: tokens, wholeWallMs: wallMs,
     wholeAttemptsUsed: 0, wholeTokensUsed: 0, wholeUsageAttempts: 0, wholePendingUnknown: 0,
     wholeFirstRequestAt: null, wholeDeadline: null, createdAt: now, startCumulative, requests: {}};
 }
@@ -30,15 +31,16 @@ function totals(state) {
 }
 
 export function validateWholeBudgetState(state) {
-  if (!state || state.schema !== 1 || !positive(state.wholeAttemptsCap) ||
-    !positive(state.wholeTokensCap) || !positive(state.wholeWallMs) || !timestamp(state.createdAt) ||
+  if (!state || ![1, 2].includes(state.schema) ||
+    !(state.schema === 2 ? optionalLimit(state.wholeAttemptsCap) : positive(state.wholeAttemptsCap)) ||
+    !positive(state.wholeTokensCap) || !(state.schema === 2 ? optionalLimit(state.wholeWallMs) : positive(state.wholeWallMs)) || !timestamp(state.createdAt) ||
     !state.requests || typeof state.requests !== 'object' || Array.isArray(state.requests))
     throw failure('WHOLE_STATE_INVALID', 'Missing or invalid whole budget state');
   const t = totals(state);
   if (state.wholeAttemptsUsed !== t.attempts || state.wholeTokensUsed !== t.tokens ||
     state.wholeUsageAttempts !== t.known || state.wholePendingUnknown !== t.unknown ||
     state.wholeFirstRequestAt !== t.first ||
-    state.wholeDeadline !== (t.first === null ? null : t.first + state.wholeWallMs) ||
+    state.wholeDeadline !== (t.first === null || state.wholeWallMs === null ? null : t.first + state.wholeWallMs) ||
     (state.wholeDeadline !== null && !timestamp(state.wholeDeadline)))
     throw failure('WHOLE_STATE_INVALID', 'Whole counters or deadline disagree with reservations');
   return state;
@@ -48,7 +50,7 @@ function refresh(state) {
   const t = totals(state);
   Object.assign(state, {wholeAttemptsUsed: t.attempts, wholeTokensUsed: t.tokens,
     wholeUsageAttempts: t.known, wholePendingUnknown: t.unknown, wholeFirstRequestAt: t.first,
-    wholeDeadline: t.first === null ? null : t.first + state.wholeWallMs});
+    wholeDeadline: t.first === null || state.wholeWallMs === null ? null : t.first + state.wholeWallMs});
   return validateWholeBudgetState(state);
 }
 
@@ -116,7 +118,7 @@ export async function reserveWholeAttempt(file, {requestId, startedAt}) {
     if (Object.hasOwn(state.requests, requestId)) throw failure('WHOLE_DUPLICATE_REQUEST', 'Attempt already reserved');
     if (state.wholeDeadline !== null && startedAt >= state.wholeDeadline)
       throw failure('WHOLE_DEADLINE_PASSED', 'Whole-set deadline passed before provider dispatch');
-    if (state.wholeAttemptsUsed >= state.wholeAttemptsCap)
+    if (state.wholeAttemptsCap !== null && state.wholeAttemptsUsed >= state.wholeAttemptsCap)
       throw failure('WHOLE_ATTEMPTS_EXCEEDED', 'Whole-set attempt cap reached before provider dispatch');
     if (state.wholeTokensUsed >= state.wholeTokensCap)
       throw failure('WHOLE_TOKENS_EXCEEDED', 'Known token threshold reached before provider dispatch');
