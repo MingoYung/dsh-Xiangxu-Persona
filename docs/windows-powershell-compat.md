@@ -80,3 +80,11 @@ console 只在该兼容子进程原本没有 console 时分配，并立即隐藏
 “原只读策略不授予临时写入”有宿主源码依据；“出现 `ConstrainedLanguage` 和编码前导错误”有运行证据。二者的具体因果关系未在本轮另做隔离验证，不将合理推断写成已证明的结论。
 
 本兼容模块保留这个限制，不强制切换 `FullLanguage`，不额外授予临时或工作区写权限。只读工具若遇到类型调用受限或编码错误，应按宿主策略问题单独诊断，不能用“关闭沙箱”作为自动回退。
+
+## QQ 验签与 Windows PowerShell 模块路径（2026-11-03）
+
+从 PowerShell 7 启动 DSH 时，Windows PowerShell 5.1 子进程可能继承 7 的 `PSModulePath`。本机实证中，QQ 的签名是有效的腾讯签名，但 5.1 无法自动加载 `Microsoft.PowerShell.Security`，使 `Get-AuthenticodeSignature` 失败，QQ 连接报 `NAPCAT_QQ_SIGNATURE`，尚未启动到扫码阶段。
+
+适配器现在只从本插件 Windows PowerShell 子进程的环境副本移除大小写无关的 `PSModulePath`，由 5.1 初始化自己的默认模块路径。签名检查、QQ 进程归属查询与停止、本地系统语音共用此处理；父进程环境、全局设置、执行策略、签名条件和进程归属规则保持原样。验签仍要求 `Valid` 且签名者为 Tencent；校验失败不会启动 QQ。
+
+只读对照在普通 Node 和 DSH 自带 Electron 的 Node 模式均复现了继承环境失败、局部清理后腾讯验签成功；进程查询的路径、创建时间和 PID 一致。本地受影响测试162/162通过，包含真实 Windows PowerShell 模块加载、无效签名拒绝、原生进程归属与语音边界。这些零模型探针不等于 QQ 收发或真实人格行为验收；正式连接状态另按实际加载回执报告。

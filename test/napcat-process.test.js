@@ -13,6 +13,7 @@ test('QQ native ownership requires the exact QQ executable and owned launcher an
   const calls = [], verify = createOwnedQqProcessVerifier({ platform: 'win32', clock: () => now, execFilePort: async (...args) => { calls.push(args); return { stdout: JSON.stringify(rows) }; } });
   assert.equal(await verify(300, options), true);
   assert.equal(calls[0][2].windowsHide, true);
+  assert.equal(Object.keys(calls[0][2].env).some(key => key.toLowerCase() === 'psmodulepath'), false);
   assert.match(Buffer.from(calls[0][1].at(-1), 'base64').toString('utf16le'), /ProcessId/);
   rows = [row(300, 200, 4), row(200, 100, 2)];
   assert.equal(await verify(300, options), false, 'a reused PID must not inherit ownership');
@@ -36,6 +37,7 @@ test('owned stop pins exact process handles and verifies exit before confirming 
   const controller=createOwnedQqProcessController({platform:'win32',clock:()=>now,execFilePort:async(_file,args,options)=>{
     const script=Buffer.from(args.at(-1),'base64').toString('utf16le');scripts.push(script);
     assert.equal(options.windowsHide,true);
+    assert.equal(Object.keys(options.env).some(key => key.toLowerCase() === 'psmodulepath'), false);
     return {stdout:JSON.stringify(script.includes('Add-Type')?{confirmed:true}:[row(300,100,3)])};
   }});
   assert.equal(await controller.stopOwnedProcess(options.launcher,{qqPath,native:{pid:300,bootId:options.bootId,startedAt:start}}),true);

@@ -57,6 +57,7 @@ test('static helper code and stdin JSON stay separate, with truthful rate/pitch 
   const result = await port.synthesize({ ...input(text), rate: 1.1 }, { requestId: 'same-technical-request' });
   assert.equal(result.status, 'generated'); assert.equal(result.wave.codec, 'pcm_s16le'); assert.equal(result.bytes, 84); assert.equal(result.rateMapping, 'approximate_sapi_step'); assert.equal(result.sapiRate, 1);
   const call = fake.calls.at(-1); assert.equal(call.options.shell, false); assert.equal(call.options.windowsHide, true); assert.equal(call.request.text, text); assert.equal(call.request.voiceName, voiceName);
+  assert.equal(Object.keys(call.options.env).some(key => key.toLowerCase() === 'psmodulepath'), false);
   assert.equal(call.args.includes('-ExecutionPolicy'), false); assert.equal(call.args.includes('Bypass'), false);
   const code = Buffer.from(call.args.at(-1), 'base64').toString('utf16le'); assert.equal(code.includes(text), false); assert.equal(code.includes(voiceName), false); assert.equal(code.includes(root), false);
   const duplicate = await port.synthesize({ ...input(text), rate: 1.1 }, { requestId: 'same-technical-request' }); assert.equal(duplicate.duplicate, true); assert.equal(duplicate.path, result.path); assert.equal(fake.calls.length, 2);

@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { windowsPowerShellEnvironment } from '../compat/windows-powershell-env.js';
 
 const run = promisify(execFile);
 const pathKey = value => path.resolve(value).replaceAll('\\', '/').toLowerCase();
@@ -14,7 +15,7 @@ export function createOwnedQqProcessController({ platform = process.platform, ex
     const script = `$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); $rows=[Collections.Generic.List[object]]::new(); $seen=[Collections.Generic.HashSet[uint32]]::new(); $currentId=[uint32]${pid}; for($index=0;$index -lt 24 -and $currentId -gt 0;$index++){ if(-not $seen.Add($currentId)){break}; $entry=Get-CimInstance Win32_Process -Filter ('ProcessId='+$currentId); if(-not $entry){break}; $rows.Add([pscustomobject]@{pid=[uint32]$entry.ProcessId;parentPid=[uint32]$entry.ParentProcessId;path=[string]$entry.ExecutablePath;createdAt=$entry.CreationDate.ToUniversalTime().ToString('o')}); $currentId=[uint32]$entry.ParentProcessId }; ConvertTo-Json -InputObject @($rows.ToArray()) -Compress`;
     let rows;
     try {
-      const result = await execFilePort('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, encoding: 'utf8', timeout: 10000, maxBuffer: 131072 });
+      const result = await execFilePort('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, env: windowsPowerShellEnvironment(), encoding: 'utf8', timeout: 10000, maxBuffer: 131072 });
       rows = JSON.parse(result.stdout.replace(/^\ufeff/, '').trim());
     } catch { return null; }
     return Array.isArray(rows) && rows.length && rows.length <= 24 ? rows : null;
@@ -115,7 +116,7 @@ try {
 } catch {$confirmed=$false} finally {foreach($handle in $handles){[void][XiangxuOwnedProcess]::CloseHandle($handle)}}
 [pscustomobject]@{confirmed=$confirmed}|ConvertTo-Json -Compress`;
     try {
-      const result = await execFilePort('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, encoding: 'utf8', timeout: 30000, maxBuffer: 16384 });
+      const result = await execFilePort('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, env: windowsPowerShellEnvironment(), encoding: 'utf8', timeout: 30000, maxBuffer: 16384 });
       const value = JSON.parse(result.stdout.replace(/^\ufeff/, '').trim());
       if (value?.confirmed === true) { observed.delete(native.bootId); return true; }
     } catch {}

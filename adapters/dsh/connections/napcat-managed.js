@@ -4,6 +4,7 @@ import {spawn} from 'node:child_process';
 import net from 'node:net';
 import {randomBytes,randomUUID,createHash} from 'node:crypto';
 import {inspectNapcatZip,readNapcatZipMember} from './napcat-zip.js';
+import {windowsPowerShellEnvironment} from '../compat/windows-powershell-env.js';
 export const NAPCAT_RELEASE=Object.freeze({version:'v4.18.41',url:'https://github.com/NapNeko/NapCatQQ/releases/download/v4.18.41/NapCat.Shell.zip',bytes:35894640,sha256:'6801f93e533846cea05f4f531874a0e84371ab2331c5585b57cd7e3b869cf96b'});
 const OWN_SERVER='xiangxu-managed-http',OWN_CLIENT='xiangxu-managed-events',sha=b=>createHash('sha256').update(b).digest('hex'),clone=v=>structuredClone(v),fail=(code,message)=>{throw Object.assign(new Error(message),{code});},object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const safeError=e=>({code:/^[A-Z0-9_]{1,80}$/.test(e?.code??'')?e.code:'NAPCAT_SETUP_FAILED',message:({NAPCAT_WEBUI_RATE_LIMITED:'本机QQ管理接口暂时限制登录尝试，请等待管理连接恢复后重新检查；这不等于QQ账号需要重新扫码。',NAPCAT_WEBUI_AUTH:'本机QQ管理认证尚未就绪，请重新检查管理连接；QQ在线状态尚需另行核实。',NAPCAT_WEBUI_AUTH_EXPIRED:'本机QQ管理凭据已失效，请重新检查管理连接；没有重新执行刚才的操作。',NAPCAT_STARTUP_TIMEOUT:'QQ启动等待超时：本机管理接口在90秒内仍未就绪，尚未取得登录状态。可以重新检查连接；没有重复启动QQ。'})[e?.code]??'个人QQ连接尚未完成，请检查组件、登录状态或重试本次连接。',...(e?.code==='NAPCAT_WEBUI_RATE_LIMITED'?{retryAt:e.retryAt,retryAfterMs:e.retryAfterMs}:{})});
@@ -179,7 +180,7 @@ export function createNapcatManagedService({installRoot,qqPath,fetchImpl=fetch,f
   async function verifyQq(f){await safe(qqPath);const st=await fsPort.lstat(qqPath);if(!st.isFile())fail('NAPCAT_QQ_MISSING','没有找到已安装的QQ');if(runtimePorts.verifyQqExecutable){if(await runtimePorts.verifyQqExecutable(qqPath,{signal:f.abort.signal})!==true)fail('NAPCAT_QQ_SIGNATURE','QQ组件签名尚未确认');return;}
     if(process.platform!=='win32')fail('NAPCAT_PLATFORM_UNSUPPORTED','此托管启动方式目前用于Windows');
     const script="$x=Get-AuthenticodeSignature -LiteralPath '"+qqPath.replaceAll("'","''")+"'; if($x.Status -eq 'Valid' -and $x.SignerCertificate.Subject -match 'Tencent|腾讯'){exit 0}else{exit 3}";
-    const probe=spawnPort('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,stdio:'ignore'});await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{probe.kill();reject(Object.assign(new Error('QQ签名检查超时'),{code:'NAPCAT_QQ_SIGNATURE'}));},15000);probe.once('error',()=>{clearTimeout(timer);reject(Object.assign(new Error('QQ签名无法检查'),{code:'NAPCAT_QQ_SIGNATURE'}));});probe.once('exit',code=>{clearTimeout(timer);code===0?resolve():reject(Object.assign(new Error('QQ签名未确认'),{code:'NAPCAT_QQ_SIGNATURE'}));});});
+    const probe=spawnPort('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,env:windowsPowerShellEnvironment(),stdio:'ignore'});await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{probe.kill();reject(Object.assign(new Error('QQ签名检查超时'),{code:'NAPCAT_QQ_SIGNATURE'}));},15000);probe.once('error',()=>{clearTimeout(timer);reject(Object.assign(new Error('QQ签名无法检查'),{code:'NAPCAT_QQ_SIGNATURE'}));});probe.once('exit',code=>{clearTimeout(timer);code===0?resolve():reject(Object.assign(new Error('QQ签名未确认'),{code:'NAPCAT_QQ_SIGNATURE'}));});});
   }
   async function resumeQuickAccount(f){
     const intent=f.resumeIntent,desired=saved.desired;

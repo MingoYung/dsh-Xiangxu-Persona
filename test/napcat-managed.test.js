@@ -9,6 +9,13 @@ import {createNapcatManagedService} from '../adapters/dsh/connections/napcat-man
 import {inspectNapcatZip,NAPCAT_ZIP_LIMITS} from '../adapters/dsh/connections/napcat-zip.js';
 
 const sha=value=>createHash('sha256').update(value).digest('hex');
+test('QQ signature rejection still prevents launching the client', async t => {
+  const f = await fixture(t, { runtimePorts: { verifyQqExecutable: async () => false } });
+  const value = await startReady(f);
+  assert.equal(value.phase, 'failed');
+  assert.equal(value.error.code, 'NAPCAT_QQ_SIGNATURE');
+  assert.equal(f.counts.spawn, 0);
+});
 // Fixture paths live on the actual test host; Linux must retain QQ.exe casing.
 const hostPath=value=>process.platform==='win32'?path.resolve(value).toLowerCase():path.resolve(value);
 const tick=()=>new Promise(resolve=>setTimeout(resolve,2));

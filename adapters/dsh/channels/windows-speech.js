@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { windowsPowerShellEnvironment } from '../compat/windows-powershell-env.js';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -145,7 +146,7 @@ export function createWindowsSpeechPort({ cacheRoot, spawnImpl = spawn, platform
       const abort = code => { reason ??= code; try { child?.kill(); } catch {} };
       let timer, monitor;
       try {
-        child = spawnImpl(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] }); activeChild = child;
+        child = spawnImpl(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { windowsHide: true, env: windowsPowerShellEnvironment(), shell: false, stdio: ['pipe', 'pipe', 'pipe'] }); activeChild = child;
         child.stdout.on('data', chunk => { outputBytes += chunk.length; if (outputBytes > WINDOWS_SPEECH_LIMITS.metadataBytes) abort('process_output_capacity'); else stdout.push(Buffer.from(chunk)); });
         child.stderr.on('data', () => {}); // Never reflect an engine's potentially sensitive error text.
         child.once('error', () => finish(unavailable('process_unavailable')));
