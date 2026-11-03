@@ -49,16 +49,18 @@ const configured = { id: 'qq', mode: 'bridge', configured: true, enabled: true, 
 const snapshot = (phase, patch = {}) => ({ instanceId: 'default', phase, management: { status: 'ready', lastVerifiedAt: 1000 }, lastVerifiedQQ: { at: 1000, online: false, accountId: '10001' }, ...patch });
 const managerReads = ui => ui.calls.filter(call => call.action.startsWith('qqBridgeSetup.'));
 
-test('overview prioritizes a managed waiting-login snapshot over a cached connected channel', async () => {
+test('overview describes a waiting-login management snapshot without denying message connectivity', async () => {
   const ui = await frontend({ channel: configured, managed: snapshot('waiting_login') });
   assert.match(ui.text(), /当前状态：清醒/);
   assert.match(ui.text(), /已连接的渠道可以接收来信；是否回应由相续决定/);
-  assert.match(ui.text(), /QQ 连接：等待登录/);
-  assert.match(ui.text(), /暂不能通过 QQ 收发消息/);
+  assert.match(ui.text(), /QQ 连接：登录管理状态待核对/);
+  assert.match(ui.text(), /登录管理接口上次尚未确认就绪/);
+  assert.match(ui.text(), /不等同于消息通路一定不可用/);
+  assert.doesNotMatch(ui.text(), /QQ 尚未完成登录|暂不能通过 QQ 收发消息|消息通路已验证/);
   assert.match(ui.text(), /上次核查：/);
-  assert.ok(ui.text().indexOf('QQ 连接：等待登录') < ui.text().indexOf('当前状态：清醒'));
+  assert.ok(ui.text().indexOf('QQ 连接：登录管理状态待核对') < ui.text().indexOf('当前状态：清醒'));
   assert.ok(ui.text().indexOf('先认识一下，也可以直接聊天') >= 0);
-  assert.ok(ui.text().indexOf('QQ 连接：等待登录') < ui.text().indexOf('先认识一下，也可以直接聊天'));
+  assert.ok(ui.text().indexOf('QQ 连接：登录管理状态待核对') < ui.text().indexOf('先认识一下，也可以直接聊天'));
   assert.doesNotMatch(ui.text(), /QQ 连接：上次核查已连接/);
   assert.deepEqual(managerReads(ui), [{ action: 'qqBridgeSetup.inspect', args: { instanceId: 'default' } }]);
   assert.equal(ui.timers.size, 0);
@@ -66,6 +68,16 @@ test('overview prioritizes a managed waiting-login snapshot over a cached connec
   await ui.button('检查 QQ 连接').emit('click');
   assert.deepEqual(structuredClone(ui.evaluate('window.lastNavigation')), { page: 'chat', view: 'qq' });
   assert.equal(ui.calls.some(call => /poll|start|connect$|probe|model|control\./.test(call.action)), false);
+});
+
+test('overview attributes reconnecting to the management interface and adds no live probe', async () => {
+  const ui = await frontend({ channel: configured, managed: snapshot('waiting_login', { loginPhase: 'reconnecting', error: { code: 'NAPCAT_WEBUI_REJECTED' } }) });
+  assert.match(ui.text(), /QQ 连接：登录管理接口正在重连/);
+  assert.match(ui.text(), /不等同于消息通路一定不可用/);
+  assert.doesNotMatch(ui.text(), /暂不能通过 QQ 收发消息|消息通路已验证|QQ 连接：上次核查已连接/);
+  assert.equal(managerReads(ui).length, 1);
+  assert.equal(ui.timers.size, 0);
+  assert.equal(ui.calls.some(call => /poll|start|connect$|probe/.test(call.action)), false);
 });
 
 test('overview reports unknown management and failed preparation without mistaking personality state for connectivity', async () => {

@@ -337,7 +337,7 @@ function overviewQqConnection(instanceId, alive) {
     if (relevant && managed.management?.status !== 'ready') {
       paint('QQ 连接：登录状态尚未核实', '本机管理连接尚未确认。已保存配置不等于 QQ 当前在线，请打开连接页查看实际状态。', checkedAt, 'warning');
     } else if (relevant && managed.phase === 'waiting_login') {
-      paint('QQ 连接：等待登录', 'QQ 尚未完成登录，暂不能通过 QQ 收发消息。请打开连接页查看下一步，出现二维码后用手机 QQ 扫码。', checkedAt, 'warning');
+      paint((managed.loginPhase ?? checked?.loginPhase) === 'reconnecting' ? 'QQ 连接：登录管理接口正在重连' : 'QQ 连接：登录管理状态待核对', '登录管理接口上次尚未确认就绪，这不等同于消息通路一定不可用。请打开连接页核对；仅在出现当前有效二维码时再扫码。', checkedAt, 'warning');
     } else if (relevant && managed.phase === 'failed') {
       paint('QQ 连接：准备未完成', '本次 QQ 连接遇到技术问题。请打开连接页查看原因和恢复操作。', checkedAt, 'warning');
     } else if (!qq.enabled || relevant && managed.phase === 'stopped') {
@@ -1724,11 +1724,11 @@ async function qqBridgeSetupPage() {
     life.cancelLater();
     const logged = account(current), problem = managementProblem(), recovery = needsRecovery(), managementVerified = !current.management || management().status === 'ready', connected = current.connected === true && !recovery && managementVerified, qr = qrAvailable(), seconds = remaining(), verified = current.lastVerifiedQQ;
     let heading = connected ? '已取得当前连接确认' : phaseNames[current.phase] ?? current.phase;
-    if (problem) heading = verified?.online === true ? 'QQ 上次确认在线，管理连接暂不可用' : verified?.online === false ? 'QQ 上次确认未登录，当前状态待核对' : 'QQ 登录状态尚未核实';
+    if (problem) heading = verified?.online === true ? 'QQ 上次确认在线，管理连接暂不可用' : verified?.online === false ? '登录管理接口上次未就绪，当前状态待核对' : 'QQ 登录状态尚未核实';
     else if (localError) heading = '本次连接状态尚未核实';
     else if (reconnectRequired()) heading = 'QQ 已离线，需要重新连接';
     else if (!managementVerified && current.phase === 'connected') heading = '连接配置已保存，登录状态待核对';
-    else if (current.phase === 'waiting_login' && !qr) heading = current.qrLoginAccepted || verified?.online === true ? 'QQ 正在完成登录' : recovery ? 'QQ 登录尚未完成' : verified?.online === false && verified.accountId ? 'QQ 已离线，正在等待可用二维码' : '正在核对 QQ 登录状态';
+    else if (current.phase === 'waiting_login' && !qr) heading = current.qrLoginAccepted || verified?.online === true ? 'QQ 正在完成登录' : (current.loginPhase ?? verified?.loginPhase) === 'reconnecting' ? 'QQ 登录管理接口正在重连' : 'QQ 登录管理状态待核对';
     replace(statusArea, kv({ '准备进度': heading, '接入的人格': selectedName,
       ...((current.installVersion ?? current.version) ? { '本地组件版本': current.installVersion ?? current.version } : {}), ...(logged ? { [problem ? '上次核对的账号' : managementVerified ? '实际登录账号' : '已保存账号']: (logged.displayName ? logged.displayName + ' · ' : '') + logged.accountId } : {}) }),
       problem ? notice(management().status === 'rate_limited' || current.error?.code === 'NAPCAT_WEBUI_RATE_LIMITED' ? '本机 QQ 管理连接请求过于频繁，暂时无法核对登录状态。' : '暂时无法连接本机 QQ 管理接口，登录与聊天状态需要重新核对。', 'warning') : null,
@@ -1742,7 +1742,7 @@ async function qqBridgeSetupPage() {
       inFlight ? element('p', { class: 'small muted', role: 'status' }, inFlight === 'poll' ? '正在核对连接，请稍候…' : '正在处理本次操作，请稍候…') : null);
     replace(loginArea); replace(scopeArea); replace(actions);
     if (qr) loginArea.append(element('img', { class: 'connection-qr', src: current.qrDataUrl, alt: '个人 QQ 本次登录二维码' }), element('p', {}, '请用手机 QQ 扫码，并由你本人在手机上确认。扫码后还需点击接入账号。'));
-    else if (current.phase === 'waiting_login' && !problem && !reconnectRequired()) loginArea.append(notice(current.qrLoginAccepted || verified?.online === true ? '手机确认已收到，正在等待 QQ 完成登录。这里暂时不需要再扫码。' : recovery ? canRefreshQr() ? '本次登录尚未完成。可以点击“重新生成二维码”，取得新二维码后再用手机 QQ 扫码。' : '先核对这次登录错误，再重新检查连接。' : '本机 QQ 尚未提供当前可用的二维码。可以先检查连接，出现二维码后再用手机扫码。'));
+    else if (current.phase === 'waiting_login' && !problem && !reconnectRequired()) loginArea.append(notice(current.qrLoginAccepted || verified?.online === true ? '手机确认已收到，正在等待 QQ 完成登录。这里暂时不需要再扫码。' : recovery ? canRefreshQr() ? '本次登录尚未完成。可以点击“重新生成二维码”，取得新二维码后再用手机 QQ 扫码。' : '登录管理接口未确认本次操作，不能仅凭此结果断言消息通路不可用。请重新检查连接；仅在出现当前有效二维码时再扫码。' : '登录管理接口尚未确认就绪，不能仅凭此结果断言消息通路不可用。请重新检查连接；仅在出现当前有效二维码时再扫码。'));
     if (current.phase === 'authorized' && logged && !recovery) renderScope(logged);
     else if (current.phase === 'connected' && connected && logged && editingScope) renderScope(logged, { editing: true });
     else if (current.phase === 'authorized') scopeArea.append(notice('本机组件尚未返回可核实的登录账号，请刷新状态后再接入。', 'warning'));

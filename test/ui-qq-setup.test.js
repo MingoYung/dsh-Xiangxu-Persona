@@ -320,6 +320,19 @@ const readyManagement={status:'ready',lastVerifiedAt:1000,retryAt:null,retryAfte
 const waitingQr={...BASE,phase:'waiting_login',flowId:'managed-flow',hasQr:true,qrDataUrl:'data:image/svg+xml;base64,PHN2Zy8+',management:readyManagement,lastVerifiedQQ:{at:1000,online:false,coreReady:false,loginPhase:'waiting_qrcode',accountId:null}};
 const expiredQr={...waitingQr,hasQr:false,qrDataUrl:null,loginPhase:'waiting_qrcode',error:{code:'NAPCAT_LOGIN_ERROR',message:'二维码已经过期，请刷新二维码'}};
 
+test('reconnecting management state does not claim message failure or request a scan without a QR',async()=>{
+ const view={...waitingQr,hasQr:false,qrDataUrl:null,loginPhase:'reconnecting',error:{code:'NAPCAT_WEBUI_REJECTED',message:'管理接口尚未确认'},lastVerifiedQQ:{...waitingQr.lastVerifiedQQ,loginPhase:'reconnecting',accountId:'10001'}};
+ const ui=await setup({'qqBridgeSetup.inspect':args=>({...view,instanceId:args.instanceId})});
+ await ui.evaluate("navigate('chat','qq')");
+ assert.match(body(ui).textContent,/QQ 登录管理接口正在重连/);
+ assert.match(body(ui).textContent,/不能仅凭此结果断言消息通路不可用/);
+ assert.doesNotMatch(body(ui).textContent,/QQ 已离线|QQ 尚未完成登录|暂不能通过 QQ 收发消息|请用手机 QQ 扫码|消息通路已验证/);
+ assert.ok(ui.button(body(ui),'重新检查连接'));
+ assert.equal(ui.walk(body(ui)).some(node=>node.tagName==='img'),false);
+ assert.deepEqual(managerCalls(ui).map(call=>call.action),['qqBridgeSetup.inspect']);
+ assert.equal(ui.timers.size,0);
+});
+
 test('an expired hidden QQ QR has one explicit regeneration path and its successful fresh result becomes scannable',async()=>{
  const freshQr='data:image/svg+xml;base64,'+Buffer.from('<svg>fresh-after-expiry</svg>').toString('base64');
  const ui=await setup({'qqBridgeSetup.inspect':args=>({...expiredQr,instanceId:args.instanceId}),'qqBridgeSetup.poll':args=>args.refreshQr?{...waitingQr,qrDataUrl:freshQr,error:null,instanceId:args.instanceId}:{...expiredQr,instanceId:args.instanceId}});
@@ -356,8 +369,8 @@ test('management failure with no QR does not tell an unverified user to scan, re
  const ui=await setup({'qqBridgeSetup.inspect':args=>({...view,instanceId:args.instanceId})});await ui.evaluate("navigate('chat','qq')");assert.match(body(ui).textContent,/QQ 登录状态尚未核实/);assert.match(body(ui).textContent,/NAPCAT_WEBUI_AUTH/);assert.ok(ui.button(body(ui),'重新检查连接'));assert.equal(ui.timers.size,0);assert.equal(managerCalls(ui).length,1);assert.equal(ui.walk(body(ui)).some(node=>node.tagName==='button'&&['刷新扫码状态','重新生成二维码','启动个人 QQ 连接'].includes(node.textContent)),false);assert.doesNotMatch(body(ui).textContent,/等待你用手机 QQ 扫码|请用手机 QQ 扫码/);
  const unknown=await setup({'qqBridgeSetup.inspect':args=>({...authorized,phase:'connected',connected:true,management:{status:'unknown'},instanceId:args.instanceId})});await unknown.evaluate("navigate('chat','qq')");assert.match(body(unknown).textContent,/连接配置已保存，登录状态待核对/);assert.doesNotMatch(body(unknown).textContent,/已取得当前连接确认|个人 QQ 已接入此人格/);
 });
-test('confirmed offline and phone-confirmed initialization are different from management unavailability',async()=>{
- const offline=await setup({'qqBridgeSetup.inspect':args=>({...waitingQr,hasQr:false,qrDataUrl:null,instanceId:args.instanceId,lastVerifiedQQ:{at:1000,online:false,coreReady:false,loginPhase:'waiting_qrcode',accountId:'10001'}})});await offline.evaluate("navigate('chat','qq')");assert.match(body(offline).textContent,/QQ 已离线，正在等待可用二维码/);assert.doesNotMatch(body(offline).textContent,/请用手机 QQ 扫码/);
+test('unconfirmed management without a QR and phone-confirmed initialization are distinct',async()=>{
+ const offline=await setup({'qqBridgeSetup.inspect':args=>({...waitingQr,hasQr:false,qrDataUrl:null,instanceId:args.instanceId,lastVerifiedQQ:{at:1000,online:false,coreReady:false,loginPhase:'waiting_qrcode',accountId:'10001'}})});await offline.evaluate("navigate('chat','qq')");assert.match(body(offline).textContent,/QQ 登录管理状态待核对/);assert.doesNotMatch(body(offline).textContent,/QQ 已离线|请用手机 QQ 扫码/);
  const finishing=await setup({'qqBridgeSetup.inspect':args=>({...waitingQr,instanceId:args.instanceId,qrLoginAccepted:true,lastVerifiedQQ:{at:1000,online:true,coreReady:false,loginPhase:'initializing',accountId:'10001'}})});await finishing.evaluate("navigate('chat','qq')");assert.match(body(finishing).textContent,/QQ 正在完成登录/);assert.match(body(finishing).textContent,/手机确认已收到/);assert.equal(finishing.walk(body(finishing)).some(node=>node.tagName==='img'),false);assert.equal(managerCalls(finishing).some(call=>call.args.refreshQr),false);
 });
 test('a thrown status error stops automatic polling and one explicit read can restore the normal QR flow',async()=>{
