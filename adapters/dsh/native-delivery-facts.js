@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
+import { NATIVE_DELIVERY_LIMITS as LIMITS, NATIVE_DELIVERY_VERSION as VERSION, validateNativeDeliveryFacts } from './host-document-schema.js';
 
-const FILE = 'host-delivery-facts.json', VERSION = 'xiangxu-native-delivery-facts/1';
-const LIMITS = { presentations: 256, outputs: 64, bytes: 262144 };
+const FILE = 'host-delivery-facts.json';
 const clone = value => structuredClone(value);
 const identity = row => JSON.stringify([row.sourceSessionId, row.sourceEventId]);
 const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 4096;
@@ -35,18 +35,7 @@ export function createNativeDeliveryFacts({ store, clock = Date.now, onError = (
   async function open() {
     try {
       const value = await store.readJson(FILE, empty());
-      if (value.schemaVersion !== VERSION || !Number.isSafeInteger(value.version) || !Array.isArray(value.presentations) || !Array.isArray(value.outputs) ||
-        value.presentations.length > LIMITS.presentations || value.outputs.length > LIMITS.outputs || Buffer.byteLength(JSON.stringify(value)) > LIMITS.bytes ||
-        !Number.isSafeInteger(value.evictedPresentations) || value.evictedPresentations < 0 || !Number.isSafeInteger(value.evictedOutputs) || value.evictedOutputs < 0 ||
-        value.presentations.some(row => !validId(row.eventId) || !validId(row.sourceSessionId) || !validId(row.sourceEventId) || !validTime(row.firstAdmittedAt) || !validTime(row.lastAdmittedAt) ||
-          !Number.isSafeInteger(row.total) || row.total < 0 || typeof row.complete !== 'boolean' || !Array.isArray(row.ranges) ||
-          row.ranges.some(range => !Array.isArray(range) || range.length !== 2 || !range.every(Number.isSafeInteger) || range[0] < 0 || range[1] < range[0] || range[1] > row.total) ||
-          row.complete !== (row.ranges.length === 1 && row.ranges[0][0] === 0 && row.ranges[0][1] === row.total) ||
-          !(row.streamObservedAt === null || validTime(row.streamObservedAt))) ||
-        value.outputs.some(row => !validId(row.sourceSessionId) || !validId(row.sourceEventId) || !validTime(row.observedAt) || !['delivered', 'unknown'].includes(row.status) || !Array.isArray(row.settledPendingEventIds) || row.settledPendingEventIds.some(id => !validId(id)))) {
-        throw Object.assign(new Error('Native delivery diagnostic metadata is invalid; no reply state was inferred'), { code: 'NATIVE_DELIVERY_FACTS_INVALID' });
-      }
-      state = value; available = true;
+      state = validateNativeDeliveryFacts(value); available = true;
     } catch (error) { report(error); }
   }
   function admit(records, { sessionId, turn, streamObserved = false } = {}) {

@@ -52,6 +52,7 @@
     "adapters/dsh/index.js",
     "adapters/dsh/compat",
     "adapters/dsh/native-delivery-facts.js",
+    "adapters/dsh/host-document-schema.js",
     "adapters/dsh/bilibili",
     "adapters/dsh/platform-images.js",
     "adapters/dsh/external-output.js",

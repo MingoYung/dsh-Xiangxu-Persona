@@ -13,7 +13,7 @@ const target = nullable({ type: 'object', required: ['channelId', 'sessionId', '
   sessionId: { type: 'string', description: 'Copy target.sessionId exactly from the environment. Do NOT add dsh: to this session ID. It differs from channelId.' },
   personId: nullable({ type: 'string', description: 'The internal person ID you chose to recognize, or null while unknown. A session is not a person.' }),
 }, additionalProperties: false });
-const recheckOn = { type: 'array', items: { type: 'string', enum: ['new_message', 'environment_change', 'explicit_wake'] } };
+const recheckOn = { type: 'array', description: 'Optional reconsideration events you choose. An empty or omitted list in a newly supplied reply plan selects no event trigger. Waiting does not expire automatically with elapsed time or a visible reply. A one-time nextCheckAt is consumed when it fires; an omitted replyPlan keeps the previous plan.', items: { type: 'string', enum: ['new_message', 'environment_change', 'explicit_wake'] } };
 const cursor = { type: 'string', description: 'Use a returned nextCursor with the same other arguments to read the same result, without executing the operation again.' };
 export const TOOL_PARAMETERS = {
   persona_task: {

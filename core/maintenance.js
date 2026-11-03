@@ -92,12 +92,13 @@ async function validateContent(root, files, extensionValidator) {
     const values = file.path.endsWith('.jsonl') ? text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line)) : [JSON.parse(text)];
     for (const value of values) {
       if (file.path === SELF_PROFILE_PATH) { validateSelfProfile(value); continue; }
+      const admittedExtension = typeof extensionValidator === 'function' && await extensionValidator({ path: file.path, value, kind: 'content' }) === true;
       if (file.path.startsWith('extensions/')) {
-        if (typeof extensionValidator !== 'function' || await extensionValidator({ path: file.path, value, kind: 'content' }) !== true) fail('SCHEMA_UNSUPPORTED', 'Unsupported extension in ' + file.path);
+        if (!admittedExtension) fail('SCHEMA_UNSUPPORTED', 'Unsupported extension in ' + file.path);
         if (file.path.includes('/.wal/') && value.state === 'prepared') preparedWal++;
         continue;
       }
-      if (value && typeof value === 'object' && value.schemaVersion && value.schemaVersion !== SCHEMA_VERSION) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema in ' + file.path);
+      if (value && typeof value === 'object' && value.schemaVersion && value.schemaVersion !== SCHEMA_VERSION && !admittedExtension) fail('SCHEMA_UNSUPPORTED', 'Unsupported schema in ' + file.path);
       if (file.path === 'config.json') validateConfig(value);
       else if (file.path === 'self/persona.json') validatePersona(value);
       else if (file.path === TIMELINE_CATALOG) validateTimelineCatalog(value);

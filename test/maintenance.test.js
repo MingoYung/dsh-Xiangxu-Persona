@@ -103,3 +103,36 @@ test('default offline operations honor the deployment backup byte limit below th
   await repo.open(); await repo.updateConfig({ retention: { backupMaxBytes: 100 } }); await repo.close();
   await assert.rejects(restoreBackup({ root, source: backup }), { code: 'BACKUP_CAPACITY' });
 });
+test('an evolved root beyond the old 8 MiB default backs up under the default retention limit', async (t) => {
+  const { root, backup, repo } = await fixture(t);
+  // REL-F2-002: real deployments crossed 8 MiB (frozen sample 10.66 MiB, formal
+  // persona 9.1 MiB) and default-config backups failed with BACKUP_CAPACITY.
+  // Grow past 8 MiB across many per-person files (each under the 1 MiB document
+  // limit, like real evolved roots) while keeping the DEFAULT retention config.
+  const long = '备份容量回归：完整人格资料必须能整体备份。'.repeat(4000); // ~84 KB per record
+  for (let index = 0; index < 50; index += 1) {
+    const personId = 'person-' + index;
+    await repo.upsertPerson({ personId });
+    await repo.ingest({ personId, sourceSessionId: 's' + index, sourceEventId: 'e' + index, sourceKind: 'user', contentClass: 'participant_dialogue', channelId: 'c', role: 'user', text: long, sourceAt: index + 1 });
+  }
+  await repo.close();
+  const saved = await createBackup({ root, destination: backup });
+  assert.ok(saved.totalBytes > 8 * 1024 * 1024, 'fixture must exceed the old 8 MiB default, got ' + saved.totalBytes);
+  const verified = await validateBackup(backup);
+  assert.equal(verified.totalBytes, saved.totalBytes);
+});
+test('foreign root documents require explicit path-scoped admission without core owning their schema', async (t) => {
+  const { root, repo } = await fixture(t);
+  const file = path.join(root, 'adapter-state.json'), value = { schemaVersion: 'isolated-adapter/1', entries: [] };
+  await repo.store.transaction({ runId: 'foreign-root-fixture', json: { 'adapter-state.json': value } });
+  await repo.close();
+  await assert.rejects(validateMemoryRoot(root), { code: 'SCHEMA_UNSUPPORTED' });
+  const extensionValidator = ({ path: name, value: item, kind }) => kind === 'content'
+    && name === 'adapter-state.json' && item?.schemaVersion === 'isolated-adapter/1' && Array.isArray(item.entries);
+  assert.equal((await validateMemoryRoot(root, { extensionValidator })).schemaVersion, 'persona-memory/3');
+  await fs.writeFile(file, JSON.stringify({ ...value, schemaVersion: 'isolated-adapter/2' }));
+  await assert.rejects(validateMemoryRoot(root, { extensionValidator }), { code: 'SCHEMA_UNSUPPORTED' });
+  await fs.writeFile(file, JSON.stringify(value));
+  await fs.writeFile(path.join(root, 'unrecognized.json'), JSON.stringify(value));
+  await assert.rejects(validateMemoryRoot(root, { extensionValidator }), { code: 'SCHEMA_UNSUPPORTED' });
+});

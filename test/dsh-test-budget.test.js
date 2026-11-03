@@ -80,9 +80,12 @@ test('failed provider remains a counted unknown and zero usage is valid', async 
   let fail = true;
   const o = await observer(t, file, {tokens: 0, fail: () => fail});
   await assert.rejects(o.send(), {code: 'MALFORMED_RESPONSE'});
-  fail = false; await o.send();
+  fail = false; await assert.rejects(o.send(), {code: 'WHOLE_USAGE_UNRESOLVED'});
   const state = await readWholeBudget(file);
-  assert.deepEqual([state.wholeAttemptsUsed, state.wholeUsageAttempts, state.wholePendingUnknown, state.wholeTokensUsed], [2, 1, 1, 0]);
+  assert.deepEqual([state.wholeAttemptsUsed, state.wholeUsageAttempts, state.wholePendingUnknown, state.wholeTokensUsed], [1, 0, 1, 0]);
+  const fresh = await fixture(t), zero = await observer(t, fresh.file, {tokens: 0});
+  await zero.send(); await zero.send();
+  assert.deepEqual([(await readWholeBudget(fresh.file)).wholeAttemptsUsed, (await readWholeBudget(fresh.file)).wholePendingUnknown], [2, 0]);
 });
 
 test('corrupt or missing explicitly enabled whole state cannot disable protection', async t => {
@@ -133,8 +136,8 @@ test('settlement is idempotent, null cannot erase usage, conflicting totals stop
 
 test('negative/fractional usage stays unknown and invalid caps do not create state', async t => {
   const {file, root} = await fixture(t);
+  for (let i = 0; i < 3; i++) await reserveWholeAttempt(file, {requestId: 'bad-' + i});
   for (const [i, totalTokens] of [-1, 1.5, '2'].entries()) {
-    await reserveWholeAttempt(file, {requestId: 'bad-' + i});
     await settleWholeAttempt(file, 'bad-' + i, {totalTokens});
   }
   const state = await readWholeBudget(file);
@@ -195,4 +198,41 @@ test('nullable count/time caps do not weaken required token or legacy schema val
     assert.throws(() => createWholeBudgetState(args), {code: 'WHOLE_PARAMS_INVALID'});
   }
   for (const tokens of [null, NaN, 0, 1.5]) assert.throws(() => createWholeBudgetState({attempts: null, tokens, wallMs: null}), {code: 'WHOLE_PARAMS_INVALID'});
+});
+
+test('in-flight null is distinct from ended unknown; real late zero usage can resolve only its own attempt', async t => {
+  const {file} = await fixture(t, {attempts: null, wallMs: null});
+  await reserveWholeAttempt(file, {requestId: 'in-flight'});
+  await reserveWholeAttempt(file, {requestId: 'second-in-flight'});
+  assert.equal((await readWholeBudget(file)).wholePendingUnknown, 2);
+  await settleWholeAttempt(file, 'in-flight', null, {finishedAt: 1234});
+  await assert.rejects(reserveWholeAttempt(file, {requestId: 'blocked'}), {code: 'WHOLE_USAGE_UNRESOLVED'});
+  assert.equal((await readWholeBudget(file)).requests['in-flight'].finishedAt, 1234);
+  await settleWholeAttempt(file, 'in-flight', {totalTokens: 0});
+  await reserveWholeAttempt(file, {requestId: 'allowed-after-authoritative-usage'});
+  const state = await readWholeBudget(file);
+  assert.equal(state.wholeAttemptsUsed, 3); assert.equal(state.wholeUsageAttempts, 1); assert.equal(state.wholePendingUnknown, 2);
+  assert.equal(state.requests['in-flight'].finishedAt, 1234, 'late settlement never restarts the completion clock');
+});
+
+test('ended-unknown guard survives a new process and concurrent reserve attempts add no reservations', async t => {
+  const {file, root} = await fixture(t, {attempts: null, wallMs: null});
+  await reserveWholeAttempt(file, {requestId: 'unknown'}); await settleWholeAttempt(file, 'unknown', null);
+  const before = await readFile(file, 'utf8');
+  const results = await Promise.allSettled(['a', 'b'].map(requestId => reserveWholeAttempt(file, {requestId})));
+  assert.ok(results.every(row => row.status === 'rejected' && row.reason.code === 'WHOLE_USAGE_UNRESOLVED'));
+  const helper = new URL('../scripts/dsh-test-budget.mjs', import.meta.url).href, childFile = join(root, 'unknown-child.mjs');
+  await writeFile(childFile, `import {reserveWholeAttempt} from ${JSON.stringify(helper)};try{await reserveWholeAttempt(process.argv[2],{requestId:'restart'});process.exitCode=1;}catch(e){console.log(e.code);}`);
+  const child = spawn(process.execPath, [childFile, file], {windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']});
+  let output = ''; child.stdout.on('data', chunk => {output += chunk;});
+  assert.equal(await new Promise(resolve => child.once('close', resolve)), 0); assert.equal(output.trim(), 'WHOLE_USAGE_UNRESOLVED');
+  assert.equal(await readFile(file, 'utf8'), before, 'blocked attempts do not mutate usage or request identities');
+});
+
+test('invalid completion metadata blocks evidence rather than making an unknown look in flight', async t => {
+  const {file} = await fixture(t); await reserveWholeAttempt(file, {requestId: 'one'});
+  await assert.rejects(settleWholeAttempt(file, 'one', null, {finishedAt: NaN}), {code: 'WHOLE_REQUEST_INVALID'});
+  const valid = await readWholeBudget(file); valid.requests.one.finishedAt = 'not-a-time'; await writeFile(file, JSON.stringify(valid));
+  await assert.rejects(readWholeBudget(file), {code: 'WHOLE_STATE_INVALID'});
+  await assert.rejects(reserveWholeAttempt(file, {requestId: 'blocked'}), {code: 'WHOLE_STATE_INVALID'});
 });

@@ -10,6 +10,7 @@ import { MemoryRepository, PersonaRuntime, defaultConfig, observationAllows } fr
 import { normalizeDshEvent, dshEnvironment, sourceClassification } from './normalize.js';
 import { createDshModelPort } from './model.js';
 import { createNativeDeliveryFacts } from './native-delivery-facts.js';
+import { validateHostChannelContext } from './host-document-schema.js';
 import { installWindowsAclBootstrap } from './compat/windows-acl.js';
 import { openControlPort } from './control.js';
 import { createInstanceManager } from './instances.js';
@@ -585,7 +586,7 @@ export function createDshCoordinator(ctx, config = {}) {
       } catch (error) { coordinator.socialProviderInitializationError = error; report(error); }
       checkpoints = await repository.store.readJson('host-checkpoints.json', checkpoints);
       externalChannels = await repository.store.readJson('host-channels.json', externalChannels);
-      if (externalChannels.schemaVersion !== 'xiangxu-channel-context/1' || !externalChannels.sessions || Array.isArray(externalChannels.sessions) || Object.keys(externalChannels.sessions).length > 128 || Buffer.byteLength(JSON.stringify(externalChannels)) > 262144) throw Object.assign(new Error('平台通道上下文超量或格式无效'), { code: 'CHANNEL_CONTEXT_INVALID' });
+      validateHostChannelContext(externalChannels);
       await runtime.open();
     }
     catch (error) { initializationError = error; report(error); }
@@ -1267,7 +1268,7 @@ export function createDshCoordinator(ctx, config = {}) {
       const facts = { platform: value.platform, accountId: value.accountId, conversation: { id: value.conversation.id, type: value.conversation.type }, sender: { id: value.sender.id, ...(typeof value.sender.name === 'string' ? { name: Array.from(value.sender.name).slice(0, 120).join('') } : {}) } };
       if (JSON.stringify(externalChannels.sessions[sessionId]) === JSON.stringify(facts)) return facts;
       const next = { ...externalChannels, sessions: { ...externalChannels.sessions, [sessionId]: facts } };
-      if (Object.keys(next.sessions).length > 128 || Buffer.byteLength(JSON.stringify(next)) > 262144) throw Object.assign(new Error('平台通道上下文已达到技术上限'), { code: 'CHANNEL_CONTEXT_CAPACITY' });
+      validateHostChannelContext(next);
       await repository.store.transaction({ json: { 'host-channels.json': next } }); externalChannels = next; return facts;
     });
   };

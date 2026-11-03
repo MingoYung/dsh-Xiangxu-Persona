@@ -21,7 +21,8 @@ function totals(state) {
   let tokens = 0, known = 0, first = null;
   for (const [id, row] of rows) {
     if (!row || row.requestId !== id || !timestamp(row.startedAt) ||
-      !(row.totalTokens === null || validTokenTotal(row.totalTokens)))
+      !(row.totalTokens === null || validTokenTotal(row.totalTokens)) ||
+      !(row.finishedAt === undefined || row.finishedAt === null || timestamp(row.finishedAt)))
       throw failure('WHOLE_STATE_INVALID', 'Invalid request reservation or usage');
     first = first === null ? row.startedAt : Math.min(first, row.startedAt);
     if (row.totalTokens !== null) { known++; tokens += row.totalTokens; }
@@ -116,18 +117,22 @@ export async function reserveWholeAttempt(file, {requestId, startedAt}) {
     const state = await readWholeBudget(file);
     startedAt ??= Date.now(); // after acquiring the writer lock, not before waiting
     if (Object.hasOwn(state.requests, requestId)) throw failure('WHOLE_DUPLICATE_REQUEST', 'Attempt already reserved');
+    const unresolved = Object.values(state.requests).filter(row => row.totalTokens === null && row.finishedAt != null);
+    if (unresolved.length) throw Object.assign(failure('WHOLE_USAGE_UNRESOLVED', 'A completed provider attempt has no valid usage; reconcile before another paid dispatch'),
+      {requestIds: unresolved.map(row => row.requestId)});
     if (state.wholeDeadline !== null && startedAt >= state.wholeDeadline)
       throw failure('WHOLE_DEADLINE_PASSED', 'Whole-set deadline passed before provider dispatch');
     if (state.wholeAttemptsCap !== null && state.wholeAttemptsUsed >= state.wholeAttemptsCap)
       throw failure('WHOLE_ATTEMPTS_EXCEEDED', 'Whole-set attempt cap reached before provider dispatch');
     if (state.wholeTokensUsed >= state.wholeTokensCap)
       throw failure('WHOLE_TOKENS_EXCEEDED', 'Known token threshold reached before provider dispatch');
-    Object.defineProperty(state.requests, requestId, {value: {requestId, startedAt, totalTokens: null}, enumerable: true});
+    Object.defineProperty(state.requests, requestId, {value: {requestId, startedAt, totalTokens: null, finishedAt: null}, enumerable: true});
     refresh(state); await atomicWrite(file, state); return state;
   });
 }
 
-export async function settleWholeAttempt(file, requestId, usage) {
+export async function settleWholeAttempt(file, requestId, usage, {finishedAt = Date.now()} = {}) {
+  if (!timestamp(finishedAt)) throw failure('WHOLE_REQUEST_INVALID', 'Provider completion time must be an actual nonnegative epoch millisecond integer');
   return locked(file, async () => {
     const state = await readWholeBudget(file), row = state.requests[requestId];
     if (!Object.hasOwn(state.requests, requestId)) throw failure('WHOLE_REQUEST_UNKNOWN', 'Attempt has no reservation');
@@ -137,6 +142,9 @@ export async function settleWholeAttempt(file, requestId, usage) {
         throw failure('WHOLE_USAGE_CONFLICT', 'Conflicting usage for the same attempt');
       row.totalTokens = value;
     }
+    // reserve:null is in flight; settle:null is a completed unknown. Preserve
+    // the first observed completion, including across restarts/late usage.
+    row.finishedAt ??= finishedAt;
     // Null/malformed final usage never erases earlier valid usage. A crash or
     // missing usage leaves a counted unknown reservation across restarts.
     refresh(state); await atomicWrite(file, state); return state;

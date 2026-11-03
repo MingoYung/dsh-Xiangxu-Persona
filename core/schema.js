@@ -252,7 +252,7 @@ export function defaultConfig(overrides = {}) {
     contextBudget: { totalTokens: 2970, environmentTokens: 120, anchorTokens: 200, personaTokens: 700, habitTokens: 150, relationTokens: 300, retrievalTokens: 1500, deepMemoryTokens: 600, selfProfileTokens: 350, recentMemoryTokens: 600 },
     artifactLimits: { axes: 5, tendencyFacets: 12, boundaryFacets: 20, signatures: 24, habits: 8, impressionSignaturesPerPerson: 8, indexItemsPerPerson: 80, codesPerScope: 12, interpretationsPerPerson: 30, relationEventsPerPerson: 80, ...DEFAULT_DEEP_MEMORY_LIMITS },
     capacityLimits: { ...DEFAULT_CAPACITY_LIMITS }, processingLimits: { ...DEFAULT_PROCESSING_LIMITS },
-    retention: { snapshotMaxRequests: 50, personaHistoryMaxVersions: 5, journalMaxBytes: 8388608, backupMaxBytes: 8388608 }
+    retention: { snapshotMaxRequests: 50, personaHistoryMaxVersions: 5, journalMaxBytes: 8388608, backupMaxBytes: 33554432 }
   }, overrides));
 }
 export function validateConfig(config) {

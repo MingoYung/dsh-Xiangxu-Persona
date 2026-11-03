@@ -72,12 +72,39 @@ export function apply(ctx,config){
         localPendingSlots--;actualDispatches++;
         const messagesJson=JSON.stringify(options.messages??[]),toolsJson=JSON.stringify(options.tools??[]);
         save('provider-bound.jsonl',{kind:'actual-provider-adapter-input',requestId,startedAt,provider:options.provider,model:options.model,purpose:options.purpose,maxTokens:options.maxTokens,reasoningEffort:options.reasoningEffort,temperature:options.temperature,topP:options.topP,requestSize:{messagesJsonUtf8Bytes:Buffer.byteLength(messagesJson,'utf8'),messagesJsonCodePoints:Array.from(messagesJson).length,toolsJsonUtf8Bytes:Buffer.byteLength(toolsJson,'utf8'),tokenCount:null,accounting:'actual serialized adapter inputs; UTF-8 bytes/code points are not tokenizer counts or external HTTP wire size'},tools:options.tools,messages:options.messages});
-        let usage=null,finish=null;
-        try{for await(const chunk of dispatch(options)){
-          save('provider-chunks.jsonl',{requestId,at:Date.now(),chunk});
-          if(chunk.type==='usage')usage=chunk.usage;if(chunk.type==='finish')finish=chunk.reason;
-          yield chunk;
-        }}finally{try{save('provider-usage.jsonl',{requestId,startedAt,finishedAt:Date.now(),provider:options.provider,model:options.model,usage,finish});}finally{if(wholeBudget)await wholeBudget.settleWholeAttempt(config.wholeStatePath,requestId,usage);}}
+        let usage=null,finish=null,stalled=false;
+        // REL-F2-001: a provider stream can stall mid-generation (network drop
+        // without close) and hang the whole turn forever. iterator.return()
+        // cannot interrupt a generator blocked on a pending promise, so each
+        // next() is raced against a no-progress timer instead: after
+        // streamStallMs with no chunk the wrapper stops consuming, settles
+        // usage as unknown and surfaces STREAM_STALL_ABORT to the host.
+        const stallMs=Number.isFinite(config.streamStallMs)?config.streamStallMs:120000;
+        let lastChunkAt=Date.now();
+        const iterator=dispatch(options);
+        let stallTimer=null,stallFire=null;
+        const armStall=()=>{if(stallTimer)clearTimeout(stallTimer);stallTimer=setTimeout(()=>{stalled=true;stallFire?.();},stallMs);};
+        armStall();
+        try{
+          while(true){
+            const timeoutPromise=new Promise(resolve=>{stallFire=resolve;});
+            const raced=await Promise.race([
+              iterator.next().then(value=>({done:value.done,value:value.value})).catch(error=>({error})),
+              timeoutPromise.then(()=>({timeout:true})),
+            ]);
+            armStall();
+            if(stalled)break;
+            if(raced.timeout)continue;
+            if(raced.error)throw raced.error;
+            if(raced.done)break;
+            const chunk=raced.value;
+            lastChunkAt=Date.now();
+            save('provider-chunks.jsonl',{requestId,at:Date.now(),chunk});
+            if(chunk.type==='usage')usage=chunk.usage;if(chunk.type==='finish')finish=chunk.reason;
+            yield chunk;
+          }
+        }finally{if(stallTimer)clearTimeout(stallTimer);if(stalled)save('dispatch-budget.jsonl',{at:Date.now(),reason:'STREAM_STALL_ABORT',requestId,stalledMs:Date.now()-lastChunkAt,cap:stallMs});try{save('provider-usage.jsonl',{requestId,startedAt,finishedAt:Date.now(),provider:options.provider,model:options.model,usage,finish,stalled:stalled||undefined});}finally{if(wholeBudget)await wholeBudget.settleWholeAttempt(config.wholeStatePath,requestId,usage);}}
+        if(stalled)throw Object.assign(new Error('Provider stream stalled with no data for '+stallMs+'ms; aborted by the test watchdog'),{code:'STREAM_STALL_ABORT'});
       })()};
     };
     if(adapter.prepareCall===original)throw new Error('Real provider observation wrapper was not installed');
@@ -149,7 +176,8 @@ export function observerConfig(options,dir){
     ...(Object.hasOwn(options,'wholeStatePath')?{wholeStatePath:options.wholeStatePath,wholeBudgetModule:pathToFileURL(join(projectRoot,'scripts','dsh-test-budget.mjs')).href}:{}),
     ...(Number.isFinite(options.wholeDeadline)?{wholeDeadline:options.wholeDeadline}:{}),
     ...(Number.isSafeInteger(options.wholeMaxAttempts)?{wholeMaxAttempts:options.wholeMaxAttempts}:{}),
-    ...(Number.isSafeInteger(options.wholeAttemptsBaseline)?{wholeAttemptsBaseline:options.wholeAttemptsBaseline}:{})};
+    ...(Number.isSafeInteger(options.wholeAttemptsBaseline)?{wholeAttemptsBaseline:options.wholeAttemptsBaseline}:{}),
+    ...(Number.isFinite(options.streamStallMs)?{streamStallMs:options.streamStallMs}:{})};
 }
 async function operator(options,memoryRoot,command,value,dir,waitOverride){
   const waitMs=waitOverride??(command==='consolidate'?180000:30000);

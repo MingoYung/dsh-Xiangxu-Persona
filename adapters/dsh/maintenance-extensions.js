@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { QQ_ACCOUNT_LIMITS as A } from './connections/qq-account.js';
 import { SOCIAL_PROVIDER_LIMITS as S } from './channels/social-provider.js';
 import { QQ_ACCOUNT_ACTIONS, validateQQAccountActionRequest } from './connections/qq-account-actions.js';
+import { validateHostChannelContext, validateNativeDeliveryFacts } from './host-document-schema.js';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = () => { throw Object.assign(new Error('扩展档案的路径、结构或校验信息无效'), { code: 'INVALID_EXTENSION' }); };
@@ -62,6 +63,8 @@ export function validateDshMaintenanceExtension({ path, value, kind = 'content' 
     if (!object(value) || !Number.isSafeInteger(value.pid) || value.pid < 1 || !text(path.endsWith('/writer.lock') ? value.token : value.owner,160)) fail(); return true;
   }
   if (kind !== 'content') return false;
+  if (path === 'host-channels.json') { validateHostChannelContext(value); return true; }
+  if (path === 'host-delivery-facts.json') { validateNativeDeliveryFacts(value); return true; }
   if (path === 'extensions/qq-social/state.json') { socialDocument(value); return true; }
   const prefix = 'extensions/qq-account/'; if (!path.startsWith(prefix)) return false; const relative = path.slice(prefix.length);
   if (/^\.wal\/[a-f0-9]{64}\.json$/.test(relative)) {

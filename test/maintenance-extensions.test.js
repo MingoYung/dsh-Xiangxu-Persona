@@ -11,9 +11,14 @@ import { createInstanceManager } from '../adapters/dsh/instances.js';
 import { createQQAccountService } from '../adapters/dsh/connections/qq-account.js';
 import { requireNoWriter } from '../adapters/dsh/instance-lifecycle.js';
 import { validateDshMaintenanceExtension as extensionValidator } from '../adapters/dsh/maintenance-extensions.js';
+import { createNativeDeliveryFacts } from '../adapters/dsh/native-delivery-facts.js';
+import { validateHostChannelContext, validateNativeDeliveryFacts } from '../adapters/dsh/host-document-schema.js';
 
 const options = { extensionValidator }, sha = value => createHash('sha256').update(value).digest('hex');
 const receiptId = 'qqop-'+'a'.repeat(32), queryId = 'qqquery-'+'b'.repeat(32), optionsRef='qqopts_'+'c'.repeat(32), targetRef='qqtarget_'+'d'.repeat(32);
+const channelDocument = () => ({ schemaVersion: 'xiangxu-channel-context/1', sessions: {
+ ['xiangxu-social-'+'a'.repeat(32)]: { platform:'qq', accountId:'10001', conversation:{id:'10002',type:'private'}, sender:{id:'10002',name:'isolated fixture'} },
+} });
 function documents() {
  const response={protocol:'xiangxu-qq-native/1',bootId:'isolated-native-boot',accountId:'10001',userId:'10002',optionsRef,targetRef,relationship:'not_friend',addFriendSetting:1,requirements:{supported:true,verificationText:true,questionCount:0},expiresAt:100000};
  const row={receiptId,accountId:'10001',userId:'10002',status:'submitted',revisions:1,createdAt:1000,updatedAt:1001};
@@ -82,4 +87,43 @@ test('documents produced by the actual account service pass maintenance without 
  }});
  t.after(()=>service.close());const queried=await service.read({accountOperation:'friend.query',userId:'10002'});await service.execute({accountOperation:'friend.request',accountId:'10001',optionsRef:queried.optionsRef,text:'isolated mocked operation'},{operationId:'isolated-service-contract',sourceSessionId:'fixture-session'});await service.close();
  assert.ok((await validateMemoryRoot(isolatedRoot,options)).files.some(file=>file.path.includes('/receipts/')));const saved=path.join(f.base,'actual-service-backup');await createBackup({root:isolatedRoot,destination:saved,...options});await restoreBackup({root:isolatedRoot,source:saved,...options});assert.ok(calls.some(url=>url.endsWith('/friend/query')));assert.ok(calls.every(url=>url.startsWith(runtime.baseUrl)),'all transport is the in-process mock');
+});
+
+test('runtime delivery facts and validated channel context survive offline validate backup restore byte-for-byte',async t=>{
+ const f=await fixture(t);await f.repository.open();
+ const facts=createNativeDeliveryFacts({store:f.repository.store,clock:()=>1000});await facts.open();
+ await facts.admit([{eventId:'event1',sourceSessionId:'session1',sourceEventId:'source1',text:'完整原文'}],{sessionId:'session1',turn:1,streamObserved:true});
+ await facts.recordOutput({sourceSessionId:'session1',sourceEventId:'output1',channelId:'channel1',personId:null,text:'已实际输出',status:'delivered',deliveredAt:1000,receiptId:'receipt1',settledPendingEventIds:['event1'],evidence:'native_visible_assistant_event'});
+ const channels=validateHostChannelContext(channelDocument());
+ await f.repository.store.transaction({json:{'host-channels.json':channels}});await f.repository.close();
+ const names=['host-channels.json','host-delivery-facts.json'],originals=await Promise.all(names.map(name=>fs.readFile(path.join(f.root,name))));
+ assert.equal(validateNativeDeliveryFacts(JSON.parse(originals[1])).outputs[0].settledPendingEventIds[0],'event1');
+ await validateMemoryRoot(f.root,options);await createBackup({root:f.root,destination:f.backup,...options});await validateBackup(f.backup,options);
+ await restoreBackup({root:f.root,source:f.backup,...options});
+ for(let i=0;i<names.length;i++)assert.deepEqual(await fs.readFile(path.join(f.root,names[i])),originals[i]);
+ await f.repository.open();const reopened=createNativeDeliveryFacts({store:f.repository.store});await reopened.open();
+ assert.equal(reopened.wasAdmitted('event1'),true);await f.repository.close();
+});
+
+test('adapter root schemas reject invalid structures and new versions without admitting neighboring JSON files',async t=>{
+ const f=await fixture(t),valid=channelDocument(),file=path.join(f.root,'host-channels.json');
+ for(const value of [null,[],{...valid,schemaVersion:'xiangxu-channel-context/2'}, {...valid,schemaVersion:'persona-memory/3'},
+  {...valid,sessions:'not-a-map'},{...valid,sessions:true},{...valid,sessions:[]},{...valid,sessions:{invalid:{}}},
+  {...valid,sessions:{['xiangxu-social-'+'a'.repeat(32)]:{platform:'qq',accountId:'10001',conversation:{id:'x',type:'private'},sender:null}}},
+  {...valid,padding:'x'.repeat(262144)}]){
+  await fs.writeFile(file,JSON.stringify(value));await assert.rejects(validateMemoryRoot(f.root,options),{code:'CHANNEL_CONTEXT_INVALID'});
+ }
+ await fs.writeFile(file,JSON.stringify(valid));
+ const unknown=path.join(f.root,'unrecognized-host.json');await fs.writeFile(unknown,JSON.stringify(valid));
+ await assert.rejects(validateMemoryRoot(f.root,options),{code:'SCHEMA_UNSUPPORTED'});await fs.unlink(unknown);
+ const facts={schemaVersion:'xiangxu-native-delivery-facts/1',version:0,presentations:[],outputs:[],evictedPresentations:0,evictedOutputs:0};
+ const factFile=path.join(f.root,'host-delivery-facts.json');
+ for(const value of [null,{...facts,schemaVersion:'xiangxu-native-delivery-facts/2'},{...facts,schemaVersion:'persona-memory/3'},
+  {...facts,version:-1},{...facts,presentations:[null]},{...facts,outputs:[false]},
+  {...facts,presentations:[{eventId:'e',sourceSessionId:'s',sourceEventId:'m',firstAdmittedAt:1,lastAdmittedAt:1,streamObservedAt:null,total:4,ranges:[[0,5]],complete:true}]},
+  {...facts,outputs:[{sourceSessionId:'s',sourceEventId:'m',observedAt:1,status:'unknown',settledPendingEventIds:['e']}]},
+  {...facts,padding:'x'.repeat(262144)}]){
+  await fs.writeFile(factFile,JSON.stringify(value));await assert.rejects(validateMemoryRoot(f.root,options),{code:'NATIVE_DELIVERY_FACTS_INVALID'});
+ }
+ await fs.writeFile(factFile,JSON.stringify(facts));await validateMemoryRoot(f.root,options);
 });

@@ -14,16 +14,22 @@ if (command === 'help') {
   console.log('node scripts/persona-cli.mjs [--root ABSOLUTE_MEMORY_ROOT] status|wake|mute|resume|consolidate|backfill|config|rollback [JSON or version]\nOffline: validate|backup DESTINATION|restore SOURCE|export DESTINATION|import SOURCE|recover. Stop the plugin first; see README.');
 } else if (['backup', 'export', 'restore', 'import', 'validate', 'recover'].includes(command)) {
   const maintenance = await import('../core/maintenance.js');
+  // REL-F2-005: real deployments carry adapter-owned extension archives (e.g.
+  // extensions/qq-account with its own WAL). Offline validate/backup/restore
+  // must admit them through the same adapter validator the in-app maintenance
+  // service uses, instead of rejecting every non-core file.
+  const { validateDshMaintenanceExtension } = await import('../adapters/dsh/maintenance-extensions.js');
+  const options = { extensionValidator: validateDshMaintenanceExtension };
   let result;
-  if (command === 'validate') result = await maintenance.validateMemoryRoot(root);
-  if (command === 'recover') result = await maintenance.recoverRestore({ root });
+  if (command === 'validate') result = await maintenance.validateMemoryRoot(root, options);
+  if (command === 'recover') result = await maintenance.recoverRestore({ root, ...options });
   if (command === 'backup' || command === 'export') {
     if (!value) throw new Error('Provide the absolute backup destination');
-    result = await maintenance.createBackup({ root, destination: resolve(value) });
+    result = await maintenance.createBackup({ root, destination: resolve(value), ...options });
   }
   if (command === 'restore' || command === 'import') {
     if (!value) throw new Error('Provide the absolute backup source');
-    result = await maintenance.restoreBackup({ root, source: resolve(value) });
+    result = await maintenance.restoreBackup({ root, source: resolve(value), ...options });
   }
   console.log(JSON.stringify(result, null, 2));
 } else {
