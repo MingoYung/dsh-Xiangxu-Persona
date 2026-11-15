@@ -70,3 +70,54 @@ test('capability inspection before ready does not touch the queue, expose partia
   const before = bili.peekCapabilities(); assert.equal(before.ready, false); assert.equal(before.accountId, null); assert.ok(before.items.every(item => !item.available));
   assert.equal(platformCalls, 0); release(); await bili.ready; const after = bili.capabilitySnapshot(); assert.equal(after.ready, true); assert.equal(after.accountId, '1234'); assert.equal(after.connected, true); assert.ok(after.items.every(item => item.available && item.defaultAllowed === false)); assert.equal(platformCalls, 1); assert.ok(!JSON.stringify(after).includes('private-session'));
 });
+
+test('revoking a grant while a Bilibili read is in flight withholds the result', async t => {
+  let entered, release;
+  const active = new Promise(resolve => { entered = resolve; });
+  const waiting = new Promise(resolve => { release = resolve; });
+  const { bili, permissions, context } = await setup(t, async target => {
+    if (target.pathname !== '/x/web-interface/view') return null;
+    entered(); await waiting; return null;
+  });
+  await permissions.configure({ id: 'bilibili', allowed: ['feed.read'] });
+  const result = bili.read({ operation: 'video', bvid: BV }, context());
+  await active;
+  try { await permissions.configure({ id: 'bilibili', allowed: [] }); } finally { release(); }
+  await assert.rejects(result, { code: 'BILI_PERMISSION_DENIED' });
+});
+
+test('equivalent Bilibili send fields cannot bypass an unresolved receipt', async t => {
+  const { bili, permissions, context, requests } = await setup(t, async target =>
+    target.pathname.endsWith('/send_msg') ? json({ code: 0, data: {} }) : null);
+  await permissions.configure({ id: 'bilibili', allowed: ['chat.text'] });
+  const input = { operation: 'message', receiverUid: '5678', text: '一次发送' };
+  assert.equal((await bili.execute(input, context('first-unconfirmed'))).status, 'unknown');
+  const second = await bili.execute({ ...input, replyId: '15' }, context('equivalent-send'));
+  assert.equal(second.code, 'BILI_PRIOR_DELIVERY_UNKNOWN');
+  assert.equal(second.priorDeliveryId, 'first-unconfirmed');
+  assert.equal(requests.filter(request => request.path.endsWith('/send_msg')).length, 1);
+});
+
+test('Bilibili write checks the captured grant after receipt preparation and before POST', async t => {
+  let authCalls = 0, postCalls = 0, fenceCalls = 0;
+  const bili = createBilibiliService({
+    storage: { async read() { return structuredClone(stored); }, async write() {} },
+    authorize(args) {
+      assert.equal(args.dispatchFence, true);
+      const call = ++authCalls;
+      return { assertCurrent() { fenceCalls++; if (call === 3) throw new Error('fixture grant changed'); } };
+    },
+    async fetchImpl(_url, options) {
+      if (options.method === 'POST') postCalls++;
+      return json({ code: 0, data: { isLogin: true, mid: 1234, uname: '隔离账号' } });
+    },
+  });
+  t.after(() => bili.close());
+  await bili.ready;
+  const result = await bili.execute({ operation: 'message', receiverUid: '5678', text: '未发出' },
+    { memoryRoot: path.resolve(os.tmpdir(), 'isolated-persona'), accountId: '1234', deliveryId: 'revoked-write' });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.code, 'BILI_PERMISSION_DENIED');
+  assert.equal(postCalls, 0);
+  assert.equal(fenceCalls, 2);
+});

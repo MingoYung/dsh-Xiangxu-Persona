@@ -145,6 +145,38 @@ test('connect requires actual login and configures explicit scopes with independ
   const f=await fixture(t),first=await startReady(f),args={instanceId:'persona-a',flowId:first.flowId,allowedPrivateIds:['23456789'],allowedGroupIds:['34567890']};await assert.rejects(f.service.connect(args),{code:'NAPCAT_LOGIN_REQUIRED'});f.logIn();const value=await f.service.connect(args);assert.equal(value.phase,'connected');assert.equal(f.profile.config.accountId,'12345678');assert.deepEqual(f.profile.config.allowedPrivateIds,['23456789']);assert.deepEqual(f.profile.config.allowedGroupIds,['34567890']);assert.equal(f.profile.config.apiUrl,'http://127.0.0.1:3000');assert.equal(f.profile.config.allowRemote,false);
   const server=f.config.network.httpServers.find(v=>v.name==='xiangxu-managed-http'),client=f.config.network.httpClients.find(v=>v.name==='xiangxu-managed-events');assert.equal(server.host,'127.0.0.1');assert.equal(server.token,f.profile.config.accessToken);assert.equal(client.token,'isolated-hmac-secret');assert.notEqual(server.token,client.token);assert.equal(client.reportSelfMessage,false);assert.equal(f.config.retained,'unchanged');assert.deepEqual(f.config.network.websocketServers,[{name:'retained'}]);assert.equal(f.config.network.httpServers[0].name,'other-server');assert.equal(f.config.network.httpClients[0].name,'other-client');assert.equal(JSON.stringify(value).includes(server.token),false);assert.equal(f.service.isBusy('persona-a'),false);
 });
+for(const initial of [undefined,false,true])test('managed media base64 preserves and restores the original '+String(initial)+' setting across close/resume',async t=>{
+  const f=await fixture(t);if(initial!==undefined)f.config.enableLocalFile2Url=initial;
+  await connect(f);assert.equal(f.config.enableLocalFile2Url,true);assert.equal(f.config.retained,'unchanged');
+  const state=()=>fs.readFile(path.join(f.installRoot,'managed-state.json'),'utf8').then(JSON.parse);
+  assert.deepEqual((await state()).mediaBytesRestore['12345678'],{present:initial!==undefined,value:initial??null});
+  await f.service.close();f.service=f.make();await f.service.resume();
+  for(let i=0;i<5000&&(await f.service.inspect()).phase!=='connected';i++)await tick();
+  assert.equal((await f.service.inspect()).phase,'connected');assert.equal(f.config.enableLocalFile2Url,true);
+  await f.service.stop({flowId:(await f.service.inspect()).flowId});
+  assert.equal(Object.hasOwn(f.config,'enableLocalFile2Url'),initial!==undefined);assert.equal(f.config.enableLocalFile2Url,initial);
+  assert.deepEqual((await state()).mediaBytesRestore,{});assert.equal(f.config.retained,'unchanged');
+});
+test('an existing managed installation enables media bytes during resume without replacing its callback or scope',async t=>{
+  const f=await fixture(t);await connect(f);await f.service.close();
+  // Model an installation made by the pre-fix plugin, which never owned this option.
+  const stateFile=path.join(f.installRoot,'managed-state.json'),old=JSON.parse(await fs.readFile(stateFile,'utf8'));delete old.mediaBytesRestore;await fs.writeFile(stateFile,JSON.stringify(old));
+  f.config.enableLocalFile2Url=false;const network=structuredClone(f.config.network),scope=structuredClone(f.profile.config);
+  f.service=f.make();await f.service.resume();for(let i=0;i<5000&&(await f.service.inspect()).phase!=='connected';i++)await tick();
+  assert.equal((await f.service.inspect()).phase,'connected');assert.equal(f.config.enableLocalFile2Url,true);
+  assert.deepEqual(f.config.network,network);assert.deepEqual(f.profile.config,scope);
+  await f.service.stop({flowId:(await f.service.inspect()).flowId});assert.equal(f.config.enableLocalFile2Url,false);
+});
+test('managed stop preserves a media option changed externally after setup',async t=>{
+  const f=await fixture(t);await connect(f);f.config.enableLocalFile2Url=false;
+  await f.service.stop({flowId:(await f.service.inspect()).flowId});assert.equal(f.config.enableLocalFile2Url,false);assert.equal(Object.hasOwn(f.config,'enableLocalFile2Url'),true);
+});
+test('managed stop after QQ goes offline still restores the bound account media setting',async t=>{
+  const f=await fixture(t);f.config.enableLocalFile2Url=false;const connected=await connect(f);f.logOut();
+  await f.service.poll({instanceId:'persona-a',flowId:connected.flowId});assert.equal((await f.service.inspect()).loginAccount,null);
+  await f.service.stop({flowId:connected.flowId});assert.equal(f.config.enableLocalFile2Url,false);
+  const state=JSON.parse(await fs.readFile(path.join(f.installRoot,'managed-state.json'),'utf8'));assert.deepEqual(state.mediaBytesRestore,{});
+});
 test('stale flow and personality switch cannot configure another personality',async t=>{
   const f=await fixture(t),first=await startReady(f);f.logIn();await assert.rejects(f.service.poll({instanceId:'persona-a',flowId:'old'}),{code:'NAPCAT_FLOW_STALE'});f.switchPersona();await assert.rejects(f.service.connect({instanceId:'persona-a',flowId:first.flowId,allowedPrivateIds:[],allowedGroupIds:[]}),{code:'NAPCAT_INSTANCE_CHANGED'});assert.equal(f.counts.configure,0);
 });
@@ -152,7 +184,20 @@ test('connect marks busy through mutations and rechecks the current personality 
   const f=await fixture(t);let release;const hold=new Promise(resolve=>{release=resolve;});f.setPauseConfigure(hold);const pending=connect(f);while(!f.counts.configure)await tick();assert.equal(f.service.isBusy('persona-a'),true);f.switchPersona();release();await assert.rejects(pending,{code:'NAPCAT_INSTANCE_CHANGED'});assert.equal(f.counts.rotate,0);assert.equal(f.counts.start,0);assert.equal(f.service.isBusy('persona-a'),false);
 });
 test('normal close preserves restore intent and enabled scope; resume uses existing component and human stop opts out',async t=>{
-  const f=await fixture(t);await connect(f);const before=structuredClone(f.profile.config),downloads=f.counts.download,rotations=f.counts.rotate;await f.service.close();assert.equal(f.profile.enabled,true);f.service=f.make();await f.service.resume();for(let i=0;i<5000&&(await f.service.inspect()).phase!=='connected';i++)await tick();assert.equal((await f.service.inspect()).phase,'connected');assert.equal(f.counts.resume,1);assert.equal(f.counts.download,downloads);assert.equal(f.counts.rotate,rotations);assert.deepEqual(f.profile.config,before);
+  const f=await fixture(t), connected=await connect(f);
+  const before=structuredClone(f.profile.config),downloads=f.counts.download,rotations=f.counts.rotate;
+  f.service.beginClose();
+  await assert.rejects(f.service.stop({flowId:connected.flowId}),{code:'NAPCAT_CLOSED'});
+  assert.equal(f.spawned.child.killed,false);
+  const closing=f.service.close();
+  assert.equal(f.service.close(),closing);
+  await closing;
+  assert.equal(f.profile.enabled,true);
+  f.service=f.make();await f.service.resume();
+  for(let i=0;i<5000&&(await f.service.inspect()).phase!=='connected';i++)await tick();
+  assert.equal((await f.service.inspect()).phase,'connected');
+  assert.equal(f.counts.resume,1);assert.equal(f.counts.download,downloads);assert.equal(f.counts.rotate,rotations);
+  assert.deepEqual(f.profile.config,before);
   const value=await f.service.stop({flowId:(await f.service.inspect()).flowId});assert.equal(value.phase,'stopped');assert.equal(f.profile.enabled,false);assert.equal(JSON.parse(await fs.readFile(path.join(f.installRoot,'managed-state.json'),'utf8')).desired,null);
 });
 test('busy channel stop preserves restore intent and active setup state',async t=>{

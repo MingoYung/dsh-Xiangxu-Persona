@@ -1,11 +1,62 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { boundToolOutput } from '../adapters/dsh/tool-output.js';
+import { TOOL_PARAMETERS } from '../adapters/dsh/tool-schema.js';
+import { extractProcessDependencies } from '../core/source-dependencies.js';
 
 const counter = { method: 'test_codepoints', count: text => Array.from(text).length };
 const size = value => counter.count(JSON.stringify(value));
 const row = text => ({ id: 'long_source', personId: 'a', recordType: 'chat', sourceSessionId: 'source_session', sourceEventId: 'source_event',
   role: 'user', origin: 'user', text });
+
+test('prepared association references keep a bounded detail link and preserve the seed and all provenance', async () => {
+  assert.ok(TOOL_PARAMETERS.memory_search.mode.enum.includes('prepared'));
+  assert.ok(!TOOL_PARAMETERS.persona_decide.retrievePlan.oneOf[0].properties.mode.enum.includes('prepared'));
+  assert.equal(TOOL_PARAMETERS.memory_forget.mode, undefined);
+  const srcRefs = Array.from({ length: 7 }, (_, index) => ({
+    sourceSessionId: 'seed-session-' + 's'.repeat(80), sourceEventId: 'seed-event-' + index + '-' + 'e'.repeat(80),
+    sourceRole: 'assistant', sourceKind: 'model', sourceOrigin: 'ai_reply', available: index !== 1,
+  }));
+  const seed = { schemaVersion: 'persona-memory/3', id: 'seed-original', scope: 'person', personId: 'a', recordType: 'chat', srcRefs };
+  const basis = { subjectPersonId: 'a', seed };
+  const items = [{ ...row('短正文也可以续读完整依据。'), scope: 'person', retrieval: { channels: ['prepared_association'], preparedAssociation: basis } }];
+  const preparedAssociations = { status: 'ready', builtAt: 1234, partial: false };
+  const result = { items, diagnostics: { method: 'prepared_association', preparedAssociations, referenceOnly: true, automaticRecall: false } };
+  const args = { query: '', scope: 'person', mode: 'prepared', seedIds: [seed.id] }, budget = 1500;
+  const list = await boundToolOutput('memory_search', result, args, { budget });
+  assert.ok(Buffer.byteLength(JSON.stringify(list)) <= budget);
+  assert.deepEqual(list.retrieval, { method: 'prepared_association', preparedAssociations, referenceOnly: true, automaticRecall: false });
+  assert.equal(list.items[0].fragment.complete, true);
+  assert.equal(list.items[0].preparedAssociationInDetail, true);
+  assert.equal(list.items[0].retrieval.preparedAssociation, undefined);
+  assert.ok(list.items[0].detailCursor);
+  let detailCursor = list.items[0].detailCursor, serialized = '', pageCount = 0;
+  while (detailCursor) {
+    const page = await boundToolOutput('memory_search', result, { ...args, detailCursor }, { budget });
+    assert.ok(Buffer.byteLength(JSON.stringify(page)) <= budget);
+    assert.equal(page.detail.fragment.from, Array.from(serialized).length);
+    assert.ok(page.detail.fragment.to > page.detail.fragment.from);
+    serialized += page.detail.text; detailCursor = page.nextCursor;
+    assert.ok(++pageCount < 20);
+  }
+  assert.ok(pageCount > 1);
+  const detail = JSON.parse(serialized);
+  assert.equal(detail.id, items[0].id); assert.equal(detail.text, items[0].text);
+  assert.deepEqual(detail.retrieval.preparedAssociation, basis);
+  const envelope = { message: { role: 'tool', source: { kind: 'tool' }, content: [{ type: 'text', text: serialized }] } };
+  const dependencies = extractProcessDependencies({ kind: 'tool_result', sourceKind: 'tool/result', content: { mode: 'cached', text: JSON.stringify(envelope) } });
+  assert.equal(dependencies.complete, true);
+  assert.deepEqual(dependencies.recordIds.sort(), [items[0].id, seed.id].sort());
+  for (const { sourceSessionId, sourceEventId } of srcRefs) assert.ok(dependencies.refs.some(ref => ref.sourceSessionId === sourceSessionId && ref.sourceEventId === sourceEventId));
+  await assert.rejects(boundToolOutput('memory_search', result, { ...args, mode: 'lexical', detailCursor: list.items[0].detailCursor }, { budget }), { code: 'INVALID_TOOL_CURSOR' });
+  const changed = structuredClone(result);
+  changed.items[0].retrieval.preparedAssociation.seed.srcRefs[6].sourceEventId = 'changed-citation';
+  await assert.rejects(boundToolOutput('memory_search', changed, { ...args, detailCursor: list.items[0].detailCursor }, { budget }), { code: 'TOOL_CURSOR_STALE' });
+  for (const status of ['missing', 'stale', 'unavailable']) {
+    const absent = await boundToolOutput('memory_search', { items: [], diagnostics: { ...result.diagnostics, preparedAssociations: { status } } }, args, { budget });
+    assert.deepEqual(JSON.parse(JSON.stringify(absent)).retrieval.preparedAssociations, { status });
+  }
+});
 
 test('long Chinese and emoji memory pages reconstruct the complete original within the complete JSON budget', async () => {
   const text = '早上好🌿👩🏽‍💻我们聊过这个事。'.repeat(600), result = { items: [row(text), { ...row('第二段真实原文🐈'), id: 'second' }] };

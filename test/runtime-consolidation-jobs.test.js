@@ -89,6 +89,67 @@ test('one shared call segment bounds all selected children and an explicit runId
   assert.equal((await f.repository.getRuntime()).sleep.state, 'awake'); assert.equal(f.wakes.length, 1);
 });
 
+test('chosen sleep work prepares source-backed leads before wake and lookup does no live association or model work', async t => {
+  const f = await fixture(t);
+  const alpha = await f.runtime.accept(chat('source_alpha'), env());
+  const beta = await f.runtime.accept(chat('source_beta'), env());
+  const other = await f.runtime.accept(chat('source_other'), env());
+  const run = await f.repository.prepareConsolidation({ personId: 'a', boundedContext: false });
+  const key = 'person:a:index';
+  const entry = (id, record, subjects) => ({ documentKey: key, operation: 'upsert', recordId: id, expectedVersion: run.inputVersions[key],
+    value: { text: id, srcRefs: [ref(record)], ...(subjects ? { aboutPersonIds: subjects } : {}) } });
+  await f.repository.applyConsolidation(run, [
+    entry('alpha', alpha.record, ['a', 'b']), entry('beta', beta.record, ['b']),
+    entry('other', other.record), entry('unknown_subject', other.record, ['unknown']),
+  ]);
+  const query = { query: '', mode: 'prepared', seedIds: ['alpha'], scope: 'person', targetPersonId: 'a' };
+  assert.equal((await f.repository.search(query)).diagnostics.preparedAssociations.status, 'missing');
+  await f.runtime.decide({ sleepPlan: { action: 'sleep', wakeCondition: 'explicit_wake', wakeAt: null } }, { personId: 'a' });
+  await f.runtime.idle();
+  assert.equal((await f.repository.search(query)).diagnostics.preparedAssociations.status, 'missing');
+  assert.equal(f.requests.length, 0);
+  await f.runtime.handleSignal('explicit_wake');
+
+  const previousWakes = f.wakes.length;
+  await f.runtime.accept(chat('sleeping_input'), env());
+  await f.runtime.decide({ sleepPlan: { action: 'sleep', wakeCondition: 'consolidation_complete', wakeAt: null },
+    consolidationPlan: { action: 'run', targetPersonIds: ['a'] } }, { ...env(), personId: 'a' });
+  await f.runtime.idle();
+  assert.equal((await f.repository.getRuntime()).sleep.state, 'awake');
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.wakes.length, previousWakes + 1);
+  assert.equal((await f.repository.search(query)).diagnostics.preparedAssociations.status, 'ready');
+  await f.runtime.close();
+  await f.runtime.open();
+  const allMemory = f.repository._allMemory;
+  f.repository._allMemory = () => { throw new Error('prepared lookup must not search the memory store'); };
+  try {
+    const output = await f.repository.search(query);
+    assert.equal(output.diagnostics.preparedAssociations.status, 'ready');
+    assert.equal(output.diagnostics.automaticRecall, false);
+    assert.deepEqual(output.items.map(item => item.id), ['beta']);
+    assert.equal(output.items[0].retrieval.preparedAssociation.subjectPersonId, 'b');
+    assert.equal(output.items[0].retrieval.preparedAssociation.seed.srcRefs[0].sourceEventId, 'source_alpha');
+    assert.equal(output.items[0].srcRefs[0].sourceEventId, 'source_beta');
+    assert.deepEqual((await f.repository.search({ ...query, targetPersonId: 'b' })).items, []);
+    assert.deepEqual((await f.repository.search({ ...query, seedIds: ['other'] })).items, []);
+    await assert.rejects(f.repository.search({ ...query, scope: 'all' }), { code: 'SCHEMA_INVALID' });
+    assert.equal(f.requests.length, 1);
+  } finally { f.repository._allMemory = allMemory; }
+  await f.repository.forget({ ids: ['alpha'], targetPersonId: 'a', reason: 'remove the seed for this fixture' });
+  const afterForget = await f.repository.search(query);
+  assert.deepEqual(afterForget.items, []);
+  assert.equal(afterForget.diagnostics.preparedAssociations.status, 'stale');
+  f.repository.store.writeDerivedJson = async () => { throw Object.assign(new Error('fixture cache has no space'), { code: 'CAPACITY_EXCEEDED' }); };
+  await f.runtime.accept(chat('another_sleeping_input'), env());
+  await f.runtime.decide({ sleepPlan: { action: 'sleep', wakeCondition: 'consolidation_complete', wakeAt: null },
+    consolidationPlan: { action: 'run', targetPersonIds: ['a'] } }, { ...env(), personId: 'a' });
+  await f.runtime.idle();
+  assert.equal((await jobs(f.repository)).at(-1).status, 'completed');
+  assert.equal((await f.repository.getRuntime()).sleep.state, 'awake');
+  assert.equal(f.runtime.errors.at(-1).code, 'CAPACITY_EXCEEDED');
+});
+
 test('context pages use only exposed frozen cursors, pause at a call budget, survive restart and explicitly resume without a false complete read', async t => {
   const f = await fixture(t, { config: { processingLimits: { consolidationContextChars: 2000, consolidationCallsPerSegment: 2 } },
     complete: async request => {

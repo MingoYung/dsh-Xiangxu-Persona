@@ -95,6 +95,7 @@ export function createInstanceManager({ initialRoot, config={}, createCoordinato
   async function maintain(kind,args={}) {
     await manager.ready;return queue(async()=>{
       const item=descriptor(args);requireLoadable(item);const wasActive=activeId===item.instanceId;
+      const requiresLoad=kind==='restore'||kind==='recover';
       if(wasActive)await ensureIdle();
       await beforeMaintenance(kind,item);
       if(wasActive){await capture(item);await stop();}
@@ -108,10 +109,10 @@ export function createInstanceManager({ initialRoot, config={}, createCoordinato
       // Validate/backup resume the exact previously loaded instance. Restore and
       // recovery remain stopped: reopening may release saved timers/model work.
       if(wasActive&&['validate','backup'].includes(kind))try{await start(item);}catch(failure){if(!error)error=failure;}
-      if(['restore','recover'].includes(kind)){registry.autoLoad=false;await persist();}
+      if(requiresLoad&&registry.selectedInstanceId===item.instanceId){registry.autoLoad=false;await persist();}
       if(error)throw error;
       const receipt={...result};if(Array.isArray(receipt.files)){receipt.fileCount=receipt.files.length;delete receipt.files;}
-      return{...receipt,instanceId:item.instanceId,loaded:activeId===item.instanceId,requiresLoad:['restore','recover'].includes(kind)};
+      return{...receipt,instanceId:item.instanceId,loaded:activeId===item.instanceId,requiresLoad};
     });
   }
   async function preview(args={}) {

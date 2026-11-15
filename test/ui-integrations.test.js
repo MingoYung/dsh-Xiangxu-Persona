@@ -190,9 +190,9 @@ for (const bad of ['unknown', 'wrong-sha', 'wrong-bytes', 'wrong-cover-id']) tes
 });
 
 const buildSource = await readFile(new URL('../scripts/build-ui.mjs', import.meta.url), 'utf8');
-const downloadStart = buildSource.indexOf("if(message.action==='ui.asset.download'"), downloadEnd = buildSource.indexOf('const result=await ctx.connection.rpc.call', downloadStart);
+const downloadStart = buildSource.indexOf("if(message.action==='ui.asset.download'"), downloadEnd = buildSource.indexOf('}finally{downloadInProgress=false}', downloadStart);
 assert.ok(downloadStart >= 0 && downloadEnd > downloadStart);
-const downloadBlock = buildSource.slice(downloadStart, downloadEnd);
+const downloadBlock = buildSource.slice(downloadStart, downloadEnd) + '}finally{downloadInProgress=false}}';
 async function downloadFixture({ rpc, digest = (...args) => webcrypto.subtle.digest(...args) } = {}) {
   const bytes = Buffer.from('verified-bytes'), checksum = await sha(bytes), posted = [], created = [], clicked = [], calls = [];
   const context = vm.createContext({ disposed: false, downloadInProgress: false, channel: { port1: { postMessage: value => posted.push(value) } }, ctx: { connection: { rpc: { call: async (...args) => { calls.push(args); return rpc ? rpc(...args) : { ok: true, value: { totalBytes: bytes.length, sha256: checksum, mime: 'audio/wav', filename: ASSET + '.wav', dataBase64: bytes.toString('base64'), complete: true, nextOffset: null } }; } } } },

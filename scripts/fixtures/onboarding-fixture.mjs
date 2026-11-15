@@ -1,4 +1,4 @@
-import { appendFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -12,8 +12,20 @@ const serial = value => JSON.parse(JSON.stringify(value, (key, item) => key === 
 /** Actual native host probe and fixed provider. It does not simulate a Session,
  * agent loop, tools, owner authorization or persistence implementation. */
 export async function apply(ctx, config) {
-  const { HostConnectionService } = await import(config.connectionModule);
-  new HostConnectionService(ctx, [], {});
+  let connection = ctx.get('connection', false);
+  if (!connection) {
+    const sdk = JSON.parse(readFileSync(new URL('../../dsh-sdk-app/package.json', config.connectionModule), 'utf8'));
+    if (sdk.dependencies?.['@deepseek-ai/dsh-client-connection']) {
+      ctx.inject(['connection'], child => runFixture(ctx, config, child.connection));
+      return;
+    }
+    const { HostConnectionService } = await import(config.connectionModule);
+    connection = ctx.get('connection', false) || new HostConnectionService(ctx, [], {});
+  }
+  return runFixture(ctx, config, connection);
+}
+
+async function runFixture(ctx, config, connection) {
   mkdirSync(config.artifacts, { recursive: true });
   const record = value => appendFileSync(join(config.artifacts, 'native-events.private.jsonl'), JSON.stringify({ at: Date.now(), ...serial(value) }) + '\n');
   const capture = (kind, options) => appendFileSync(join(config.artifacts, 'requests.private.jsonl'), JSON.stringify({ kind, at: Date.now(), provider: options.provider,
@@ -122,9 +134,9 @@ export async function apply(ctx, config) {
       yield { type: 'finish', reason: { kind: 'stop' } };
     } };
   ctx.llm.registerAdapter([provider], adapter); await manager.ready;
-  const owner = ctx.connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' });
-  const foreign = ctx.connection.createPeer({ principal: { kind: 'other' }, interactions: 'none' });
-  const carrier = ctx.connection.createSharedFetchHandler('/api');
+  const owner = connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' });
+  const foreign = connection.createPeer({ principal: { kind: 'other' }, interactions: 'none' });
+  const carrier = connection.createSharedFetchHandler('/api');
   ctx.effect(() => async () => { await owner.dispose(); await foreign.dispose(); });
   const controlToken = randomBytes(24).toString('base64url');
   const server = createServer(async (request, response) => {

@@ -1,5 +1,57 @@
 const managerLeases = new WeakMap();
+const resolveBarrierKey = Symbol.for('xiangxu-persona.tools.resolve-barrier');
+const cordisOriginal = Symbol.for('cordis.original');
 const currentCoordinator = manager => typeof manager.getCoordinator === 'function' ? manager.getCoordinator() : manager;
+function awaitAttachment(task, signal) {
+  signal?.throwIfAborted?.();
+  if (!signal) return task;
+  return new Promise((resolve, reject) => {
+    const aborted = () => reject(signal.reason ?? Object.assign(new Error('Tool resolution aborted'), { name: 'AbortError' }));
+    signal.addEventListener('abort', aborted, { once: true });
+    Promise.resolve(task).then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted));
+  });
+}
+function beforeToolResolution(tools, prepare) {
+  // Cordis returns a new traced service proxy at each access. Share the barrier
+  // on its original service while retaining the caller's scoped `this` below.
+  const target = tools?.[cordisOriginal] ?? tools;
+  if (typeof target?.resolve !== 'function') return () => {};
+  let state = target[resolveBarrierKey];
+  if (!state || target.resolve !== state.wrapper) {
+    const descriptor = Object.getOwnPropertyDescriptor(target, 'resolve'), original = target.resolve;
+    state = { entries: new Set(), descriptor, original, version: 0, resolving: 0 };
+    state.release = () => {
+      if (state.entries.size || state.resolving) return;
+      if (target.resolve === state.wrapper) {
+        if (state.descriptor) Object.defineProperty(target, 'resolve', state.descriptor);
+        else delete target.resolve;
+      }
+      if (target[resolveBarrierKey] === state) delete target[resolveBarrierKey];
+    };
+    state.wrapper = async function (context, ...rest) {
+      state.resolving++;
+      try {
+        context?.signal?.throwIfAborted?.();
+        let version;
+        do {
+          version = state.version;
+          for (const entry of [...state.entries]) await entry(context);
+        } while (version !== state.version);
+        context?.signal?.throwIfAborted?.();
+        return state.original.call(this, context, ...rest);
+      } finally { state.resolving--; state.release(); }
+    };
+    Object.defineProperty(target, 'resolve', { configurable: true, writable: true, value: state.wrapper });
+    Object.defineProperty(target, resolveBarrierKey, { configurable: true, value: state });
+  }
+  state.entries.add(prepare);
+  state.version++;
+  return () => {
+    if (!state.entries.delete(prepare)) return;
+    state.version++;
+    state.release();
+  };
+}
 function retireLease(lease) {
   if (lease.disposal) return lease.disposal;
   lease.disposed = true;
@@ -75,8 +127,30 @@ export function mountCompanionScope(ctx, manager, { presetId = 'persona-memory',
     });
     return item.task;
   }
-  // DSH collects tool providers before this waterfall. Its returned assembly
-  // is authoritative, so refresh the prepared scope after awaiting attachment.
+  const eligible = agent => agent && !closed && !isWorkerSession(agent.id) && actualPreset(agent) === presetId
+    && (!service('agents')?.get || service('agents').get(agent.id) === agent);
+  // DSH 2.0.22 freezes tool definitions before prompt assembly/pre-step. Wait
+  // before that native snapshot; registering tools afterwards cannot repair it.
+  const releaseResolution = beforeToolResolution(service('tools'), async context => {
+    const agent = context?.agent;
+    if (!eligible(agent)) {
+      // A leave notification is not awaited either. Drain only our exact prior
+      // owner so its retiring mask/tools cannot enter the next preset's view.
+      const previous = owned.get(agent?.id);
+      if (previous?.agent === agent) await awaitAttachment(dispose(previous), context?.signal);
+      return;
+    }
+    while (eligible(agent)) {
+      const task = activate(agent);
+      await awaitAttachment(task, context.signal);
+      const item = owned.get(agent.id);
+      if (eligible(agent) && item?.agent === agent && !item.disposed && item.task === task) return;
+    }
+    const item = owned.get(agent.id);
+    if (item?.agent === agent) await awaitAttachment(dispose(item), context.signal);
+  });
+  // Older DSH versions collect schemas in this waterfall. Retain that refresh
+  // alongside the earlier barrier required by the frozen tool-set contract.
   ctx.on('system-prompt/assemble', async (assembly, context, next) => {
     const agent = context?.agent;
     if (!agent || closed || isWorkerSession(agent.id) || actualPreset(agent) !== presetId) return next();
@@ -116,6 +190,7 @@ export function mountCompanionScope(ctx, manager, { presetId = 'persona-memory',
   for (const agent of service('agents')?.list?.() ?? []) if (!isWorkerSession(agent.id) && actualPreset(agent) === presetId) activate(agent);
   ctx.effect(() => async () => {
     closed = true;
+    releaseResolution();
     await Promise.allSettled([...owned.values()].map(dispose));
     await Promise.allSettled([...pending]);
     owned.clear();

@@ -51,20 +51,27 @@ export function createIncomingMediaPort({ ctx } = {}) {
           if(item.kind==='audio'&&config.transcribeIncomingAudio!==true){entry.status='not_transcribed';entry.reason='incoming_audio_transcription_disabled';continue;}
           try {
             const loaded=await boundedAwait(client.resolveMedia({kind:item.kind,fileId:item.fileId},{signal}),signal);
-            const bytes=loaded?.bytes;if(!(bytes instanceof Uint8Array)||!bytes.byteLength||total+bytes.byteLength>INCOMING_MEDIA_LIMITS.totalBytes){entry.reason='incoming_media_capacity';continue;}total+=bytes.byteLength;
+            const bytes=loaded?.bytes;
+            if(!(bytes instanceof Uint8Array)||!bytes.byteLength){
+              entry.status=item.kind==='image'?'not_attached':'not_transcribed';
+              entry.reason=loaded?.reason==='bridge_returned_no_safe_bytes'?'bridge_returned_no_safe_bytes':loaded?.status==='unsupported'?'bridge_media_unsupported':'incoming_media_bytes_unavailable';
+              if(entry.reason==='bridge_returned_no_safe_bytes')entry.resolution='桥未返回可读取的媒体字节；NapCat已有兼容桥请开启enableLocalFile2Url，本插件托管桥会自动配置。';
+              continue;
+            }
+            if(total+bytes.byteLength>INCOMING_MEDIA_LIMITS.totalBytes){entry.status=item.kind==='image'?'not_attached':'not_transcribed';entry.reason='incoming_media_capacity';continue;}total+=bytes.byteLength;
             entry.sha256=createHash('sha256').update(bytes).digest('hex');entry.bytes=bytes.byteLength;
             if(item.kind==='image'){
               if(!['image/png','image/jpeg','image/webp'].includes(loaded.mime)){entry.reason='unsupported_image_format';continue;}
               const refs=await boundedAwait(attachments.saveImages([{data:Buffer.from(bytes),mediaType:loaded.mime}]),signal);
               if(closed||signal.aborted||epoch!==startedEpoch)return cancelled();
               if(!Array.isArray(refs)||refs.length!==1){entry.reason='host_attachment_unconfirmed';continue;}
-              result.images.push(refs[0]);entry.status='image_attached';
+              result.images.push(refs[0]);entry.status='image_attached';delete entry.reason;delete entry.resolution;
             }else{
               const stt=get(ctx,'speechToText');if(!stt?.resolve||!stt?.transcribe){entry.reason='host_speech_input_unavailable';continue;}
               const spec=stt.resolve({audio:new Uint8Array(mono16kWav(bytes))}),transcribed=await boundedAwait(stt.transcribe(spec,signal),signal),text=typeof transcribed==='string'?transcribed:transcribed?.text??transcribed?.transcript;
               if(closed||signal.aborted||epoch!==startedEpoch)return cancelled();
               if(typeof text!=='string'||!text.trim()||Array.from(text).length>INCOMING_MEDIA_LIMITS.transcriptChars){entry.reason='transcript_empty_or_capacity';continue;}
-              result.derived.push({kind:'audio_transcript',text,sourceSegmentIndex:item.segmentIndex,sourceMessageId:event.message.id,recognition:'host_stt_output',verbatimTypedText:false});entry.status='transcribed';
+              result.derived.push({kind:'audio_transcript',text,sourceSegmentIndex:item.segmentIndex,sourceMessageId:event.message.id,recognition:'host_stt_output',verbatimTypedText:false});entry.status='transcribed';delete entry.reason;delete entry.resolution;
             }
           }catch(error){if(closed||signal.aborted||epoch!==startedEpoch)return cancelled();entry.status=item.kind==='image'?'not_attached':'not_transcribed';entry.reason=/^[A-Z0-9_]{1,80}$/.test(error?.code??'')?error.code:'incoming_media_processing_failed';}
         }

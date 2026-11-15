@@ -104,27 +104,126 @@ export function createSocialProviderService({ configFile, stateFile, assetRoot, 
   async function updateJob(jobId,patch){return queue(async()=>{const job=findJob(jobId);if(terminal(job.status))return safeJob(job);await save({...state,jobs:state.jobs.map(item=>item.jobId===jobId?{...item,...patch,updatedAt:clock()}:item)});return safeJob(findJob(jobId));},{internal:true});}
   async function operation(key,work){if(closing||closed)fail('SOCIAL_CLOSED','扩展服务已关闭');const controller=new AbortController();controllers.set(key,controller);const task=Promise.resolve().then(()=>work(AbortSignal.any([controller.signal,AbortSignal.timeout(L.requestMs)])));tasks.set(key,task);try{return await task;}finally{controller.abort();controllers.delete(key);tasks.delete(key);}}
   function route(config,pathValue,remoteJobId){const rendered=remoteJobId===undefined?pathValue:pathValue.replace('{jobId}',encodeURIComponent(remoteJobId));const url=new URL(rendered,config.baseUrl);if(url.origin!==new URL(config.baseUrl).origin)fail('SOCIAL_ENDPOINT','扩展路径越过服务origin');return url;}
-  async function request(config,pathValue,{body,remoteJobId,signal}={}){const response=await fetchImpl(route(config,pathValue,remoteJobId),{method:body===undefined?'GET':'POST',redirect:'error',headers:{...(body!==undefined?{'content-type':'application/json'}:{}),...(config.apiKey?{authorization:'Bearer '+config.apiKey}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal});if(!response.ok)fail(response.status>=400&&response.status<500?'SOCIAL_HTTP_REJECTED':'SOCIAL_HTTP_UNKNOWN','扩展服务HTTP '+response.status);let value;try{value=JSON.parse((await responseBytes(response,L.jsonBytes)).toString('utf8'));}catch(error){if(error.code)throw error;fail('SOCIAL_RESPONSE','扩展服务没有返回有效JSON');}if(!object(value))fail('SOCIAL_RESPONSE','扩展服务回执必须是对象');return value;}
+  function checkPermission(assertCurrent) {
+    let checked;
+    try { checked = assertCurrent?.(); }
+    catch { fail('SOCIAL_PERMISSION_DENIED', '扩展操作的当前授权未确认'); }
+    if (checked && typeof checked.then === 'function') {
+      Promise.resolve(checked).catch(() => {});
+      fail('SOCIAL_PERMISSION_DENIED', '扩展操作需要同步确认当前授权');
+    }
+    if (checked === false) fail('SOCIAL_PERMISSION_DENIED', '扩展操作的当前授权未确认');
+  }
+  async function request(config,pathValue,{body,remoteJobId,signal,job,assertCurrent,onDispatch}={}) {
+    const url = route(config, pathValue, remoteJobId), init = { method: body === undefined ? 'GET' : 'POST', redirect: 'error',
+      headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(config.apiKey ? { authorization: 'Bearer ' + config.apiKey } : {}) },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal };
+    if (job) await assertActiveSource(job);
+    signal?.throwIfAborted();
+    checkPermission(assertCurrent);
+    onDispatch?.();
+    const response = await fetchImpl(url, init);
+    if (!response.ok) fail(response.status >= 400 && response.status < 500 ? 'SOCIAL_HTTP_REJECTED' : 'SOCIAL_HTTP_UNKNOWN', '扩展服务HTTP ' + response.status);
+    let value;
+    try { value = JSON.parse((await responseBytes(response, L.jsonBytes)).toString('utf8')); }
+    catch (error) { if (error.code) throw error; fail('SOCIAL_RESPONSE', '扩展服务没有返回有效JSON'); }
+    if (!object(value)) fail('SOCIAL_RESPONSE', '扩展服务回执必须是对象');
+    return value;
+  }
   function safeResult(value,config){const json=JSON.stringify(value);if(Buffer.byteLength(json)>L.feedResultBytes)fail('SOCIAL_RESULT_CAPACITY','动态读取结果超过容量，未截断');if(config.apiKey&&json.includes(config.apiKey))fail('SOCIAL_SECRET_RESPONSE','服务返回了密钥材料，未保存或回显');return copy(value);}
-  async function decodeResponse(config,job,value,signal){if(value.status==='failed')return{status:'failed',error:{code:'SOCIAL_PROVIDER_FAILED',message:'扩展服务明确拒绝或任务失败'}};if(job.kind==='feed'){if(value.accountId!==job.accountId)fail('SOCIAL_ACCOUNT_MISMATCH','动态回执账号与实际目标不符');if(value.status!=='completed'||job.capability!=='feed.read'&&(typeof value.receiptId!=='string'||!value.receiptId))fail('SOCIAL_RECEIPT_UNKNOWN','动态副作用没有可确认回执');return{status:'completed',result:{...(value.result===undefined?{}:{data:safeResult(value.result,config)}),...(value.receiptId?{receiptId:text(value.receiptId,'远端回执',256)}:{}),confirmedBy:job.capability==='feed.read'?'extension-provider-result':'extension-provider-receipt'}};}if(value.status==='submitted'||value.status==='running'){const remoteJobId=text(value.jobId,'远端任务编号',256);if(job.remoteJobId&&job.remoteJobId!==remoteJobId)fail('SOCIAL_REMOTE_JOB_MISMATCH','远端任务编号不符');return{status:'submitted',remoteJobId};}if(value.status!=='completed'||!object(value.audio))fail('SOCIAL_RECEIPT_UNKNOWN','翻唱尚无已完成音频回执');if(job.remoteJobId&&value.jobId!==job.remoteJobId)fail('SOCIAL_REMOTE_JOB_MISMATCH','远端任务编号不符');let bytes;if(typeof value.audio.dataBase64==='string'){if(value.audio.url!==undefined||value.audio.dataBase64.length>Math.ceil(L.audioBytes*4/3)+4||value.audio.dataBase64.length%4||!/^[A-Za-z0-9+/]*={0,2}$/.test(value.audio.dataBase64))fail('SOCIAL_AUDIO_FORMAT','音频编码无效或超过容量');bytes=Buffer.from(value.audio.dataBase64,'base64');}else if(typeof value.audio.url==='string'){const url=new URL(urlValue(value.audio.url,config.allowRemote,false,true)),origins=new Set([new URL(config.baseUrl).origin,...config.downloadOrigins]);if(!origins.has(url.origin))fail('SOCIAL_DOWNLOAD_SCOPE','产物下载origin未经明确配置');const response=await fetchImpl(url,{redirect:'error',signal});if(!response.ok)fail('SOCIAL_DOWNLOAD_UNKNOWN','音频下载未成功');bytes=await responseBytes(response,L.audioBytes);}else fail('SOCIAL_AUDIO_FORMAT','翻唱回执缺少音频字节');const info=inspectSocialAudio(bytes);if(value.audio.mime!==undefined&&value.audio.mime!==info.mime)fail('SOCIAL_AUDIO_FORMAT','申报音频类型与实际容器不一致');return{status:'completed',output:bytes,outputMime:info.mime};}
-  async function apply(jobId,result){return queue(async()=>{const job=findJob(jobId);if(terminal(job.status))return safeJob(job);await assertActiveSource(job);let resultAssetIds=job.resultAssetIds;if(result.output){const asset=await putAsset(result.output,{name:'cover-'+job.jobId,origin:'cover',jobId,...links(job)});resultAssetIds=[asset.assetId];}const {output,outputMime,...patch}=result;await save({...state,jobs:state.jobs.map(item=>item.jobId===jobId?{...item,...patch,resultAssetIds,updatedAt:clock()}:item)});return safeJob(findJob(jobId));},{internal:true});}
-  async function run(plan){return operation(plan.job.jobId,async signal=>{const started=await updateJob(plan.job.jobId,{status:'running'});if(started.status!=='running')return started;try{const value=await request(plan.config,plan.path,{body:plan.body,signal});return await apply(plan.job.jobId,await decodeResponse(plan.config,plan.job,value,signal));}catch(error){return updateJob(plan.job.jobId,{status:error.code==='SOCIAL_HTTP_REJECTED'?'failed':'unknown',error:safeError(error)});}});}
+  async function decodeResponse(config,job,value,signal,assertCurrent) {
+    if (value.status === 'failed') return { status: 'failed', error: { code: 'SOCIAL_PROVIDER_FAILED', message: '扩展服务明确拒绝或任务失败' } };
+    if (job.kind === 'feed') {
+      if (value.accountId !== job.accountId) fail('SOCIAL_ACCOUNT_MISMATCH', '动态回执账号与实际目标不符');
+      if (value.status !== 'completed' || job.capability !== 'feed.read' && (typeof value.receiptId !== 'string' || !value.receiptId)) fail('SOCIAL_RECEIPT_UNKNOWN', '动态副作用没有可确认回执');
+      return { status: 'completed', result: { ...(value.result === undefined ? {} : { data: safeResult(value.result, config) }),
+        ...(value.receiptId ? { receiptId: text(value.receiptId, '远端回执', 256) } : {}),
+        confirmedBy: job.capability === 'feed.read' ? 'extension-provider-result' : 'extension-provider-receipt' } };
+    }
+    if (value.status === 'submitted' || value.status === 'running') {
+      const remoteJobId = text(value.jobId, '远端任务编号', 256);
+      if (job.remoteJobId && job.remoteJobId !== remoteJobId) fail('SOCIAL_REMOTE_JOB_MISMATCH', '远端任务编号不符');
+      return { status: 'submitted', remoteJobId };
+    }
+    if (value.status !== 'completed' || !object(value.audio)) fail('SOCIAL_RECEIPT_UNKNOWN', '翻唱尚无已完成音频回执');
+    if (job.remoteJobId && value.jobId !== job.remoteJobId) fail('SOCIAL_REMOTE_JOB_MISMATCH', '远端任务编号不符');
+    let bytes;
+    if (typeof value.audio.dataBase64 === 'string') {
+      if (value.audio.url !== undefined || value.audio.dataBase64.length > Math.ceil(L.audioBytes * 4 / 3) + 4 || value.audio.dataBase64.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value.audio.dataBase64)) fail('SOCIAL_AUDIO_FORMAT', '音频编码无效或超过容量');
+      bytes = Buffer.from(value.audio.dataBase64, 'base64');
+    } else if (typeof value.audio.url === 'string') {
+      const url = new URL(urlValue(value.audio.url, config.allowRemote, false, true));
+      const origins = new Set([new URL(config.baseUrl).origin, ...config.downloadOrigins]);
+      if (!origins.has(url.origin)) fail('SOCIAL_DOWNLOAD_SCOPE', '产物下载origin未经明确配置');
+      await assertActiveSource(job);
+      signal?.throwIfAborted();
+      checkPermission(assertCurrent);
+      const response = await fetchImpl(url, { redirect: 'error', signal });
+      if (!response.ok) fail('SOCIAL_DOWNLOAD_UNKNOWN', '音频下载未成功');
+      bytes = await responseBytes(response, L.audioBytes);
+    } else fail('SOCIAL_AUDIO_FORMAT', '翻唱回执缺少音频字节');
+    const info = inspectSocialAudio(bytes);
+    if (value.audio.mime !== undefined && value.audio.mime !== info.mime) fail('SOCIAL_AUDIO_FORMAT', '申报音频类型与实际容器不一致');
+    return { status: 'completed', output: bytes, outputMime: info.mime };
+  }
+  async function apply(jobId,result,assertCurrent){return queue(async()=>{const job=findJob(jobId);if(terminal(job.status))return safeJob(job);await assertActiveSource(job);checkPermission(assertCurrent);let resultAssetIds=job.resultAssetIds;if(result.output){const asset=await putAsset(result.output,{name:'cover-'+job.jobId,origin:'cover',jobId,...links(job)});resultAssetIds=[asset.assetId];}const {output,outputMime,...patch}=result;await save({...state,jobs:state.jobs.map(item=>item.jobId===jobId?{...item,...patch,resultAssetIds,updatedAt:clock()}:item)});return safeJob(findJob(jobId));},{internal:true});}
+  async function run(plan, assertCurrent) {
+    return operation(plan.job.jobId, async signal => {
+      const started = await updateJob(plan.job.jobId, { status: 'running' });
+      if (started.status !== 'running') return started;
+      let dispatched = false, result;
+      try {
+        const value = await request(plan.config, plan.path, { body: plan.body, signal, job: plan.job, assertCurrent, onDispatch: () => { dispatched = true; } });
+        const decoded = await decodeResponse(plan.config, plan.job, value, signal, assertCurrent);
+        const readFence = plan.job.capability === 'feed.read' || decoded.output ? assertCurrent : undefined;
+        result = await apply(plan.job.jobId, decoded, readFence);
+      } catch (error) {
+        return updateJob(plan.job.jobId, { status: !dispatched || error.code === 'SOCIAL_HTTP_REJECTED' ? 'failed' : 'unknown', error: safeError(error) });
+      }
+      if (result.status === 'completed' && (plan.job.capability === 'feed.read' || plan.job.kind === 'cover')) checkPermission(assertCurrent);
+      return result;
+    });
+  }
   return {
     get ready(){return queue(async()=>({ready:true}));},
     inspect({includeConfiguration=false}={}){return queue(async()=>({protocol:SOCIAL_PROVIDER_PROTOCOL,providers:config.providers.map(value=>{const safe=publicProvider(value);return includeConfiguration?safe:{kind:safe.kind,enabled:safe.enabled,accountId:safe.accountId||null,hasApiKey:safe.hasApiKey,configured:safe.configured,capabilities:safe.capabilities,platformApiClaim:safe.platformApiClaim};}),limits:copy(L),usage:await usage(),jobs:state.jobs.slice(-20).map(safeJob)}));},
     configure({kind,config:patch}={}){return queue(async()=>{const prior=selected(kind),next=provider(kind,patch,prior);if(state.jobs.some(job=>job.kind===kind&&['prepared','running','submitted'].includes(job.status))&&configFingerprint(prior)!==configFingerprint(next))fail('SOCIAL_PROVIDER_BUSY','先完成或明确取消该服务的现有任务再更改端点');await acquire();const value={...config,version:config.version+1,providers:config.providers.map(item=>item.kind===kind?next:item)};await writeJson(configFile,value,L.configBytes);config=value;return{provider:publicProvider(next)};});},
     probe({kind}={}){return queue(async()=>{const value=selected(kind);if(!value?.baseUrl||!value.probePath)return{kind,reachable:false,code:'SOCIAL_PROBE_NOT_CONFIGURED',capabilities:value?capabilities(value):{}};return copy(value);}).then(async value=>{if(!value.baseUrl)return value;try{return await operation('probe-'+randomUUID(),async signal=>{const result=await request(value,value.probePath,{signal}),accountMatches=value.kind!=='feed'||result.accountId===value.accountId;return{kind:value.kind,reachable:result.status==='ready'&&result.protocol===SOCIAL_PROVIDER_PROTOCOL.id&&accountMatches,...(value.kind==='feed'?{accountMatches}:{}),capabilities:capabilities(value),actualQqApiVerified:false};});}catch(error){return{kind,reachable:false,error:safeError(error)};}});},
     importAudio(args={},source={}){return queue(async()=>{fields(args,['bytes','dataBase64','mime','name']);if((args.bytes===undefined)===(args.dataBase64===undefined))fail('SOCIAL_INVALID','提供音频字节或Base64其中一种');let bytes;if(args.bytes!==undefined){if(!(args.bytes instanceof Uint8Array))fail('SOCIAL_INVALID','音频需要字节');bytes=Buffer.from(args.bytes);}else{if(typeof args.dataBase64!=='string'||args.dataBase64.length>Math.ceil(L.audioBytes*4/3)+4||args.dataBase64.length%4||!/^[A-Za-z0-9+/]*={0,2}$/.test(args.dataBase64))fail('SOCIAL_AUDIO_FORMAT','音频编码无效');bytes=Buffer.from(args.dataBase64,'base64');}const info=inspectSocialAudio(bytes);if(args.mime!==undefined&&args.mime!==info.mime)fail('SOCIAL_AUDIO_FORMAT','申报音频与实际类型不符');const sourceLinks=links(source);await assertActiveSource(sourceLinks);return{asset:safeAsset(await putAsset(bytes,{name:args.name??'imported-audio',origin:'import',...sourceLinks}))};});},
-    execute(args={},source={}){return queue(async()=>{fields(args,['requestId','capability','accountId','payload']);text(args.requestId,'请求编号',160);const kind=args.capability==='media.cover'?'cover':['feed.read','feed.publish','feed.react'].includes(args.capability)?'feed':null;if(!kind)fail('SOCIAL_CAPABILITY','此扩展未实现该能力');const payload=args.payload??{};if(!object(payload))fail('SOCIAL_INVALID','扩展输入必须是对象');const normalized={requestId:args.requestId,capability:args.capability,accountId:args.accountId??null,payload},requestHash=digest(normalized),previous=state.jobs.find(job=>job.requestId===args.requestId);if(previous){if(previous.requestHash!==requestHash)fail('SOCIAL_REQUEST_CONFLICT','相同请求编号不能替换目标或内容');return{duplicate:true,job:safeJob(previous)};}if(state.jobs.length>=L.jobs)fail('SOCIAL_JOB_CAPACITY','扩展任务收据已满，未淘汰旧请求或重复付费');const value=copy(selected(kind));if(!capabilities(value)[args.capability])fail('SOCIAL_PROVIDER_DISABLED','请由用户明确配置并启用该扩展服务');if(state.jobs.filter(job=>['prepared','running','submitted'].includes(job.status)).length>=L.activeJobs)fail('SOCIAL_JOB_CAPACITY','扩展任务并发达到技术容量');let sourceLinks=links(source),body,pathValue,inputAssetId=null;
+    execute(args={},source={},assertCurrent){return queue(async()=>{fields(args,['requestId','capability','accountId','payload']);text(args.requestId,'请求编号',160);const kind=args.capability==='media.cover'?'cover':['feed.read','feed.publish','feed.react'].includes(args.capability)?'feed':null;if(!kind)fail('SOCIAL_CAPABILITY','此扩展未实现该能力');const payload=args.payload??{};if(!object(payload))fail('SOCIAL_INVALID','扩展输入必须是对象');const normalized={requestId:args.requestId,capability:args.capability,accountId:args.accountId??null,payload},requestHash=digest(normalized),previous=state.jobs.find(job=>job.requestId===args.requestId);if(previous){if(previous.requestHash!==requestHash)fail('SOCIAL_REQUEST_CONFLICT','相同请求编号不能替换目标或内容');if(previous.capability==='feed.read'||previous.kind==='cover')checkPermission(assertCurrent);return{duplicate:true,job:safeJob(previous)};}if(state.jobs.length>=L.jobs)fail('SOCIAL_JOB_CAPACITY','扩展任务收据已满，未淘汰旧请求或重复付费');const value=copy(selected(kind));if(!capabilities(value)[args.capability])fail('SOCIAL_PROVIDER_DISABLED','请由用户明确配置并启用该扩展服务');if(state.jobs.filter(job=>['prepared','running','submitted'].includes(job.status)).length>=L.activeJobs)fail('SOCIAL_JOB_CAPACITY','扩展任务并发达到技术容量');let sourceLinks=links(source),body,pathValue,inputAssetId=null;
       if(kind==='feed'){if(args.accountId!==value.accountId)fail('SOCIAL_ACCOUNT_MISMATCH','动态操作需要已配置的实际账号');if(args.capability==='feed.read'){fields(payload,['cursor','limit']);if(payload.cursor!==undefined)text(payload.cursor,'动态游标',2048);if(payload.limit!==undefined&&(!Number.isSafeInteger(payload.limit)||payload.limit<1||payload.limit>20))fail('SOCIAL_INVALID','动态读取数量无效');pathValue=value.readPath;}else if(args.capability==='feed.publish'){fields(payload,['text']);text(payload.text,'动态正文',16000);pathValue=value.publishPath;}else{fields(payload,['postId','action','text']);text(payload.postId,'动态编号');if(!['like','unlike','comment'].includes(payload.action))fail('SOCIAL_INVALID','动态互动动作无效');if(payload.action==='comment')text(payload.text,'动态评论',16000);else if(payload.text!==undefined)fail('SOCIAL_INVALID','此互动不接收评论正文');pathValue=value.reactPath;}body={protocol:SOCIAL_PROVIDER_PROTOCOL.id,requestId:args.requestId,accountId:args.accountId,payload};
       }else{fields(payload,['assetId']);inputAssetId=text(payload.assetId,'输入音频资产');if(!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(inputAssetId))fail('SOCIAL_INPUT_ASSET_ID','输入必须是已登记的音频资产编号，不能是路径或URL');let input;if(ID.test(inputAssetId)){input=await readAsset(inputAssetId);const asset=findAsset(inputAssetId),independent=asset.provenance.some(item=>item.origin==='import'&&!item.sourceRefs.length&&!item.sourceRecordIds.length);if(!independent)sourceLinks=links({sourceRefs:[...sourceLinks.sourceRefs,...asset.provenance.flatMap(item=>item.sourceRefs)],sourceRecordIds:[...sourceLinks.sourceRecordIds,...asset.provenance.flatMap(item=>item.sourceRecordIds)]});}else{if(!inputAssetPort?.readAssetBytes)fail('SOCIAL_INPUT_ASSET_UNAVAILABLE','没有受信音频资产端口');input=await inputAssetPort.readAssetBytes(inputAssetId);if(!Array.isArray(input.sourceRefs)||!Array.isArray(input.sourceRecordIds))fail('SOCIAL_INPUT_PROVENANCE_UNAVAILABLE','受信音频端口必须提供来源依赖；独立用户原件可明确提供空数组');sourceLinks=links({sourceRefs:[...sourceLinks.sourceRefs,...input.sourceRefs],sourceRecordIds:[...sourceLinks.sourceRecordIds,...input.sourceRecordIds]});}const inputBytes=Buffer.from(input.bytes??[]),info=inspectSocialAudio(inputBytes);if(input.mime&&input.mime!==info.mime)fail('SOCIAL_AUDIO_FORMAT','输入资产MIME不一致');body={protocol:SOCIAL_PROVIDER_PROTOCOL.id,requestId:args.requestId,model:value.model,targetVoice:value.targetVoice,input:{assetId:inputAssetId,mime:info.mime,sha256:digest(inputBytes),dataBase64:inputBytes.toString('base64')}};pathValue=value.submitPath;}
-      await assertActiveSource(sourceLinks);const job={jobId:'social-'+randomUUID().replaceAll('-',''),requestId:args.requestId,requestHash,capability:args.capability,kind,accountId:args.accountId??null,configFingerprint:configFingerprint(value),status:'prepared',remoteJobId:null,inputAssetId,resultAssetIds:[],result:null,createdAt:clock(),updatedAt:clock(),...sourceLinks};await save({...state,jobs:[...state.jobs,job]});return{job,config:value,body,path:pathValue};}).then(async plan=>{if(plan.duplicate)return{...plan.job,duplicate:true};if(plan.job.kind==='cover'){void run(plan).catch(()=>{});return safeJob(plan.job);}return run(plan);});},
-    getJob({jobId,poll=false}={}){return queue(async()=>{const job=findJob(jobId);if(!poll||job.status!=='submitted')return safeJob(job);const value=selected(job.kind);if(configFingerprint(value)!==job.configFingerprint)fail('SOCIAL_PROVIDER_CHANGED','该任务的服务配置已改变');return{job:copy(job),config:copy(value)};}).then(async plan=>{if(!plan.job)return plan;return operation('poll-'+plan.job.jobId+'-'+randomUUID(),async signal=>{try{return await apply(plan.job.jobId,await decodeResponse(plan.config,plan.job,await request(plan.config,plan.config.pollPath,{remoteJobId:plan.job.remoteJobId,signal}),signal));}catch(error){return updateJob(plan.job.jobId,{status:'unknown',error:safeError(error)});}});});},
+      await assertActiveSource(sourceLinks);const job={jobId:'social-'+randomUUID().replaceAll('-',''),requestId:args.requestId,requestHash,capability:args.capability,kind,accountId:args.accountId??null,configFingerprint:configFingerprint(value),status:'prepared',remoteJobId:null,inputAssetId,resultAssetIds:[],result:null,createdAt:clock(),updatedAt:clock(),...sourceLinks};await save({...state,jobs:[...state.jobs,job]});return{job,config:value,body,path:pathValue};}).then(async plan=>{if(plan.duplicate)return{...plan.job,duplicate:true};if(plan.job.kind==='cover'){void run(plan,assertCurrent).catch(()=>{});return safeJob(plan.job);}return run(plan,assertCurrent);});},
+    getJob({jobId,poll=false}={},assertCurrent) {
+      return queue(async () => {
+        const job = findJob(jobId);
+        if (!poll || job.status !== 'submitted') { checkPermission(assertCurrent); return safeJob(job); }
+        const value = selected(job.kind);
+        if (configFingerprint(value) !== job.configFingerprint) fail('SOCIAL_PROVIDER_CHANGED', '该任务的服务配置已改变');
+        return { job: copy(job), config: copy(value) };
+      }).then(async plan => {
+        if (!plan.job) return plan;
+        return operation('poll-' + plan.job.jobId + '-' + randomUUID(), async signal => {
+          try {
+            const value = await request(plan.config, plan.config.pollPath, { remoteJobId: plan.job.remoteJobId, signal, job: plan.job, assertCurrent });
+            const decoded = await decodeResponse(plan.config, plan.job, value, signal, assertCurrent);
+            const result = await apply(plan.job.jobId, decoded, assertCurrent);
+            checkPermission(assertCurrent);
+            return result;
+          } catch (error) {
+            // A denied read leaves the previous job state usable for an explicit later poll.
+            if (error.code === 'SOCIAL_PERMISSION_DENIED') throw error;
+            return updateJob(plan.job.jobId, { status: 'unknown', error: safeError(error) });
+          }
+        });
+      });
+    },
     listJobs({limit=20}={}){return queue(async()=>{if(!Number.isSafeInteger(limit)||limit<1||limit>L.jobs)fail('SOCIAL_INVALID','任务读取数量无效');return{items:state.jobs.slice(-limit).map(safeJob),total:state.jobs.length};});},
-    cancel({jobId}={}){
+    cancel({jobId}={},assertCurrent){
       if(cancelTasks.has(jobId))return cancelTasks.get(jobId);
       const task=queue(async()=>{
         const job=findJob(jobId);if(terminal(job.status)||job.cancelAttempted)return{...safeJob(job),duplicate:true};
+        checkPermission(assertCurrent);
         controllers.get(jobId)?.abort();const value=selected(job.kind);
         if(!job.remoteJobId||!value.cancelPath)return{job:copy(job),unconfirmed:true};
         if(configFingerprint(value)!==job.configFingerprint)fail('SOCIAL_PROVIDER_CHANGED','任务服务配置已改变');
@@ -133,11 +232,22 @@ export function createSocialProviderService({ configFile, stateFile, assetRoot, 
       }).then(async plan=>{
         if(!plan.job)return plan;
         if(plan.unconfirmed)return updateJob(jobId,{status:'unknown',error:{code:'SOCIAL_CANCEL_UNCONFIRMED',message:'本机停止等待不代表远端任务已取消'}});
-        return operation('cancel-'+jobId+'-'+randomUUID(),async signal=>{try{
-          const value=await request(plan.config,plan.config.cancelPath,{remoteJobId:plan.job.remoteJobId,body:{protocol:SOCIAL_PROVIDER_PROTOCOL.id,jobId:plan.job.remoteJobId},signal});
+        return operation('cancel-'+jobId+'-'+randomUUID(),async signal=>{let dispatched=false;try{
+          const value=await request(plan.config,plan.config.cancelPath,{remoteJobId:plan.job.remoteJobId,body:{protocol:SOCIAL_PROVIDER_PROTOCOL.id,jobId:plan.job.remoteJobId},signal,job:plan.job,assertCurrent,onDispatch:()=>{dispatched=true;}});
           if(value.status!=='cancelled'||value.jobId!==plan.job.remoteJobId||!value.receiptId)fail('SOCIAL_CANCEL_UNCONFIRMED','远端没有确认取消');
           return apply(jobId,{status:'cancelled',result:{receiptId:text(value.receiptId,'取消回执')}});
-        }catch(error){return updateJob(jobId,{status:'unknown',error:safeError(error)});}});
+        }catch(error){
+          if (!dispatched && error.code === 'SOCIAL_PERMISSION_DENIED') {
+            await queue(async () => {
+              const job = findJob(jobId);
+              if (terminal(job.status)) return;
+              const { cancelAttempted, cancelRequestedAt, ...ready } = job;
+              await save({ ...state, jobs: state.jobs.map(item => item.jobId === jobId ? ready : item) });
+            }, { internal: true });
+            throw error;
+          }
+          return updateJob(jobId,{status:'unknown',error:safeError(error)});
+        }});
       });
       cancelTasks.set(jobId,task);task.finally(()=>{if(cancelTasks.get(jobId)===task)cancelTasks.delete(jobId);}).catch(()=>{});return task;
     },

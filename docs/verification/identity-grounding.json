@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "status": "passed-zero-model-candidate",
+  "date": "2026-11-05",
+  "baseCandidate": "22c70966d4ff278444e011149844cf9f73927fcc",
+  "worktree": "C:/Users/Administrator/DSH/xiangxu-identity-grounding",
+  "branch": "codex/identity-grounding",
+  "realModelCalls": 0,
+  "formalInstanceOperations": 0,
+  "existingMemoryRewritten": false,
+  "replyAdmissionChanged": false,
+  "hardBehaviorGatesAdded": false,
+  "referenceGuidanceCharacters": 126,
+  "fullUnit": {"passed": 1671, "total": 1671, "failed": 0, "cancelled": 0, "skipped": 0, "evidence": "unit-final.log"},
+  "remaining": ["Real-model improvement in identity discrimination is unverified", "Formal load and phone QQ acceptance remain unverified for this patch"],
+  "native": {"generic": {"passed": 29, "total": 29}, "mockQq": {"passed": 10, "total": 10, "fixedDispatches": 4, "mockSends": 5}, "sourceInputsUnchanged": 91},
+  "hostAsarSha256": "c525939eb23116128a22bf23a78b692abe7995f65ec5baf7b509ca1290262000",
+  "sourceDigests": {
+    "adapters/dsh/channels/qq-group-context.js": "a0b747a2a5b3a46a0debf60aa5b2b3a80dd15ae7a9bf77b325d7fb56e933f659",
+    "adapters/dsh/conversation-reference.js": "0022d2dbf3b128805a2c1c331c30849d8c21cfa4164ad7a31085265d47c5726f",
+    "core/onboarding.js": "df71b0541b0becf9954e547723b3442b138b1c3a821ad80e1ebc2a414cdc1318",
+    "core/prompts.js": "096d2b40f72c85e3b7df52d2676998eb28f025882e82b50054bc9be92e7a62dc"
+  },
+  "checks": {"syntaxFiles": 260, "planDocuments": 14, "implementationDocuments": 42, "localLinks": 963, "build": "passed", "portableCore": "passed"},
+  "evidence": {
+    "nativeSummary": "native/native-summary.json",
+    "nativeManifest": "native/native-verification-manifest.json",
+    "nativeProcessCleanup": "native/process-cleanup.json",
+    "qqResult": "native/qq-host-1793889795739/qq-host-result.json",
+    "firstFullFailureRetained": "unit-full.log",
+    "fixedInputFixture": "source-pages-budget-after.log"
+  },
+  "limitations": ["Fixed provider output proves delivery and absence of a new program gate, not autonomous model understanding", "Historical assistant originals remain unchanged; no memory was cleared to remove the failure", "The formal C22 instance and its linked source worktree were not reloaded or modified"],
+  "localEvidenceRoot": "C:/Users/Administrator/Documents/Codex/2026-10-25/c-users-administrator-dsh-reports/work/identity-grounding-fix"
+}

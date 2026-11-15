@@ -27,7 +27,7 @@ async function fixture(t, extra = {}) {
     else throw new Error('Unexpected local mock route');
     return Response.json(body);
   };
-  const ports = { getCoordinator: async () => current && { ...current }, getRuntime: async () => { if (runtimeError) throw runtimeError; return runtime && { ...runtime }; }, authorize: async value => { grants.push(value); return extra.authorize ? extra.authorize(value, grants.length) : true; }, clock: () => now, fetchImpl, archiveFault: extra.archiveFault };
+  const ports = { getCoordinator: async () => current && { ...current }, getRuntime: async () => { extra.beforeRuntime?.(); if (runtimeError) throw runtimeError; return runtime && { ...runtime }; }, authorize: async value => { grants.push(value); return extra.authorize ? extra.authorize(value, grants.length) : true; }, clock: () => now, fetchImpl, archiveFault: extra.archiveFault };
   const makeService = () => { const value = createQQAccountService(ports); services.push(value); return value; }, service = makeService();
   t.after(async () => { await Promise.all(services.map(value => value.close())); await fs.rm(root, { recursive: true, force: true }); });
   return { root, memoryRoot, archiveRoot, calls, grants, hooks, operations, ports, service, makeService, envelope,
@@ -55,7 +55,7 @@ test('capability inspection cannot recurse through permissions or archives and f
 test('friend query retains complete scoped technical evidence without synthesizing human conversation or a channel binding', async t => {
   const f = await fixture(t), query = await f.query();
   assert.equal(query.accountId, ACCOUNT); assert.equal(query.userId, TARGET); assert.equal(query.referenceOnly, true); assert.equal(query.bindingCreated, false);
-  assert.deepEqual(f.grants[0], { memoryRoot: f.memoryRoot, platform: 'qq', accountId: ACCOUNT, capability: 'friend.query' });
+  assert.deepEqual(f.grants[0], { memoryRoot: f.memoryRoot, platform: 'qq', accountId: ACCOUNT, capability: 'friend.query', dispatchFence: true });
   const index = await f.index(), raw = JSON.parse(await fs.readFile(path.join(f.archiveRoot, 'queries', query.queryId + '.json'), 'utf8'));
   assert.equal(index.queries.length, 1); assert.equal(raw.instanceId, 'persona-a'); assert.equal(raw.response.optionsRef, query.optionsRef);
   assert.equal(JSON.stringify(raw).includes(f.runtime.token), false);
@@ -118,6 +118,31 @@ test('permission revoked after durable prepare prevents dispatch and records zer
   await assert.rejects(f.request(query), { code: 'QQ_ACCOUNT_PERMISSION' }); assert.equal(requestCalls(f).length, 0);
   const index = await f.index(), row = index.receipts[0]; assert.equal(row.status, 'failed');
   const event = JSON.parse(await fs.readFile(path.join(f.archiveRoot, 'receipts', row.receiptId, '000001.json'), 'utf8')); assert.equal(event.nativeCalls, 0);
+});
+
+test('native friend request rechecks its captured permission after the final asynchronous runtime lookup', async t => {
+  let requestGrants = 0, revokeDuringLookup = false, allowed = true;
+  const f = await fixture(t, {
+    authorize(value) { if (value.capability === 'friend.request' && ++requestGrants === 2) revokeDuringLookup = true; return { assertCurrent: () => allowed }; },
+    beforeRuntime() { if (revokeDuringLookup) allowed = false; },
+  });
+  const query = await f.query();
+  await assert.rejects(f.request(query), { code: 'QQ_ACCOUNT_PERMISSION' });
+  assert.equal(requestCalls(f).length, 0);
+  const [row] = (await f.index()).receipts;
+  const event = JSON.parse(await fs.readFile(path.join(f.archiveRoot, 'receipts', row.receiptId, '000001.json'), 'utf8'));
+  assert.equal(event.event, 'not_dispatched'); assert.equal(event.nativeCalls, 0);
+  assert.equal((await f.request(query)).duplicate, true);
+  assert.equal(requestCalls(f).length, 0);
+});
+
+test('native target query does not expose or archive a result if its grant is revoked while reading', async t => {
+  let allowed = true;
+  const f = await fixture(t, { authorize: () => ({ assertCurrent: () => allowed }) });
+  f.hooks['/v1/friend/query'] = () => { allowed = false; };
+  await assert.rejects(f.query(), { code: 'QQ_ACCOUNT_PERMISSION' });
+  assert.equal(f.calls.filter(row => row.route === '/v1/friend/query').length, 1);
+  await assert.rejects(fs.stat(path.join(f.archiveRoot, 'index.json')), { code: 'ENOENT' });
 });
 
 test('persona switch during target query cannot save target evidence to a new or old unrelated persona', async t => {

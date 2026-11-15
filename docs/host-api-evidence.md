@@ -1,5 +1,7 @@
 # Installed DSH host API evidence
 
+Current follow-up: [DSH 2.0.22-next compatibility](dsh-2.0.22-compatibility.md) records the 2026-11-05 tool-set capture order, source hashes and isolated native checks. The 2.0.19 evidence below retains its original historical scope.
+
 Date: 2026-10-25. Scope: read-only installed-source inspection plus a native CLI help probe in a dedicated temporary home. This document does not claim a real model request, persona lifecycle, or UI delivery has passed; those require the integration runner. No existing profile, existing plugin, browser-access setting, application source, or credentials were changed/read.
 
 ## Artifact and evidence identity

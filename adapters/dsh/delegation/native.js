@@ -93,7 +93,10 @@ export function createDelegationHost({ ctx, workerPresetId = TASK_WORKER_PRESET,
     const events = saved.events ?? [];
     let lastStart = -1, end = null, output = [];
     for (const event of events) {
-      if (event.type === 'turn/start') lastStart = event.seq;
+      if (event.type === 'turn/start') {
+        lastStart = event.seq;
+        output = [];
+      }
       if (event.type === 'turn/end') end = event;
       if (event.type === 'assistant/message' && Array.isArray(event.data?.message?.content) && event.data.message.content.length) output = event.data.message.content;
     }
@@ -133,10 +136,11 @@ export function createDelegationHost({ ctx, workerPresetId = TASK_WORKER_PRESET,
       const maxDepth = subagents.resolveMaxDepth?.();
       entry.attempted = true; entry.status = 'starting';
       try {
+        const request = { parent, prompt: [{ type: 'text', text: value.prompt }], agentPreset: workerPresetId,
+          ...(entry.metadata.workspace ? { cwd: entry.metadata.workspace } : {}), ...(maxDepth === undefined ? {} : { maxDepth }) };
+        // DSH SDK rc.1 reads spec.request. Since rc.3 the activation spec reads these fields directly.
         const receipt = await subagents.startActivation({ provider, childId: entry.metadata.sessionId, label: typeof value.title === 'string' && value.title ? value.title : '相续独立任务',
-          request: { parent, prompt: [{ type: 'text', text: value.prompt }], agentPreset: workerPresetId,
-            ...(entry.metadata.workspace ? { cwd: entry.metadata.workspace } : {}), ...(maxDepth === undefined ? {} : { maxDepth }) },
-          signal: controller.signal, delivery: 'caller' });
+          ...request, request, signal: controller.signal, delivery: 'caller' });
         if (receipt?.childId !== entry.metadata.sessionId || typeof receipt?.dispose !== 'function' || !receipt?.result?.then) {
           if (typeof receipt?.dispose === 'function') await receipt.dispose().catch(report);
           fail('TASK_NATIVE_RECEIPT', '原生派发没有返回已保留编号的任务回执');

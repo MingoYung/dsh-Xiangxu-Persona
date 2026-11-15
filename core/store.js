@@ -148,6 +148,32 @@ export class JsonStore {
     }
   }
   readJson(relative, fallback = null) { return this._queue(async () => { this._check(); return this._json(relative, fallback); }); }
+  readBoundedJson(relative, maxBytes) {
+    return this._queue(async () => {
+      this._check();
+      let file;
+      try {
+        file = await fs.open(await this._path(relative), 'r');
+        const info = await file.stat();
+        if (!info.isFile() || info.size > maxBytes) throw error('CACHE_SIZE_INVALID', 'Derived cache exceeds its read bound');
+        const bytes = Buffer.alloc(info.size + 1);
+        const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+        if (bytesRead !== info.size) throw error('CACHE_SIZE_INVALID', 'Derived cache changed during read');
+        return JSON.parse(bytes.subarray(0, bytesRead).toString('utf8'));
+      } catch (failure) { if (failure.code !== 'ENOENT') throw failure; return null; }
+      finally { await file?.close(); }
+    });
+  }
+  writeDerivedJson(relative, value, maxBytes) {
+    return this._queue(async () => {
+      this._check();
+      const text = JSON.stringify(value) + '\n', bytes = Buffer.byteLength(text);
+      if (bytes > maxBytes) throw capacityError('derivedCacheBytes', bytes, maxBytes, relative);
+      await this._path(relative);
+      await this._checkCapacity([{ path: relative, text }]);
+      await this._atomic(relative, text);
+    });
+  }
   readLines(relative) { return this._queue(async () => { this._check(); return this._lines(relative); }); }
   readLinesVerified(relative, expected) {
     return this._queue(async () => {
@@ -201,7 +227,7 @@ export class JsonStore {
       }
       added += bytes; delta += bytes - (files.get(entry.path) ?? 0);
     }
-    const physicalBytes = [...files.values()].reduce((sum, bytes) => sum + bytes, 0), walBytes = Buffer.byteLength(JSON.stringify(manifest));
+    const physicalBytes = [...files.values()].reduce((sum, bytes) => sum + bytes, 0), walBytes = manifest ? Buffer.byteLength(JSON.stringify(manifest)) : 0;
     const projectedBytes = physicalBytes + delta + walBytes;
     // Conservative peak: prepared WAL + its atomic replacement + replacement file temporaries.
     const peakBytes = physicalBytes + walBytes * 2 + added;

@@ -4,9 +4,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { JsonStore, atomicReplaceWithRetry } from './store.js';
 import { temporaryCleanupPlan, runReferencesRevocation } from './source-dependencies.js';
 import { SELF_PROFILE_PATH, validateSelfProfile, redactSelfProfile } from './self-profile.js';
+import { isPreparedAssociationPath } from './prepared-associations.js';
+import { redactPendingPersonNames, redactPersonNames } from './person-names.js';
 import { TIMELINE_CATALOG, validateTimelineCatalog, unifiedRecord, isTimelinePath, archiveDescriptor, timelineChars, redactTimelineRecord } from './timeline.js';
 import { SCHEMA_VERSION, validateConfig, validatePersona, validateChat, validateHot,
-  validateMemoryItem, validateCode, validateInterpretation, validateImpression, validateDeepMemory } from './schema.js';
+  validateMemoryItem, validateCode, validateInterpretation, validateImpression, validateDeepMemory, validatePersonNames } from './schema.js';
 
 const FORMAT = 'persona-memory-backup/1';
 const DEFAULT_MAX = 64 * 1024 * 1024;
@@ -55,6 +57,19 @@ async function syncWrite(file, value) {
   finally { await handle.close(); }
   try { await atomicReplaceWithRetry(temp, file); } catch (e) { await fs.unlink(temp).catch(() => {}); throw e; }
 }
+async function moveDirectory(source, target) {
+  // Windows may briefly deny a directory rename while another process has it open.
+  // Keep the switch atomic and never deliberately replace an existing target.
+  const retryDelays = [5, 20, 50, 100, 200, 400, 800];
+  for (let attempt = 0; ; attempt++) {
+    if (await exists(target)) fail('UNMANAGED_TARGET', 'Directory move target already exists');
+    try { await fs.rename(source, target); return; }
+    catch (error) {
+      if (process.platform !== 'win32' || !['EBUSY', 'EPERM', 'EACCES'].includes(error.code) || attempt >= retryDelays.length) throw error;
+      await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
+    }
+  }
+}
 async function scan(root, maxBytes, extensionValidator) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) fail('INVALID_CAPACITY', 'maxBytes must be a positive safe integer');
   await noLinks(root); const files = []; let totalBytes = 0;
@@ -65,7 +80,7 @@ async function scan(root, maxBytes, extensionValidator) {
       if (entry.isSymbolicLink()) fail('UNSAFE_PATH', 'Maintenance refuses symlinks and junctions');
       if (entry.isDirectory()) { await visit(name); continue; }
       if (!entry.isFile()) fail('UNSUPPORTED_FILE', 'Unexpected non-file in memory root');
-      if (name === 'writer.lock' || name === MARKER || name.includes('.tmp-')) continue;
+      if (name === 'writer.lock' || name === MARKER || name.includes('.tmp-') || isPreparedAssociationPath(name)) continue;
       if (name.endsWith('/writer.lock') || name.endsWith('.writer.lock')) {
         const value = await json(inside(root, name));
         if (typeof extensionValidator !== 'function' || await extensionValidator({ path: name, value, kind: 'writerLock' }) !== true) fail('UNSUPPORTED_FILE', 'Unknown extension writer lock: ' + name);
@@ -113,6 +128,7 @@ async function validateContent(root, files, extensionValidator) {
       }
       else if (/^people\/[^/]+\/pending\.json$/.test(file.path)) value.items.forEach(validateInterpretation);
       else if (/^people\/[^/]+\/impression\.json$/.test(file.path)) validateImpression(value);
+      else if (/^people\/[^/]+\/identity\.json$/.test(file.path) && value?.names !== undefined) validatePersonNames(value.names);
       else if (file.path.startsWith('.wal/')) {
         if (value.digest !== sha(JSON.stringify(value.entries))) fail('CORRUPT_WAL', 'WAL checksum mismatch');
         if (value.state === 'prepared') preparedWal++;
@@ -190,6 +206,35 @@ async function removeManaged(target, parent, predicate) {
 async function backupMarker(dir) {
   try { return (await json(path.join(dir, 'manifest.json'))).backupFormat === FORMAT; } catch { return false; }
 }
+async function publishBackup(candidate, destination, fault) {
+  const previous = destination + '.previous';
+  let retired = null, rotated = false;
+  try {
+    if (await exists(destination)) {
+      if (!await backupMarker(destination)) fail('UNMANAGED_TARGET', 'Backup destination is not a managed backup');
+      await noLinks(previous);
+      if (await exists(previous)) {
+        if (!await backupMarker(previous)) fail('UNMANAGED_TARGET', 'Backup predecessor is not a managed backup');
+        const target = previous + '.retired-' + randomUUID();
+        await moveDirectory(previous, target); retired = target;
+      }
+      await moveDirectory(destination, previous); rotated = true;
+      await fault?.('backup_latest_moved');
+    }
+    await moveDirectory(candidate, destination);
+  } catch (failure) {
+    const errors = [failure];
+    try {
+      if (rotated) await moveDirectory(previous, destination);
+      if (retired) await moveDirectory(retired, previous);
+    } catch (rollbackFailure) { errors.push(rollbackFailure); }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, 'Backup publication failed and rollback could not be completed', { cause: failure });
+    }
+    throw failure;
+  }
+  return retired;
+}
 async function candidateMarker(dir, root) {
   try { const marker = await json(path.join(dir, MARKER)); return marker.root === root && ['candidate', 'rollback'].includes(marker.kind); } catch { return false; }
 }
@@ -261,7 +306,10 @@ async function carryRevocations(currentRoot, candidate, maxBytes, extensionValid
       const rows = raw.split(/\r?\n/).filter(Boolean).map(JSON.parse).map((value) => walk(isTimelinePath(file.path) ? redactTimelineRecord(value, candidateMeta).record : value)).filter((value) => value !== undefined);
       await syncWrite(inside(candidate, file.path), rows.map((value) => JSON.stringify(value)).join('\n') + (rows.length ? '\n' : ''));
     } else {
-      const value = walk(JSON.parse(raw));
+      let original = JSON.parse(raw);
+      if (/^people\/[^/]+\/identity\.json$/.test(file.path)) original = redactPersonNames(original, candidateMeta);
+      if (file.path === 'global/state.json') original = redactPendingPersonNames(original, candidateMeta);
+      const value = walk(original);
       for (const [field, refs] of Object.entries(candidateMeta.lineage?.[file.path] ?? {})) if (refs.some((key) => roots.has(key))) {
         if (field === 'anchor' && value.anchor) value.anchor = { text: '', changedAt: Date.now(), srcRefs: [] };
         else if (field === 'axes') value.axes = {};
@@ -337,13 +385,15 @@ export async function createBackup({ root, destination, maxBytes = DEFAULT_MAX, 
     await copyFiles(root, path.join(candidate, 'data'), snapshot.files);
     const manifest = { backupFormat: FORMAT, schemaVersion: SCHEMA_VERSION, createdAt: typeof clock === 'function' ? clock() : clock.now(), files: snapshot.files, totalBytes: snapshot.totalBytes };
     await syncWrite(path.join(candidate, 'manifest.json'), manifest); await validateBackup(candidate, { maxBytes, extensionValidator }); await fault?.('backup_candidate_ready');
-    const previous = destination + '.previous';
-    if (await exists(destination)) {
-      if (!await backupMarker(destination)) fail('UNMANAGED_TARGET', 'Backup destination is not a managed backup');
-      await removeManaged(previous, path.dirname(destination), backupMarker); await fs.rename(destination, previous);
+    const retired = await publishBackup(candidate, destination, fault); candidate = null;
+    const receipt = { ...manifest, destination };
+    if (retired) {
+      try { await removeManaged(retired, path.dirname(destination), backupMarker); }
+      catch (error) {
+        receipt.warnings = [{ code: 'BACKUP_RETIRE_CLEANUP', path: retired, errorCode: error.code ?? 'UNKNOWN' }];
+      }
     }
-    await fs.rename(candidate, destination); candidate = null;
-    return { ...manifest, destination };
+    return receipt;
   } finally {
     await store?.close(); await releaseGate(gate);
     if (candidate && await exists(candidate)) await removeManaged(candidate, path.dirname(destination), async (dir) => await backupMarker(dir) || await candidateMarker(dir, root));

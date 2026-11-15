@@ -81,8 +81,14 @@ export function createBridgeClient(profile, { fetchImpl = fetch, clock = Date.no
     if (capability === 'chat.voice') return base.sendVoice(target, payload.bytes, { deliveryId });
     if (!supported[capability]?.supported) return { status: 'unsupported', code: 'CAPABILITY_UNSUPPORTED' };
     try {
-      if(capability==='message.read')return base.getMessage({messageId:payload.messageId});
-      if(capability==='message.forward.read')return base.getForward({forwardId:payload.forwardId});
+      if(capability==='message.read') {
+        if(typeof payload.messageId!=='string'||!payload.messageId.trim()) return {status:'failed',code:'CHANNEL_MESSAGE_ID_REQUIRED',message:'message.read requires the actual platform messageId from the current input, a quoted message, or a confirmed receipt; sessionId/channelId is not a message ID.'};
+        return await base.getMessage({messageId:payload.messageId});
+      }
+      if(capability==='message.forward.read') {
+        if(typeof payload.forwardId!=='string'||!payload.forwardId.trim()) return {status:'failed',code:'CHANNEL_FORWARD_ID_REQUIRED',message:'message.forward.read requires the actual forwardId of a merged-forward resource; an ordinary message ID or sessionId/channelId is not a forward resource ID.'};
+        return await base.getForward({forwardId:payload.forwardId});
+      }
       if (capability === 'contacts.read' || capability === 'groups.read') {
         const data = await action(capability === 'contacts.read' ? 'get_friend_list' : 'get_group_list');
         if (!Array.isArray(data)) fail('ONEBOT_LIST_UNCONFIRMED');
@@ -94,7 +100,10 @@ export function createBridgeClient(profile, { fetchImpl = fetch, clock = Date.no
       if (capability === 'message.reply') { const quote = identifier(payload.quoteMessageId), text = payload.text; if (typeof text !== 'string' || !text || Array.from(text).length > 16000) fail('ONEBOT_TEXT_CAPACITY'); return send(target, [{ type: 'reply', data: { id: quote } }, { type: 'text', data: { text } }], deliveryId); }
       if (capability === 'chat.image' || capability === 'chat.video') return send(target, [{ type: capability === 'chat.image' ? 'image' : 'video', data: { file: 'base64://' + mediaBytes(payload).toString('base64') } }], deliveryId);
       return { status: 'unsupported', code: 'CAPABILITY_UNSUPPORTED' };
-    } catch (error) { return { status: ['CONNECTION_AUTH_REJECTED', 'ONEBOT_ACTION_REJECTED'].includes(error.code) ? 'failed' : 'unknown', deliveryId, code: error.code ?? 'ONEBOT_OPERATION_UNKNOWN' }; }
+    } catch (error) {
+      if (capability === 'message.read' && error.code === 'ONEBOT_ID_INVALID') return {status:'failed',code:'ONEBOT_MESSAGE_ID_INVALID',message:'OneBot11 message.read requires an actual signed numeric platform messageId preserved as a string; do not substitute internal im- IDs, channelId or sessionId.'};
+      return { status: ['CONNECTION_AUTH_REJECTED', 'ONEBOT_ACTION_REJECTED'].includes(error.code) ? 'failed' : 'unknown', deliveryId, code: error.code ?? 'ONEBOT_OPERATION_UNKNOWN' };
+    }
   }
   return { ...base, inspectCapabilities, inspectAccountCapabilities, executeAccount, execute, get capabilities() { return base.capabilities; } };
 }

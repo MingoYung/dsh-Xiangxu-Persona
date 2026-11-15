@@ -97,11 +97,13 @@ v5 的仅热区后续批次覆盖了 fixture anchor 的来源列表；这不影�
 ## 重跑命令
 
 ```powershell
-node scripts/dsh-integration.mjs --artifacts 'C:\absolute\work\persona-build\integration'
-node scripts/dsh-integration.mjs --fixture-only --artifacts 'C:\absolute\work\persona-build\fixture'
+node scripts/dsh-integration.mjs --help
+npm run test:host -- --home 'C:\absolute\work\persona-build\fixture-home' --artifacts 'C:\absolute\work\persona-build\fixture'
 ```
 
-普通 `node --test` 不会自动启动外部模型或修改测试 profile。SDK 基础握手可用 `--base-only`，它不会把仅初始化成功写成真实模型生成通过。只跑付费模型链路可用 `--real-only`。脚本对已有同名 validation profile 先检查 SDK bundle 与依赖，不替换意外的其他 profile；不要把生产 profile 名替进这个脚本。
+普通 `node --test` 不会启动外部模型或修改 DSH profile。集成入口每次只接受一个模式。`--fixture-only` 只允许确定性供应商，`--base-only` 只执行 SDK 基础握手，`--real-only` 会使用选定的真实供应商，可能产生费用。三个模式均需通过 `--home` 或 `DSH_TEST_HOME` 指定一个尚未创建的绝对路径，测试 home 和证据目录都必须在正式 DSH home 之外。每次运行使用新 home，真实模式也不会复制生产 profile 或登录凭据。
+
+`npm run test:host` 固定选择 `--fixture-only`。单独的生命周期测试入口 `scripts/dsh-real-lifecycle.mjs` 需要显式 `--real` 和隔离 home。继续历史测试需同一个测试 home 和由当前入口记录的对应检查点。可用 `--help` 查看续跑参数。
 
 ## 不能从本测试推出的结论
 

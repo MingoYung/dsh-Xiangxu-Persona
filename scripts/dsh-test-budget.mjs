@@ -1,6 +1,6 @@
 // Optional, test-controller-only budget. No production/personality dependency.
 import {open, readFile, rename, unlink} from 'node:fs/promises';
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 
 const failure = (code, message) => Object.assign(new Error(message), {code});
 export const validTokenTotal = value => Number.isSafeInteger(value) && value >= 0;
@@ -31,6 +31,17 @@ function totals(state) {
   return {attempts: rows.length, tokens, known, unknown: rows.length - known, first};
 }
 
+export function wholeBudgetGuardView(state) {
+  const minTokensPerAttempt = state.wholeUsageGuard?.minTokensPerAttempt ?? 0;
+  const guardTokensUsed = minTokensPerAttempt === 0 ? state.wholeTokensUsed
+    : Object.values(state.requests).reduce((sum, row) => sum + Math.max(row.totalTokens ?? 0, minTokensPerAttempt), 0);
+  if (!validTokenTotal(guardTokensUsed))
+    throw failure('WHOLE_STATE_INVALID', 'Whole guard token sum is not a safe integer');
+  const tokensLeft = state.wholeTokensCap - guardTokensUsed;
+  return {guardTokensUsed, tokensLeft, minTokensPerAttempt,
+    nextAttemptFits: minTokensPerAttempt === 0 ? tokensLeft > 0 : tokensLeft >= minTokensPerAttempt};
+}
+
 export function validateWholeBudgetState(state) {
   if (!state || ![1, 2].includes(state.schema) ||
     !(state.schema === 2 ? optionalLimit(state.wholeAttemptsCap) : positive(state.wholeAttemptsCap)) ||
@@ -44,6 +55,13 @@ export function validateWholeBudgetState(state) {
     state.wholeDeadline !== (t.first === null || state.wholeWallMs === null ? null : t.first + state.wholeWallMs) ||
     (state.wholeDeadline !== null && !timestamp(state.wholeDeadline)))
     throw failure('WHOLE_STATE_INVALID', 'Whole counters or deadline disagree with reservations');
+  if (Object.hasOwn(state, 'wholeUsageGuard')) {
+    const guard = state.wholeUsageGuard;
+    if (!guard || !positive(guard.minTokensPerAttempt) || guard.minTokensPerAttempt > state.wholeTokensCap ||
+      !timestamp(guard.enabledAt) || guard.enabledAt < state.createdAt)
+      throw failure('WHOLE_STATE_INVALID', 'Whole usage guard is malformed');
+    wholeBudgetGuardView(state);
+  }
   return state;
 }
 
@@ -55,17 +73,26 @@ function refresh(state) {
   return validateWholeBudgetState(state);
 }
 
-export async function readWholeBudget(file, {allowMissing = false} = {}) {
+async function readWholeRaw(file, {allowMissing = false} = {}) {
   let raw;
-  try { raw = await readFile(file, 'utf8'); }
+  try { raw = await readFile(file); }
   catch (error) {
     if (error.code === 'ENOENT' && allowMissing) return null;
     throw failure(error.code === 'ENOENT' ? 'WHOLE_STATE_MISSING' : 'WHOLE_STATE_UNREADABLE', 'Cannot read whole budget');
   }
+  return raw;
+}
+
+function parseWholeRaw(raw) {
   let state;
-  try { state = JSON.parse(raw); }
+  try { state = JSON.parse(raw.toString('utf8')); }
   catch { throw failure('WHOLE_STATE_INVALID', 'Whole budget JSON is invalid; dispatch blocked'); }
   return validateWholeBudgetState(state);
+}
+
+export async function readWholeBudget(file, options) {
+  const raw = await readWholeRaw(file, options);
+  return raw === null ? null : parseWholeRaw(raw);
 }
 
 async function atomicWrite(file, value) {
@@ -110,6 +137,28 @@ export async function initializeWholeBudget(file, options) {
   });
 }
 
+/** Opt in on an idle, reviewed ledger. Real usage and existing requests are retained. */
+export async function enableWholeBudgetUsageGuard(file, {minTokensPerAttempt, expectedSha256}) {
+  if (!positive(minTokensPerAttempt) || typeof expectedSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(expectedSha256))
+    throw failure('WHOLE_PARAMS_INVALID', 'Whole usage guard requires a positive minimum and the reviewed ledger SHA-256');
+  return locked(file, async () => {
+    const raw = await readWholeRaw(file);
+    if (createHash('sha256').update(raw).digest('hex') !== expectedSha256)
+      throw failure('WHOLE_STATE_CHANGED', 'Whole budget changed since review');
+    const state = parseWholeRaw(raw);
+    if (state.wholeUsageGuard)
+      throw failure('WHOLE_USAGE_GUARD_ALREADY_ENABLED', 'Whole usage guard is already enabled');
+    if (minTokensPerAttempt > state.wholeTokensCap)
+      throw failure('WHOLE_PARAMS_INVALID', 'Whole usage guard minimum exceeds the token threshold');
+    if (Object.values(state.requests).some(row => row.totalTokens === null && row.finishedAt == null))
+      throw failure('WHOLE_IN_FLIGHT', 'Whole budget has unsettled reservations');
+    state.wholeUsageGuard = {minTokensPerAttempt, enabledAt: Date.now()};
+    validateWholeBudgetState(state);
+    await atomicWrite(file, state);
+    return state;
+  });
+}
+
 export async function reserveWholeAttempt(file, {requestId, startedAt}) {
   if (typeof requestId !== 'string' || !requestId || (startedAt !== undefined && !timestamp(startedAt)))
     throw failure('WHOLE_REQUEST_INVALID', 'Invalid provider attempt identity/time');
@@ -117,15 +166,17 @@ export async function reserveWholeAttempt(file, {requestId, startedAt}) {
     const state = await readWholeBudget(file);
     startedAt ??= Date.now(); // after acquiring the writer lock, not before waiting
     if (Object.hasOwn(state.requests, requestId)) throw failure('WHOLE_DUPLICATE_REQUEST', 'Attempt already reserved');
-    const unresolved = Object.values(state.requests).filter(row => row.totalTokens === null && row.finishedAt != null);
-    if (unresolved.length) throw Object.assign(failure('WHOLE_USAGE_UNRESOLVED', 'A completed provider attempt has no valid usage; reconcile before another paid dispatch'),
-      {requestIds: unresolved.map(row => row.requestId)});
+    if (!state.wholeUsageGuard) {
+      const unresolved = Object.values(state.requests).filter(row => row.totalTokens === null && row.finishedAt != null);
+      if (unresolved.length) throw Object.assign(failure('WHOLE_USAGE_UNRESOLVED', 'A completed provider attempt has no valid usage; reconcile before another paid dispatch'),
+        {requestIds: unresolved.map(row => row.requestId)});
+    }
     if (state.wholeDeadline !== null && startedAt >= state.wholeDeadline)
       throw failure('WHOLE_DEADLINE_PASSED', 'Whole-set deadline passed before provider dispatch');
     if (state.wholeAttemptsCap !== null && state.wholeAttemptsUsed >= state.wholeAttemptsCap)
       throw failure('WHOLE_ATTEMPTS_EXCEEDED', 'Whole-set attempt cap reached before provider dispatch');
-    if (state.wholeTokensUsed >= state.wholeTokensCap)
-      throw failure('WHOLE_TOKENS_EXCEEDED', 'Known token threshold reached before provider dispatch');
+    if (!wholeBudgetGuardView(state).nextAttemptFits)
+      throw failure('WHOLE_TOKENS_EXCEEDED', 'Whole token threshold leaves no room for the next provider dispatch');
     Object.defineProperty(state.requests, requestId, {value: {requestId, startedAt, totalTokens: null, finishedAt: null}, enumerable: true});
     refresh(state); await atomicWrite(file, state); return state;
   });

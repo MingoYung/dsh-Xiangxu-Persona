@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
 const source = await readFile(new URL('../ui/memory-graph.js', import.meta.url), 'utf8');
+const anatomy = new vm.Script(await readFile(new URL('../ui/brain-anatomy.js', import.meta.url), 'utf8'));
 function target() {
   const listeners = new Map();
   return { listeners, addEventListener(name, fn) { const list = listeners.get(name) ?? new Set(); list.add(fn); listeners.set(name, list); },
@@ -12,13 +13,15 @@ function target() {
       preventDefault() { prevented = true; }, ...props }; for (const fn of [...(listeners.get(name) ?? [])]) fn(event); return { prevented }; } };
 }
 function fixture({ raf = true, observers = true, dpr = 1, tabindex = null, reducedMotion = false } = {}) {
-  const frames = [], scheduled = new Map(), watched = [], captures = new Set(), selections = [], contexts = [], document = { ...target(), visibilityState: 'visible', activeElement: null };
+  const frames = [], scheduled = new Map(), watched = [], captures = new Set(), selections = [], hovers = [], contexts = [], document = { ...target(), visibilityState: 'visible', activeElement: null };
   let nextFrame = 1, rect = { left: 10, top: 20, width: 600, height: 400 }, path = [], frame;
   const drawing = { globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1,
     setTransform(...values) { this.transform = values; }, clearRect() { frame = []; frames.push(frame); }, fillRect(...values) { frame.push({ type: 'background', values, color: this.fillStyle }); },
-    beginPath() { path = []; }, moveTo(x, y) { path.push({ type: 'move', x, y }); }, lineTo(x, y) { path.push({ type: 'line', x, y }); },
-    arc(x, y, radius) { path.push({ type: 'arc', x, y, radius }); }, fill() { for (const part of path) frame.push({ ...part, type: 'node', color: this.fillStyle, alpha: this.globalAlpha }); },
-    stroke() { frame.push({ type: 'stroke', path: path.map(part => ({ ...part })), color: this.strokeStyle, alpha: this.globalAlpha, width: this.lineWidth }); },
+    beginPath() { path = []; }, closePath() {}, moveTo(x, y) { path.push({ type: 'move', x, y }); }, lineTo(x, y) { path.push({ type: 'line', x, y }); },
+    createRadialGradient() { return { addColorStop() {} }; }, createLinearGradient() { return { addColorStop() {} }; },
+    ellipse(x, y, rx, ry) { path.push({ type: 'ellipse', x, y, rx, ry }); },
+    arc(x, y, radius) { path.push({ type: 'arc', x, y, radius }); }, fill() { for (const part of path.filter(item => item.type === 'arc')) frame.push({ ...part, type: 'node', color: this.fillStyle, alpha: this.globalAlpha }); },
+    stroke() { frame.push({ type: 'stroke', path: path.map(part => ({ ...part })), color: this.strokeStyle, alpha: this.globalAlpha, width: this.lineWidth, blur: this.shadowBlur }); },
     measureText(text) { return { width: Array.from(text).reduce((sum, char) => sum + (/[^\x00-\x7f]/.test(char) ? 12 : 7), 0) }; },
     fillText(text, x, y) { frame.push({ type: 'label', text, x, y, color: this.fillStyle }); } };
   const attributes = new Map(tabindex === null ? [] : [['tabindex', tabindex]]), canvas = { ...target(), ownerDocument: document, style: { touchAction: 'pan-y' }, width: 0, height: 0,
@@ -35,13 +38,15 @@ function fixture({ raf = true, observers = true, dpr = 1, tabindex = null, reduc
     observe(value) { this.target = value; } disconnect() { this.disconnected = true; }
     trigger(value = true) { this.callback(name === 'IntersectionObserver' ? [{ target: canvas, isIntersecting: value }] : []); }
   };
-  const realm = vm.createContext(globals); vm.runInContext(source, realm);
-  const api = realm.XiangxuMemoryGraph.create(canvas, { onSelect: value => selections.push(value), reducedMotion,
+  const realm = vm.createContext(globals); anatomy.runInContext(realm); vm.runInContext(source, realm);
+  const api = realm.XiangxuMemoryGraph.create(canvas, { onSelect: value => selections.push(value), onHover: value => hovers.push(value), reducedMotion,
     colors: { text: '#text', node: '#node', edge: '#edge', selected: '#selected', neighbor: '#neighbor', kinds: { source: '#source', person: '#person' } } });
-  const flush = () => { const batch = [...scheduled.values()]; scheduled.clear(); for (const fn of batch) fn(); };
-  const current = () => frames.at(-1) ?? [], nodes = () => current().filter(item => item.type === 'node');
+  const flush = (time = 0) => { const batch = [...scheduled.values()]; scheduled.clear(); for (const fn of batch) fn(time); };
+  const current = () => frames.at(-1) ?? [];
+  const isPresence = item => item.type === 'stroke' && item.blur > 0 && ['#63e6a0', '#ffae67', '#ff7588', '#a4b0be'].includes(item.color);
+  const nodes = () => current().filter(item => item.type === 'node');
   const pointer = (name, point, extra = {}) => canvas.emit(name, { clientX: point.x + rect.left, clientY: point.y + rect.top, ...extra });
-  return { api, canvas, document, globals, realm, frames, scheduled, watched, captures, selections, contexts, drawing, attributes, flush, current, nodes, pointer,
+  return { api, canvas, document, globals, realm, frames, scheduled, watched, captures, selections, hovers, contexts, drawing, attributes, flush, current, nodes, presence: () => current().find(isPresence), pointer,
     rect(value) { rect = { ...rect, ...value }; }, setData(data) { const result = api.setData(data); flush(); return result; } };
 }
 const data = (count = 8) => ({ nodes: Array.from({ length: count }, (_, i) => ({ id: 'record-' + i, label: '真实条目 ' + i, kind: i === 0 ? 'source' : i === 1 ? 'person' : 'record', recordKey: '["chat","person","a","' + i + '"]' })),
@@ -56,6 +61,76 @@ test('the shipped renderer uses one Canvas2D context, genuine perspective depth 
   const count = ui.frames.length; ui.flush(); assert.equal(ui.frames.length, count); assert.equal(ui.scheduled.size, 0, 'a frame never schedules its successor');
   const initial = positions(ui); ui.api.reset(); ui.flush(); assert.deepEqual(positions(ui), initial);
   ui.api.setMode('2d'); ui.flush(); assert.equal(new Set(ui.nodes().map(point => point.radius)).size, 1, 'flat mode has no perspective depth'); ui.api.dispose();
+});
+
+test('brain scenery cannot be picked, while hover and clicks resolve to the same real graph node', () => {
+  const ui = fixture(), graph = data();
+  ui.api.setMode('brain'); ui.setData(graph);
+  assert.equal(ui.nodes().length, graph.nodes.length);
+  const exterior = ui.presence();
+  assert.equal(exterior?.color, '#a4b0be');
+  assert.ok(exterior.path.filter(item => item.type === 'line').length > 5, 'the whole anatomical contour glows');
+  assert.ok(ui.current().some(item => item.type === 'stroke' && item.color === exterior.color && item.blur === 0 && item.path.length > exterior.path.length), 'the inner facets remain visible');
+  assert.ok(!ui.current().some(item => item.type === 'label' && item.text.includes('松果体')));
+  const front = ui.nodes().at(-1);
+  ui.pointer('pointermove', front, { buttons: 0 });
+  assert.ok(graph.nodes.includes(ui.hovers.at(-1)));
+  const hover = ui.hovers.at(-1);
+  ui.pointer('pointerdown', front); ui.pointer('pointerup', front);
+  assert.equal(ui.selections.at(-1), hover);
+  ui.pointer('pointerdown', { x: 300, y: 336 }); ui.pointer('pointerup', { x: 300, y: 336 });
+  assert.equal(ui.selections.at(-1), null, 'the cyan platform is scenery');
+  ui.api.setCutaway(true); ui.flush();
+  assert.notDeepEqual(ui.presence()?.path, exterior.path, 'the contour follows the camera into cutaway');
+  assert.ok(!ui.current().some(item => item.type === 'label' && item.text.includes('松果体')));
+  const cutawayNodes = positions(ui);
+  for (const [state, color] of [['awake', '#63e6a0'], ['sleeping', '#ffae67'], ['error', '#ff7588'], ['unloaded', '#a4b0be']]) {
+    ui.api.setRuntimeStatus(state); ui.flush();
+    assert.equal(ui.presence()?.color, color);
+    assert.deepEqual(positions(ui), cutawayNodes, 'updating presence does not reset the view');
+  }
+  assert.equal(ui.nodes().length, graph.nodes.length, 'the landmark is not a memory node and all graph nodes remain available');
+  ui.api.setMode('2d'); ui.flush();
+  assert.equal(ui.presence(), undefined);
+  ui.api.setMode('brain'); ui.flush();
+  assert.equal(ui.presence()?.color, '#a4b0be');
+  ui.api.setCutaway(false);
+  ui.setData({ nodes: [], edges: [] });
+  const body = ui.presence().path;
+  const center = body.reduce((point, vertex) => ({ x: point.x + vertex.x / body.length, y: point.y + vertex.y / body.length }), { x: 0, y: 0 });
+  ui.pointer('pointerdown', center); ui.pointer('pointerup', center);
+  assert.equal(ui.selections.at(-1), null, 'the glowing mesh is scenery');
+  ui.flush(); assert.equal(ui.scheduled.size, 0, 'the scene is idle after painting');
+  ui.api.dispose();
+});
+
+test('brain auto-rotation follows the speed control and stops when the view cannot be used', () => {
+  const ui = fixture();
+  ui.api.setMode('brain'); ui.setData(data());
+  const initial = positions(ui);
+  const travel = () => Math.hypot(positions(ui)[0].x - initial[0].x, positions(ui)[0].y - initial[0].y);
+  ui.api.setRotationSpeed(.45); ui.flush(0); ui.flush(100);
+  const slow = travel(); assert.ok(slow > 0);
+  ui.api.reset(); ui.api.setRotationSpeed(2); ui.flush(200); ui.flush(300);
+  assert.ok(travel() > slow * 2);
+  ui.canvas.emit('pointerenter'); ui.flush(400); assert.equal(ui.scheduled.size, 0);
+  ui.canvas.emit('pointerleave'); ui.flush(500); assert.equal(ui.scheduled.size, 1);
+  ui.canvas.focus(); ui.flush(600); assert.equal(ui.scheduled.size, 0);
+  ui.canvas.blur(); ui.flush(700); assert.equal(ui.scheduled.size, 1);
+  ui.api.setCutaway(true); ui.flush(800); assert.equal(ui.scheduled.size, 0);
+  ui.api.setCutaway(false); ui.flush(900); assert.equal(ui.scheduled.size, 1);
+  ui.watched.find(item => item.name === 'IntersectionObserver').trigger(false);
+  assert.equal(ui.scheduled.size, 0);
+  ui.watched.find(item => item.name === 'IntersectionObserver').trigger(true);
+  ui.flush(1000); assert.equal(ui.scheduled.size, 1);
+  ui.document.visibilityState = 'hidden'; ui.document.emit('visibilitychange');
+  assert.equal(ui.scheduled.size, 0);
+  ui.document.visibilityState = 'visible'; ui.document.emit('visibilitychange');
+  ui.api.setRotationSpeed(0); ui.flush(1100); assert.equal(ui.scheduled.size, 0);
+  ui.api.setRotationSpeed(.45); ui.flush(1200); assert.equal(ui.scheduled.size, 1);
+  ui.api.setMode('3d'); ui.flush(1300); assert.equal(ui.scheduled.size, 0);
+  ui.api.setMode('brain'); ui.flush(1400); assert.equal(ui.scheduled.size, 1);
+  ui.api.dispose(); assert.equal(ui.scheduled.size, 0);
 });
 
 test('clicks return the exact original node and selection highlights only supplied neighboring links', () => {

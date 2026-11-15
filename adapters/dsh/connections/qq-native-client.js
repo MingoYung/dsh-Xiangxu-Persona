@@ -33,9 +33,16 @@ function receipt(value, requestId) {
 /** Local authenticated transport only. It never starts QQ, fabricates a message binding or retries a mutation. */
 export function createQQNativeClient({ fetchImpl = fetch } = {}) {
   if (typeof fetchImpl !== 'function') throw new TypeError('QQ native fetch port required');
-  async function call(runtime, route, payload, { signal } = {}) {
+  async function call(runtime, route, payload, { signal, assertCurrent } = {}) {
     const own = descriptor(runtime), body = JSON.stringify(payload); if (Buffer.byteLength(body) > QQ_NATIVE_CLIENT_LIMITS.requestBytes) fail('QQ_NATIVE_ARGUMENT', 'QQ原生请求超过技术容量');
     const combined = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(QQ_NATIVE_CLIENT_LIMITS.timeoutMs)]); combined.throwIfAborted();
+    if (assertCurrent !== undefined && typeof assertCurrent !== 'function') fail('QQ_NATIVE_FENCE', 'QQ原生派发检查必须是同步函数');
+    const checked = assertCurrent?.();
+    if (checked && typeof checked.then === 'function') {
+      Promise.resolve(checked).catch(() => {});
+      fail('QQ_NATIVE_FENCE', 'QQ原生派发检查必须是同步函数');
+    }
+    if (checked === false) fail('QQ_NATIVE_FENCE', 'QQ原生派发条件未确认');
     let response; try { response = await fetchImpl(own.baseUrl + route, { method: 'POST', redirect: 'error', credentials: 'omit', cache: 'no-store', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + own.token, 'x-xiangxu-boot-id': own.bootId }, body, signal: combined }); } catch { fail('QQ_NATIVE_TRANSPORT_UNKNOWN', 'QQ原生请求未获得可确认回执'); }
     let value; try { value = JSON.parse((await bytes(response, QQ_NATIVE_CLIENT_LIMITS.responseBytes)).toString('utf8')); } catch (error) { if (error.code === 'QQ_NATIVE_RESPONSE_CAPACITY') throw error; fail('QQ_NATIVE_RESPONSE', 'QQ原生响应无法核实'); }
     identity(value, own, !response.ok || Boolean(value.error));

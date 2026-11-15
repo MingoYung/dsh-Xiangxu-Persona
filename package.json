@@ -1,6 +1,6 @@
 {
   "name": "dsh-xiangxu-persona",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "type": "module",
   "description": "Portable long-term persona and memory for DSH, with autonomous isolated tasks, complete task archives, QR chat channels and optional reference-based media",
   "engines": {
@@ -32,7 +32,7 @@
   "scripts": {
     "test": "node --test --test-concurrency=1",
     "check": "node scripts/check.mjs",
-    "test:host": "node scripts/dsh-integration.mjs",
+    "test:host": "node scripts/dsh-integration.mjs --fixture-only",
     "build": "node scripts/build-ui.mjs"
   },
   "repository": {
@@ -55,7 +55,12 @@
     "adapters/dsh/host-document-schema.js",
     "adapters/dsh/bilibili",
     "adapters/dsh/platform-images.js",
+    "adapters/dsh/platform-history.js",
     "adapters/dsh/external-output.js",
+    "adapters/dsh/conversation-reference.js",
+    "adapters/dsh/private-expression.js",
+    "adapters/dsh/private-history.js",
+    "adapters/dsh/social-dialogue.js",
     "adapters/dsh/retrieval-provider.js",
     "adapters/dsh/control.js",
     "adapters/dsh/instances.js",
@@ -83,6 +88,7 @@
     "adapters/dsh/channels",
     "ui/index.html",
     "ui/app.js",
+    "ui/brain-anatomy.js",
     "ui/memory-graph.js",
     "ui/style.css",
     "ui/client.js",

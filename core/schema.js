@@ -41,6 +41,61 @@ export function validateSrcRef(ref) {
   if (own(ref, 'available') && typeof ref.available !== 'boolean') fail('available must be boolean');
   return ref;
 }
+export const PERSON_NAME_LIMITS = Object.freeze({ entries: 32, updates: 8, chars: 120, sourceRefs: 4 });
+export const PERSON_NAME_KINDS = Object.freeze(['alias', 'nickname', 'former_name', 'platform_nickname']);
+
+function validatePersonName(value) {
+  enumeration(value.kind, PERSON_NAME_KINDS, 'person name kind');
+  str(value.name, 'person name');
+  if (!value.name.trim() || countChars(value.name) > PERSON_NAME_LIMITS.chars ||
+    !value.name.isWellFormed() || /[\u0000-\u001f\u007f]/u.test(value.name)) fail('Person name must be printable, nonempty text within its character limit');
+}
+function validatePersonNameRefs(refs) {
+  array(refs, 'person name source refs');
+  if (refs.length > PERSON_NAME_LIMITS.sourceRefs) fail('Person name has too many source references');
+  refs.forEach(validateSrcRef);
+}
+export function validatePersonNameObservation(value) {
+  object(value, 'person name observation');
+  enumeration(value.platform, ['qq', 'wechat'], 'person name observation platform');
+  for (const field of ['accountId', 'senderId']) {
+    str(value[field], 'person name observation ' + field);
+    if (countChars(value[field]) > 200) fail('Person name observation identifier exceeds its technical limit');
+  }
+  return value;
+}
+export function validatePersonNameUpdates(updates, { platform = false } = {}) {
+  array(updates, 'person name updates');
+  if (!updates.length || updates.length > PERSON_NAME_LIMITS.updates) fail('Person name update count is outside its technical limit');
+  for (const update of updates) {
+    object(update, 'person name update');
+    validatePersonName(update);
+    enumeration(update.action, ['upsert', 'remove'], 'person name update action');
+    if (platform ? update.kind !== 'platform_nickname' || update.action !== 'upsert' || update.sourceRefs?.length !== 1 : update.kind === 'platform_nickname') {
+      fail('Platform nickname observations require one accepted source and cannot be asserted through a persona name update');
+    }
+    if (update.sourceRefs !== undefined) {
+      if (update.action !== 'upsert') fail('Removing a person name does not take source references');
+      validatePersonNameRefs(update.sourceRefs);
+    }
+  }
+  return updates;
+}
+export function validatePersonNames(names) {
+  array(names, 'person names');
+  if (names.length > PERSON_NAME_LIMITS.entries) fail('Too many stored person names');
+  for (const name of names) {
+    object(name, 'stored person name');
+    validatePersonName(name);
+    validatePersonNameRefs(name.srcRefs);
+    integer(name.updatedAt, 'person name update time');
+    if (name.kind === 'platform_nickname') {
+      validatePersonNameObservation(name.observedOn);
+      if (name.srcRefs.length !== 1) fail('A stored platform nickname requires one actual source');
+    } else if (name.observedOn !== undefined) fail('Only platform nicknames carry platform observations');
+  }
+  return names;
+}
 export function validateMeta(item) {
   object(item, 'record'); str(item.id, 'id');
   if (item.schemaVersion !== SCHEMA_VERSION) fail('unsupported schemaVersion');
@@ -195,14 +250,22 @@ export function validateDecision(input) {
   }
   if (input.retrievePlan !== undefined && input.retrievePlan !== null) {
     enumeration(input.retrievePlan.action, ['search', 'skip'], 'retrieve.action');
+    if (input.retrievePlan.mode === 'prepared') fail('Prepared association lookup is available as a direct memory search');
     if (input.retrievePlan.scope !== undefined) enumeration(input.retrievePlan.scope, ['person', 'global', 'all'], 'retrieve.scope');
     if (input.retrievePlan.targetPersonId !== undefined) safeId(input.retrievePlan.targetPersonId);
   }
   if (input.identityPlan !== undefined && input.identityPlan !== null) {
-    enumeration(input.identityPlan.action, ['new', 'associate', 'unknown'], 'identity.action');
-    if (input.identityPlan.personId !== undefined) safeId(input.identityPlan.personId);
-    if (input.identityPlan.action === 'associate') safeId(input.identityPlan.personId);
-    if (input.identityPlan.sourceRefs !== undefined) { array(input.identityPlan.sourceRefs, 'identity.sourceRefs'); input.identityPlan.sourceRefs.forEach(validateSrcRef); }
+    const plan = input.identityPlan;
+    object(plan, 'identityPlan');
+    enumeration(plan.action, ['new', 'associate', 'unknown', 'names'], 'identity.action');
+    if (plan.personId !== undefined || ['associate', 'names'].includes(plan.action)) safeId(plan.personId);
+    if (plan.sourceRefs !== undefined) { array(plan.sourceRefs, 'identity.sourceRefs'); plan.sourceRefs.forEach(validateSrcRef); }
+    if (plan.nameUpdates !== undefined || plan.action === 'names') {
+      if (plan.action === 'unknown' || (plan.action === 'names' && (plan.sourceRefs !== undefined || plan.displayName !== undefined))) {
+        fail('A person name-only update selects an existing person without changing displayName or association');
+      }
+      validatePersonNameUpdates(plan.nameUpdates);
+    }
   }
   if (input.consolidationPlan !== undefined && input.consolidationPlan !== null) {
     object(input.consolidationPlan, 'consolidationPlan'); enumeration(input.consolidationPlan.action, ['run', 'defer'], 'consolidation.action');

@@ -136,9 +136,9 @@ test('many pending sources bound task-fact inputs and task diagnostics failure n
   assert.deepEqual(await f.pendingIds(), []);
 });
 
-async function platformFixture(t) {
+async function platformFixture(t, roomType = 'private') {
   const f = await fixture(t, 'xiangxu-social-abcdef0123456789');
-  const facts = { platform: 'qq', accountId: 'bot', conversation: { type: 'private', id: 'human' }, sender: { id: 'human' } };
+  const facts = { platform: 'qq', accountId: 'bot', conversation: { type: roomType, id: roomType === 'group' ? 'room' : 'human' }, sender: { id: 'human' } };
   await f.coordinator.registerExternalChannel(f.agent.id, facts);
   f.coordinator.externalDelivery = { output: async args => ({ status: 'delivered', receiptId: 'platform-confirmed-output',
     textHash: createHash('sha256').update(args.text).digest('hex') }) };
@@ -148,6 +148,8 @@ async function platformFixture(t) {
     await port.send({ memoryRoot: f.coordinator.memoryRoot, sessionId: f.agent.id, facts }, { messageId: id, text: caption,
       ...(structured ? { structured: { rich: { hasStructuredContent: true, mentions: [], replies: [], faces: [],
         media: [{ kind: 'image', status: 'not_attached' }], forwards: [], perception: { understandingConfirmed: false } }, derived: [], images: [] } } : {}),
+      ...(roomType === 'group' ? { groupContext: { platformMessageId: 'platform-' + id, sender: { platformUserId: 'human', displayName: '甲' },
+        connectedAccountId: 'bot', explicitlyMentionsConnectedAccount: false, observedNameMatches: [{ platformUserId: 'another', observedDisplayName: '乙' }] } } : {}),
       sourceFacts: { messageId: 'platform-' + id } });
     return f.agent.inbox.nextTurn.find(value => value.id === id);
   }
@@ -164,6 +166,26 @@ for (const caption of ['Look at this complete caption.', '']) test(`native struc
   const view = await f.coordinator.getDeliveryFacts({ sessionId: f.agent.id });
   assert.equal(view.outputs.items[0].status, 'delivered'); assert.deepEqual(view.outputs.items[0].settledPendingEventIds, [original.eventId]);
   assert.equal((await f.coordinator.repository.readSources({ eventIds: [original.eventId] }))[0].text, caption);
+});
+
+test('plain QQ group message admits only the original and requires the intact projection to credit its source', async t => {
+  const f = await platformFixture(t, 'group');
+  const message = await f.platformMessage('plain-group', '乙在吗？', false);
+  assert.equal(message.content.length, 2);
+  assert.match(message.content[1].text, /QQ 群消息来源资料/);
+  await f.admit(message);
+  const original = (await f.coordinator.repository.getPending()).find(row => row.sourceEventId === message.id);
+  assert.equal(original.text, '乙在吗？');
+  assert.equal(f.coordinator.agents.get(f.agent.id).admittedByTurn.get(1).has(original.eventId), true);
+  await f.output('我也没看到她。');
+  assert.deepEqual(await f.pendingIds(), []);
+
+  const damaged = await f.platformMessage('damaged-group', '乙什么时候来？', false);
+  damaged.content[1].text = 'truncated group context';
+  await f.admit(damaged, 2);
+  const pending = (await f.coordinator.repository.getPending()).find(row => row.sourceEventId === damaged.id);
+  assert.equal(pending.text, '乙什么时候来？');
+  assert.equal(f.coordinator.agents.get(f.agent.id).admittedByTurn.get(2)?.has(pending.eventId) ?? false, false);
 });
 
 test('an explicitly selected old structured QQ source qualifies through its exact native history projection', async t => {

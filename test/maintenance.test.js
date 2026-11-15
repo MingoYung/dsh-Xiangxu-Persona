@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import path from 'node:path';
 import os from 'node:os';
 import { MemoryRepository } from '../core/repository.js';
@@ -72,9 +74,88 @@ test('backup latest rotation keeps one fixed previous backup and rejects unrelat
   await createBackup({ root, destination: backup, clock: () => 1 }); await createBackup({ root, destination: backup, clock: () => 2 });
   assert.equal((await validateBackup(backup + '.previous')).createdAt, 1);
   assert.equal((await validateBackup(backup)).createdAt, 2);
+  await createBackup({ root, destination: backup, clock: () => 3 });
+  assert.equal((await validateBackup(backup + '.previous')).createdAt, 2);
+  assert.equal((await validateBackup(backup)).createdAt, 3);
+  assert.deepEqual((await fs.readdir(workspace)).sort(), ['backup', 'backup.previous', 'memory']);
   const unrelated = path.join(workspace, 'unrelated'); await fs.mkdir(unrelated); await fs.writeFile(path.join(unrelated, 'notes'), 'keep');
   await assert.rejects(createBackup({ root, destination: unrelated }), { code: 'UNMANAGED_TARGET' });
   assert.equal(await fs.readFile(path.join(unrelated, 'notes'), 'utf8'), 'keep');
+});
+test('failed backup publication restores both previously published backups', async (t) => {
+  const { workspace, root, backup, repo } = await fixture(t); await repo.close();
+  const first = await createBackup({ root, destination: backup, clock: () => 1 });
+  const second = await createBackup({ root, destination: backup, clock: () => 2 });
+  const failure = new Error('simulated backup publication failure');
+  await assert.rejects(createBackup({ root, destination: backup, clock: () => 3, fault: phase => {
+    if (phase === 'backup_latest_moved') throw failure;
+  } }), error => error === failure);
+  assert.deepEqual((await validateBackup(backup)).files, second.files);
+  assert.equal((await validateBackup(backup)).createdAt, 2);
+  assert.deepEqual((await validateBackup(backup + '.previous')).files, first.files);
+  assert.equal((await validateBackup(backup + '.previous')).createdAt, 1);
+  assert.deepEqual((await fs.readdir(workspace)).sort(), ['backup', 'backup.previous', 'memory']);
+});
+async function holdWorkingDirectory(cwd) {
+  const child = spawn(process.execPath, ['-e', 'console.log("ready"); process.stdin.resume()'],
+    { cwd, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true });
+  const done = once(child, 'exit');
+  await Promise.race([once(child.stdout, 'data'), done.then(() => { throw new Error('Lock process exited early'); })]);
+  const release = () => { if (!child.stdin.writableEnded) child.stdin.end(); };
+  return { release, done };
+}
+const isSharingError = error => ['EBUSY', 'EPERM', 'EACCES'].includes(error.code) && error.syscall === 'rename';
+test('Windows backup atomically publishes after a real transient directory lock', { skip: process.platform !== 'win32' }, async (t) => {
+  const { workspace, root, backup, repo } = await fixture(t); await repo.close();
+  let lock, releaseTimer;
+  try {
+    const receipt = await createBackup({ root, destination: backup, fault: async phase => {
+      if (phase !== 'backup_candidate_ready') return;
+      const name = (await fs.readdir(workspace)).find(entry => entry.startsWith('backup.candidate-'));
+      const candidate = path.join(workspace, name);
+      lock = await holdWorkingDirectory(candidate);
+      await assert.rejects(fs.rename(candidate, backup), isSharingError);
+      releaseTimer = setTimeout(lock.release, 100);
+    } });
+    assert.deepEqual((await validateBackup(backup)).files, receipt.files);
+  } finally {
+    clearTimeout(releaseTimer);
+    lock?.release();
+    await lock?.done;
+  }
+});
+test('Windows backup reports a persistent directory lock and preserves both published backups', { skip: process.platform !== 'win32' }, async (t) => {
+  const { workspace, root, backup, repo } = await fixture(t); await repo.close();
+  await createBackup({ root, destination: backup, clock: () => 1 });
+  await createBackup({ root, destination: backup, clock: () => 2 });
+  const lock = await holdWorkingDirectory(backup);
+  try {
+    await assert.rejects(createBackup({ root, destination: backup, clock: () => 3 }), isSharingError);
+    assert.equal((await validateBackup(backup)).createdAt, 2);
+    assert.equal((await validateBackup(backup + '.previous')).createdAt, 1);
+    assert.deepEqual((await fs.readdir(workspace)).sort(), ['backup', 'backup.previous', 'memory']);
+  } finally { lock.release(); await lock.done; }
+});
+test('Windows backup reports retired cleanup separately from successful publication', { skip: process.platform !== 'win32' }, async (t) => {
+  const { workspace, root, backup, repo } = await fixture(t); await repo.close();
+  await createBackup({ root, destination: backup, clock: () => 1 });
+  await createBackup({ root, destination: backup, clock: () => 2 });
+  let lock, retired;
+  try {
+    const receipt = await createBackup({ root, destination: backup, clock: () => 3, fault: async phase => {
+      if (phase !== 'backup_latest_moved') return;
+      const name = (await fs.readdir(workspace)).find(entry => entry.startsWith('backup.previous.retired-'));
+      retired = path.join(workspace, name);
+      lock = await holdWorkingDirectory(retired);
+    } });
+    assert.equal(receipt.createdAt, 3);
+    assert.equal(receipt.warnings?.length, 1);
+    assert.equal(receipt.warnings[0].code, 'BACKUP_RETIRE_CLEANUP');
+    assert.equal(receipt.warnings[0].path, retired);
+    assert.ok(receipt.warnings[0].errorCode);
+    assert.equal((await validateBackup(backup)).createdAt, 3);
+    assert.equal((await validateBackup(backup + '.previous')).createdAt, 2);
+  } finally { lock?.release(); await lock?.done; }
 });
 test('restoring an older snapshot carries newer explicit revocations and blocks unseen-source replay', async (t) => {
   const { root, backup, repo } = await fixture(t);

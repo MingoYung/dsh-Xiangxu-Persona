@@ -42,3 +42,68 @@ test('actual provider usage survives a structured-response parse failure', async
   } } }, { getSelection: () => ({ provider: 'real-route', model: 'selected-model' }) });
   await assert.rejects(port.complete({ purpose: 'consolidation', messages: [] }), error => error.code === 'INVALID_MODEL_JSON' && error.usage.outputTokens === 7 && error.model === 'real-route/selected-model');
 });
+
+
+test('auxiliary accounting follows explicit and persisted routing without changing model input or native projection fields', async () => {
+  const received = [];
+  const selection = { provider: 'fixed-provider', model: 'fixed-model', reasoningEffort: 'high' };
+  const port = createDshModelPort({ llm: { async *stream(config) {
+    received.push(config);
+    const text = config.xiangxuAccounting.purpose === 'control' ? '{"replyPlan":{"action":"wait"}}'
+      : config.xiangxuAccounting.purpose === 'consolidation' ? '{"entries":[]}' : 'own chosen response';
+    yield { type: 'text-delta', index: 0, text };
+    yield { type: 'usage', usage: { totalTokens: 0 } };
+    yield { type: 'finish', reason: { kind: 'stop' } };
+  } } }, { memoryRoot: 'C:/isolated/persona', getSelection: () => selection });
+  const cases = [
+    ['control', { sessionId: 'incoming', target: { sessionId: 'selected-target' } }, 'selected-target'],
+    ['consolidation', JSON.parse(JSON.stringify({ sessionId: 'persisted-job', environment: { sessionId: 'old-environment' } })), 'persisted-job'],
+    ['memory_assistant', { environment: { sessionId: 'environment-owner' } }, 'environment-owner'],
+    ['reply', { sessionId: 'proactive-owner', proactive: true }, 'proactive-owner'],
+  ];
+  const messages = [{ id: 'source-1', role: 'user', content: 'original user words' }];
+  const before = structuredClone(messages);
+  const signal = new AbortController().signal;
+  for (const [purpose, context, sessionId] of cases) {
+    context.memoryRoot = 'untrusted-context-root';
+    const result = await port.complete({ purpose, context, messages, signal, maxOutputTokens: 3072 });
+    const config = received.at(-1);
+    assert.deepEqual(config.xiangxuAccounting, { sessionId, memoryRoot: 'C:/isolated/persona', purpose });
+    assert.equal(Object.hasOwn(config, 'sessionId'), false, 'auxiliary metadata cannot enter native reply projection guard');
+    assert.equal(Object.hasOwn(config, 'purpose'), false, 'native purpose semantics remain unchanged');
+    assert.equal(config.signal, signal);
+    assert.equal(config.provider, selection.provider); assert.equal(config.model, selection.model);
+    assert.equal(config.reasoningEffort, 'high'); assert.equal(config.maxTokens, 3072);
+    assert.deepEqual(config.messages, [{ id: 'source-1', role: 'user', content: [{ type: 'text', text: 'original user words' }] }]);
+    assert.equal(result.usage.totalTokens, 0);
+    if (purpose === 'control') assert.equal(result.decision.replyPlan.action, 'wait');
+    if (purpose === 'consolidation') assert.deepEqual(result.patch.entries, []);
+  }
+  assert.deepEqual(messages, before, 'routing evidence must not rewrite message objects');
+});
+
+test('missing auxiliary routing remains explicit null and cannot inherit a previous request or context root', async () => {
+  const received = [];
+  const port = createDshModelPort({ llm: { async *stream(config) {
+    received.push(config);
+    yield { type: 'text-delta', index: 0, text: 'fixed' };
+    yield { type: 'finish', reason: { kind: 'stop' } };
+  } } }, { getSelection: () => ({ provider: 'fixed', model: 'fixed' }) });
+  await port.complete({ purpose: 'reply', context: { sessionId: 'prior-owner' }, messages: [] });
+  await port.complete({ purpose: 'reply', context: { memoryRoot: 'must-not-be-trusted' }, messages: [] });
+  assert.deepEqual(received[0].xiangxuAccounting, { sessionId: 'prior-owner', memoryRoot: null, purpose: 'reply' });
+  assert.deepEqual(received[1].xiangxuAccounting, { sessionId: null, memoryRoot: null, purpose: 'reply' });
+});
+
+test('an explicitly resolved host agent supplies its actual route when context has no session', async () => {
+  let received;
+  const agent = { session: { id: 'resolved-host-session', requestHeader: () => ({ config: { provider: 'host', model: 'host-model' } }) }, ctx: { llm: { async *stream(config) {
+    received = config;
+    yield { type: 'text-delta', index: 0, text: 'fixed' };
+    yield { type: 'finish', reason: { kind: 'stop' } };
+  } } } };
+  const port = createDshModelPort({ llm: { stream() { throw Error('Wrong global llm service'); } } }, { memoryRoot: 'C:/fixed/root', getAgent: () => agent });
+  await port.complete({ purpose: 'reply', messages: [] });
+  assert.deepEqual(received.xiangxuAccounting, { sessionId: 'resolved-host-session', memoryRoot: 'C:/fixed/root', purpose: 'reply' });
+  assert.equal(received.provider, 'host'); assert.equal(received.model, 'host-model');
+});

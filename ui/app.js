@@ -1,10 +1,10 @@
 /* Management uses the authenticated DSH bridge. Optional indexing and generation run only after an explicit owner action. */
 const $ = id => document.getElementById(id);
-const state = { connected: false, instanceId: null, instances: [], people: [], status: null, page: 'overview', view: null, trail: [], budgetDraft: null, configGroup: '0', memoryPerson: null, graphSeed: null, generation: 0, detailGeneration: 0 };
+const state = { connected: false, instanceId: null, instances: [], people: [], status: null, page: 'overview', view: null, trail: [], budgetDraft: null, configGroup: '0', memoryPerson: null, graphSeed: null, graphRotationSpeed: null, generation: 0, detailGeneration: 0 };
 const pages = {
   overview: ['相处', 'OVERVIEW', '查看相续的近况，按自己的需要管理日常交流。'],
   persona: ['了解相续', 'PERSONA', '查看持续积累的身份、性格与习惯。这里展示当前数据，不替人格设定成长指标。'],
-  memory: ['记忆', 'MEMORY', '查找相续留下的记忆、重要经历，以及认识的人。'],
+  memory: ['记忆', 'MEMORY', '查看记忆之间的联系，或按条目、人物和时间查找。'],
   evolution: ['成长记录', 'EVOLUTION', '跟踪已选整理作业、未完成进度和已保留的变更历史。'],
   settings: ['设置', 'SETTINGS', '管理人格、记忆库与可选功能。'],
   chat: ['连接', 'CHANNELS & VOICE', '在熟悉的聊天软件里继续交流，让同一个人格走进私聊和群聊。'],
@@ -70,18 +70,60 @@ function destination(title, description, action, status = '') {
     element('span', { class: 'destination-end' }, status ? element('span', { class: 'destination-status' }, status) : null, element('span', { class: 'destination-action', 'aria-hidden': true }, '打开 →'))); return node;
 }
 function destinations(...items) { return element('div', { class: 'destination-list' }, ...items); }
+function destinationGroup(title, ...items) {
+  return element('section', { class: 'destination-group', 'aria-label': title },
+    element('h2', {}, title), destinations(...items));
+}
 function sectionTabs(items) { return element('nav', { class: 'module-tabs', 'aria-label': '当前页面内容' }, items.map(([view, label]) => button(label, () => openSection(view, false), 'module-tab', { class: 'module-tab' + ((state.view ?? '') === view ? ' active' : ''), 'aria-current': (state.view ?? '') === view ? 'page' : 'false' }))); }
+const memoryTabs = [['graph', '3D 关联图'], ['all', '全部记忆'], ['deep', '深刻经历'], ['people', '认识的人'], ['timeline', '时间线'], ['retrieval', '关联查找']];
+function renderMemoryTabs() {
+  const host = $('page-subnav'), panel = $('page-content');
+  const selected = state.page === 'memory' ? memoryTabs.find(([view]) => view === state.view)?.[0] : null;
+  host.hidden = !selected;
+  if (!selected) {
+    replace(host);
+    panel.removeAttribute('role');
+    panel.removeAttribute('aria-labelledby');
+    return;
+  }
+  panel.setAttribute('role', 'tabpanel');
+  panel.setAttribute('aria-labelledby', 'memory-tab-' + selected);
+  const tabs = memoryTabs.map(([view, label]) => element('button', {
+    id: 'memory-tab-' + view, type: 'button', class: 'module-tab', role: 'tab',
+    tabIndex: view === selected ? 0 : -1, 'aria-selected': String(view === selected), 'aria-controls': panel.id,
+    onclick: () => {
+      if (state.view === view) return;
+      state.trail = []; state.graphSeed = null;
+      const rendered = openSection(view, false);
+      $('memory-tab-' + view).focus({ preventScroll: true });
+      rendered.catch(showError);
+    },
+  }, label));
+  const tablist = element('div', { class: 'module-tabs memory-tabs', role: 'tablist', 'aria-label': '记忆视图' }, tabs);
+  tablist.addEventListener('keydown', event => {
+    const index = tabs.indexOf(event.target);
+    if (index === -1) return;
+    const next = ({ ArrowLeft: (index + tabs.length - 1) % tabs.length, ArrowRight: (index + 1) % tabs.length, Home: 0, End: tabs.length - 1 })[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    for (const tab of tabs) tab.tabIndex = -1;
+    tabs[next].tabIndex = 0;
+    tabs[next].focus();
+  });
+  replace(host, tablist);
+}
 let pageScrollRequested = false;
 const timelineTierNames = { recent: '短期记忆', long_term: '长期记忆', archive: '归档记忆' };
 const routeParents = { persona: 'overview', evolution: 'memory', tasks: 'overview', maintenance: 'settings' };
 const viewTitles = { retrieval: '查找关联记忆', 'retrieval-settings': '可选语义服务', 'retrieval-diagnostics': '检索与参考记录', 'provider-feed': 'QQ 动态扩展', 'provider-cover': '可选翻唱服务', bilibili: '连接 B 站', 'bilibili-permissions': 'B 站能力与权限', 'self-profile': '自我档案', 'user-guide': '使用说明', startup: '启动时加载', 'new-persona': '新建人格', 'new-instance': '使用其他记忆库', history: '人格变化', receipts: '手动操作', runtime: '运行与用量', instances: '人格管理', assistant: '整理资料助手', general: '交流与时间', budgets: '容量与模型预算', voice: '声音', accounts: '社交身份', identity: '形象档案', create: '开始创作', gallery: '作品与任务', 'provider-image': '图片服务', 'provider-video': '视频服务', qq: '连接 QQ', 'qq-official': 'QQ 官方 Bot', wechat: '连接微信', 'qq-bridge': 'QQ 兼容桥', 'wechat-bridge': '微信兼容桥', 'qq-account': 'QQ 账号操作记录', 'qq-permissions': 'QQ 能力与权限', 'wechat-permissions': '微信能力与权限', deep: '深刻经历', people: '认识的人', backup: '创建备份', restore: '恢复备份', validate: '数据校验', diagnostics: '运行诊断' };
 viewTitles.timeline = '记忆时间线';
 viewTitles.graph = '3D 记忆关联图';
+viewTitles.all = '全部记忆';
 viewTitles.support = '报告问题';
 viewTitles['source-diagnostics'] = '来源诊断';
 const supportIssueUrl = 'https://github.com/MingoYung/dsh-Xiangxu-Persona/issues/new?template=bug_report.yml';
 async function openSection(view, remember = true) { pageScrollRequested = true; if (remember) state.trail.push({ page: state.page, view: state.view }); state.view = view || null; await renderPage(); }
-async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? null; await renderPage(); }
+async function goBack() { pageScrollRequested = true; const previous = state.trail.pop(); state.page = previous?.page ?? routeParents[state.page] ?? state.page; state.view = previous?.view ?? (state.page === 'memory' ? 'graph' : null); if (state.page === 'memory') state.graphSeed = null; await renderPage(); }
 
 function notice(text, kind = '') { return element('div', { class: `notice ${kind}` }, text); }
 function pill(value) { return element('span', { class: 'status-pill ' + (['failed', 'invalidated', 'error'].includes(value) ? 'error' : ['paused', 'pending', 'unknown', 'prepared'].includes(value) ? 'warning' : '') }, labels[value] ?? value ?? '未知'); }
@@ -104,6 +146,34 @@ async function request(action, args = {}) {
 }
 function getItems(result) { return Array.isArray(result) ? result : result?.items ?? []; }
 function instanceItems(result) { return getItems(result).map(item => ({ ...item, id: item.id ?? item.instanceId, active: item.active ?? item.selected ?? false })); }
+function relationshipDocument(value, instanceId) {
+  const identity = value?.identity;
+  if (!identity) return documentView(value);
+  const kinds = { alias: '别名', nickname: '昵称', former_name: '旧称', platform_nickname: '平台昵称' };
+  const platforms = { qq: 'QQ', wechat: '微信' };
+  const names = (identity.names ?? []).filter(entry => typeof entry?.name === 'string' && entry.name);
+  const named = new Set(names.map(entry => entry.name));
+  const legacy = [...new Set((identity.aliases ?? []).filter(alias => typeof alias === 'string' && alias && !named.has(alias)))];
+  const rows = [
+    ...names.map(entry => {
+      const refs = (entry.srcRefs ?? []).filter(ref => ref?.sourceSessionId && ref?.sourceEventId);
+      const available = refs.filter(ref => ref.available !== false);
+      const platform = platforms[entry.observedOn?.platform];
+      const metadata = [kinds[entry.kind] ?? '其他称呼', platform ? '在' + platform + '中出现' : null,
+        refs.length ? number(available.length) + ' 条来源可查询' : '未关联来源', refs.length > available.length ? number(refs.length - available.length) + ' 条来源不可用' : null];
+      return element('li', {}, element('div', { class: 'detail-value' }, entry.name),
+        element('p', { class: 'record-meta' }, metadata.filter(Boolean).join(' · ')),
+        available.length ? button('查看来源原件', () => inspectDocument('sources.read', { sourceRefs: available, instanceId }, '称呼来源 · ' + entry.name), 'link',
+          { 'aria-label': '查看「' + entry.name + '」的来源原件' }) : null);
+    }),
+    ...legacy.map(alias => element('li', {}, element('div', { class: 'detail-value' }, alias), element('p', { class: 'record-meta' }, '旧档案中的别名 · 来源未记录'))),
+  ];
+  return element('div', { class: 'reading-view' },
+    kv({ '常用称呼': identity.displayName || '尚未记录', '人物编号': identity.personId }),
+    element('section', { class: 'reading-section' }, element('h3', {}, '其他称呼'),
+      rows.length ? element('ul', { class: 'record-list' }, rows) : element('p', { class: 'muted' }, '尚未保存其他称呼。')),
+    disclosure({}, element('summary', {}, '查看印象、编码与其他资料'), data(value)));
+}
 function documentView(value) {
   if (value && typeof value === 'object' && Array.isArray(value.changes) && value.fromVersion != null) {
     return element('div', {}, kv({ '起点版本': 'v' + value.fromVersion, '终点版本': 'v' + value.toVersion }), value.changes.length ? value.changes.map(change => card(({ anchor: '身份基调', axes: '性格维度', facets: '性格与偏好', signatures: '常见反应', habits: '习惯', retired: '过去的描述' })[change.field] ?? change.field, '', element('div', { class: 'diff-grid' }, element('div', {}, element('div', { class: 'section-label' }, '修改前'), data(change.before)), element('div', {}, element('div', { class: 'section-label' }, '修改后'), data(change.after))))) : empty('所选版本没有模块变化', '这是实际对比结果，不要求为了进化而产生变更。'));
@@ -166,7 +236,8 @@ async function inspectDocument(action, args, title, { actions = [], eyebrow } = 
       accumulated += result.text; cursor = result.nextCursor; total = fragment.total; complete = fragment.complete;
       try { view = complete ? JSON.parse(accumulated) : accumulated; } catch { view = accumulated; }
     } else { view = result; cursor = null; }
-    replace(body, !complete ? element('div', {}, element('h3', {}, '内容较长，正在按页读取'), element('p', { class: 'muted' }, `已读取 ${number(Array.from(accumulated).length)} / ${number(total)} 字符。原文完整保留，继续读取后展示全文。`), disclosure({}, element('summary', {}, '查看当前原始片段'), data(view))) : documentView(view));
+    replace(body, !complete ? element('div', {}, element('h3', {}, '内容较长，正在按页读取'), element('p', { class: 'muted' }, `已读取 ${number(Array.from(accumulated).length)} / ${number(total)} 字符。原文完整保留，继续读取后展示全文。`), disclosure({}, element('summary', {}, '查看当前原始片段'), data(view)))
+      : action === 'relation.get' ? relationshipDocument(view, ownerInstance) : documentView(view));
     replace(footer, actions.map(item => button(item.label, () => item.run(view), item.kind ?? 'secondary')),
       cursor != null ? button('继续读取下一页', load, 'primary', { dataset: { action: 'detail-next' } }) : element('span', { class: 'small muted' }, '已读取可用详情'),
       button('关闭', () => $('detail-dialog').close(), 'secondary'));
@@ -229,20 +300,24 @@ function updateInstanceBar() {
 async function navigate(page, view = null) {
   pageScrollRequested = true;
   if (routeParents[page]) state.trail.push({ page: state.page, view: state.view }); else state.trail = [];
-  state.page = pages[page] ? page : 'overview'; state.view = view;
+  state.page = pages[page] ? page : 'overview'; state.view = view ?? (state.page === 'memory' ? 'graph' : null);
+  if (state.page === 'memory') state.graphSeed = null;
   state.detailGeneration++; if ($('detail-dialog').open) $('detail-dialog').close();
   await renderPage();
 }
 async function renderPage() {
   for (const cleanup of [...pageCleanups]) cleanup();
   const [title, , description] = pages[state.page];
-  $('page-title').textContent = viewTitles[state.view] ?? title; $('page-description').textContent = ({ 'instances': '分别管理当前、其它和已归档的人格，清除前核对文本资料范围。', 'user-guide': '了解初次认识、记忆、休息和日常操作。', 'self-profile': '初始想法与当前自我描述分别保存，资料可以慢慢确定。' }[state.view] ?? (state.view ? ({ chat: '选择连接方式后，按步骤完成接入。', media: '设置只作用于当前人格；创作使用已保存的服务。', settings: '按需要调整这一项，保存后生效。', memory: '查看已保留的内容，回忆与记忆变化仍由人格自己决定。' }[state.page] ?? description) : description));
-  const back = $('page-back'); back.hidden = !state.view && !routeParents[state.page]; back.textContent = '返回' + (viewTitles[state.trail.at(-1)?.view] ?? pages[state.trail.at(-1)?.page ?? routeParents[state.page] ?? state.page]?.[0] ?? '上一页');
+  const memoryRoot = state.page === 'memory' && memoryTabs.some(([view]) => view === state.view);
+  $('page-title').textContent = memoryRoot ? title : viewTitles[state.view] ?? title; $('page-description').textContent = ({ 'instances': '分别管理当前、其它和已归档的人格，清除前核对文本资料范围。', 'user-guide': '了解初次认识、记忆、休息和日常操作。', 'self-profile': '初始想法与当前自我描述分别保存，资料可以慢慢确定。' }[state.view] ?? (state.view && !memoryRoot ? ({ chat: '选择连接方式后，按步骤完成接入。', media: '设置只作用于当前人格；创作使用已保存的服务。', settings: '按需要调整这一项，保存后生效。', memory: '查看已保留的内容，回忆与记忆变化仍由人格自己决定。' }[state.page] ?? description) : description));
+  const back = $('page-back'); back.hidden = memoryRoot ? !state.trail.length : !state.view && !routeParents[state.page]; back.textContent = '返回' + (viewTitles[state.trail.at(-1)?.view] ?? pages[state.trail.at(-1)?.page ?? routeParents[state.page] ?? state.page]?.[0] ?? '上一页');
+  renderMemoryTabs();
   document.querySelectorAll('[data-page]').forEach(node => { node.classList.toggle('active', node.dataset.page === (routeParents[state.page] ?? state.page)); if (node.dataset.page === (routeParents[state.page] ?? state.page)) node.setAttribute('aria-current', 'page'); else node.removeAttribute('aria-current'); });
   replace($('page-actions'));
   const supporting = state.page === 'settings' && state.view === 'support';
   if (!state.connected && !supporting) return;
   clearError(); const generation = ++state.generation, ownerInstance = state.instanceId; $('page-content').classList.add('loading');
+  if (pageScrollRequested && memoryRoot) replace($('page-content'), element('p', { class: 'muted', role: 'status' }, '正在读取记忆…'));
   try {
     let content;
     if (supporting) content = await supportPage();
@@ -251,11 +326,12 @@ async function renderPage() {
       if (generation !== state.generation || ownerInstance !== state.instanceId) return;
       state.status = status; updateInstanceBar();
       if (state.view === 'user-guide') content = userGuidePage();
-      else if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page)) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('启用或选择人格', () => navigate('settings', 'instances'), 'primary'));
+      else if (!state.status.available && !['settings', 'maintenance', 'chat'].includes(state.page) && !(state.page === 'memory' && state.view === 'graph')) content = card('当前实例尚未加载', '加载实例后才能读取人格、记忆和整理状态。', notice(state.status.unloaded ? '实例已停用。数据仍保留在原记忆目录。' : '当前实例不可用，请查看诊断或加载设置。', 'warning'), button('启用或选择人格', () => navigate('settings', 'instances'), 'primary'));
       else content = await ({ overview: overviewPage, persona: personaPage, memory: memoryPage, evolution: evolutionPage, settings: settingsPage, maintenance: maintenancePage, chat: chatPage, media: mediaPage, tasks: tasksPage })[state.page]();
     }
     if (generation !== state.generation) return;
     replace($('page-content'), content); if (pageScrollRequested) { document.querySelector?.('.app-shell')?.scrollIntoView?.({ block: 'start', behavior: 'instant' }); pageScrollRequested = false; } $('last-updated').textContent = '上次读取 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    await content.mountGraph?.();
   } catch (error) { if (generation === state.generation) { showError(error); replace($('page-content'), card('暂时无法读取', '', notice(errorText(error), 'error'), button('重新读取', renderPage, 'secondary'), button('报告问题', () => navigate('settings', 'support')))); } }
   finally { if (generation === state.generation) $('page-content').classList.remove('loading'); }
 }
@@ -426,7 +502,7 @@ async function overviewPage() {
     status.budgetPreflight && (!status.budgetPreflight.ok || status.budgetPreflight.workIssues?.length) ? budgetPreflightPanel(status.budgetPreflight, { alive }) : null,
     gaps > 0 ? notice(element('div', {}, element('p', {}, gapText), button('查看来源状态', () => openSection('runtime'), 'secondary compact')), 'warning') : null,
     !status.agents?.length ? element('p', { class: 'getting-started' }, '在 DSH 对话中选择“相续人格”预设，即可开始聊天。') : null,
-    destinations(destination('了解相续', '它如何描述自己，以及留下的性格与习惯。', () => navigate('persona')),
+    destinationGroup('更多信息', destination('了解相续', '它如何描述自己，以及留下的性格与习惯。', () => navigate('persona')),
       destination('独立任务与资料', '查看委派出去的任务和完整结果。', () => navigate('tasks')),
       destination('运行与用量', '查看记忆容量、会话接入和当前运行状态。', () => openSection('runtime')),
       destination('使用说明', '从初次认识到记忆、休息和可选功能。', () => openSection('user-guide'))));
@@ -544,24 +620,33 @@ async function personaPage() {
   for (const [key, label] of modules) tabs.append(button(label, () => load(key), 'module-tab', { class: `module-tab${key === section ? ' active' : ''}`, dataset: { section: key } }));
   await load(section); return element('div', {}, destinations(destination('自我档案', '初始想法与当前自我描述分别保存，名字与形象可以慢慢确定。', () => openSection('self-profile'))), tabs, content);
 }
-function memoryRecord(record, open) {
+function memoryRecord(record, open, previewLength = 360) {
   const role = record.recordType === 'deep' ? '人格记忆' : record.role ?? record.sourceRole ?? record.srcRefs?.[0]?.sourceRole;
   const text = record.recordType === 'deep' ? record.reference ?? record.textPreview ?? record.experience ?? '' : record.text ?? record.textPreview ?? record.summary ?? record.expansion ?? record.meaning ?? record.preview ?? record.anchorPreview ?? record.title ?? '';
+  const preview = short(typeof text === 'string' ? text.trimStart() : text, previewLength);
   return element('article', { class: 'record' }, element('div', { class: 'record-header' }, element('h3', { class: 'record-title' }, record.label ?? record.name ?? (record.recordType === 'deep' ? record.title : null) ?? ({ chat: '对话原件', memory: '记忆提炼', deep: '深刻记忆', code: '编码', relation_signature: '关系签名', relation_event: '关系事件', interpretation: '待解释', facet: '人格倾向', signature: '共同签名', habit: '习惯' })[record.recordType] ?? record.recordType ?? '记忆条目'), element('time', { class: 'record-time' }, record.sourceAt || record.createdAt || record.updatedAt ? date(record.sourceAt ?? record.createdAt ?? record.updatedAt) : '时间未提供')),
-    element('p', { class: 'record-text' }, short(text, 360)), element('div', { class: 'record-meta' }, tag(({ assistant: 'AI 助手', user: '用户原话', system: '程序材料' })[role] ?? role ?? '提炼/解释', role === 'assistant' ? 'ai' : role === 'user' ? 'human' : ''), tag(memoryScopeLabel(record)), record.speakerId ? tag('发言者：' + record.speakerId) : null, record.epistemic ? tag(record.epistemic) : null),
+    element('p', { class: 'record-text' }, preview), element('div', { class: 'record-meta' }, tag(({ assistant: 'AI 助手', user: '用户原话', system: '程序材料' })[role] ?? role ?? '提炼/解释', role === 'assistant' ? 'ai' : role === 'user' ? 'human' : ''), tag(memoryScopeLabel(record)), record.speakerId ? tag('发言者：' + record.speakerId) : null, record.epistemic ? tag(record.epistemic) : null),
     element('div', { class: 'record-footer' }, button('查看详情 →', open, 'link'),
       record.recordKey ? button('在 3D 图中查看', () => openMemoryGraph(record), 'link') : null));
 }
+function memorySeedLabel(item) {
+  for (const value of [item.timeline?.title, item.title, item.label]) {
+    const label = typeof value === 'string' ? value.trim() : '';
+    if (label) return label;
+  }
+  return item.recordType === 'chat' ? '交流原件' : '选中的记忆';
+}
 async function openMemoryGraph(item) {
   state.graphSeed = { instanceId: state.instanceId, ...memorySelection(item),
-    label: item.timeline?.title ?? item.title ?? item.label ?? '选中的记忆',
+    label: memorySeedLabel(item),
     ...(item.sourceSessionId && item.sourceEventId ? { sourceRef: { sourceSessionId: item.sourceSessionId, sourceEventId: item.sourceEventId } } : {}) };
   state.detailGeneration++; if ($('detail-dialog').open) $('detail-dialog').close();
   await openSection('graph');
 }
-async function memoryGraphPage() {
+function memoryGraphPage() {
   const instanceId = state.instanceId, generation = state.generation;
   const alive = () => state.instanceId === instanceId && state.generation === generation && state.page === 'memory' && state.view === 'graph';
+  const lifetime = pageLifetime(generation);
   let seed = state.graphSeed?.instanceId === instanceId ? state.graphSeed : null, graph = null, result = null, readGeneration = 0, selected = null, themeObserver = null, mountObserver = null;
   const scopeValue = seed ? seed.scope === 'person' ? 'person' : seed.scope === 'global' ? 'global' : 'unknown' : state.memoryPerson ? 'person' : 'global';
   const scope = field('graph-scope', '查看范围', scopeValue, { choices: [['global', '共同记忆'], ['person', '某个人的记忆'], ['unknown', '尚未确认归属']] });
@@ -569,11 +654,53 @@ async function memoryGraphPage() {
   if (seed?.personId && ![...person.input.options].some(option => option.value === seed.personId)) person.input.append(element('option', { value: seed.personId }, personName(seed.personId)));
   person.input.value = seed?.personId ?? state.memoryPerson?.id ?? ''; person.wrapper.hidden = scopeValue !== 'person';
   const query = field('graph-query', '查找当前范围', '', { placeholder: '标题、经历或关键词', class: 'search' });
-  const container = element('div', { class: 'memory-graph-page' }), status = element('p', { id: 'graph-status', class: 'subtle-note', role: 'status' }), focus = element('div', { class: 'graph-focus' });
-  const canvas = element('canvas', { id: 'memory-graph-canvas', class: 'memory-graph-canvas', tabIndex: 0, role: 'img', 'aria-label': '记忆关联图，可拖动旋转；下面的节点列表提供相同内容。', 'aria-describedby': 'graph-help' });
-  const panel = element('section', { id: 'graph-selection', class: 'memory-graph-selection', 'aria-label': '选中的记忆' }), listing = element('div', { class: 'graph-node-list' }), picker = element('div', { id: 'graph-source-picker', hidden: true }), coverageInfo = element('div', { id: 'graph-coverage' });
-  const hint = element('p', { id: 'graph-help', class: 'small muted graph-help' }, '拖动旋转，点击选中。点击图或用 Tab 进入后可滚轮缩放，Esc 退出；也可以用下方列表选择。');
+  let mode = 'brain', cutaway = false;
+  const rotationSpeed = state.graphRotationSpeed ?? (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 0 : .45);
+  const views = { brain: '脑形视图', '3d': '关系视图', '2d': '平面视图' };
+  const container = element('div', { class: 'memory-graph-page', dataset: { graphMode: mode } }), status = element('p', { id: 'graph-status', class: 'subtle-note', role: 'status' }), focus = element('div', { class: 'graph-focus' });
+  const canvas = element('canvas', { id: 'memory-graph-canvas', class: 'memory-graph-canvas', tabIndex: 0, role: 'img', 'aria-label': '脑形视图，可用下方列表选择相同的节点', 'aria-describedby': 'graph-presence graph-caption graph-anatomy graph-help' });
+  const panel = element('section', { id: 'graph-selection', class: 'memory-graph-selection', 'aria-label': '选中的记忆', hidden: true }), listing = element('div', { class: 'graph-node-list' }), picker = element('div', { id: 'graph-source-picker', hidden: true }), coverageInfo = element('div', { id: 'graph-coverage' });
+  const retry = button('重试读取', () => load(), 'secondary compact', { hidden: true });
+  const brainCaption = '记忆光点对应实际节点。位置只用于排布，脑部结构用于解剖示意。';
+  const anatomyText = '金色为左半球，紫色为右半球，青色为小脑，灰蓝色为脑干。';
+  const caption = element('p', { id: 'graph-caption', class: 'graph-caption' }, brainCaption);
+  const anatomy = element('p', { id: 'graph-anatomy', class: 'graph-anatomy' }, anatomyText);
+  const presenceLabels = { awake: '清醒', sleeping: '休息中', error: '运行异常', unloaded: '未加载', unknown: '状态未知' };
+  const presence = element('p', { id: 'graph-presence', class: 'graph-presence', role: 'status' });
+  let presenceState, readingPresence = false;
+  function showPresence(value) {
+    const next = Object.hasOwn(presenceLabels, value) ? value : 'unknown';
+    if (presenceState === next) return;
+    presenceState = next;
+    presence.dataset.runtime = next;
+    presence.textContent = '运行状态 · ' + presenceLabels[next];
+    graph?.setRuntimeStatus(next);
+  }
+  showPresence(state.status.available ? state.status.runtime?.sleep?.state : state.status.unloaded ? 'unloaded' : state.status.errors?.length ? 'error' : 'unknown');
+  async function refreshPresence() {
+    if (!alive() || !lifetime.alive() || !graph || !state.status.available || mode !== 'brain' || document.visibilityState === 'hidden' || readingPresence) return;
+    readingPresence = true;
+    try {
+      const result = await request('runtime.presence', { instanceId });
+      if (alive() && lifetime.alive()) showPresence(result.state);
+    } catch {
+      if (alive() && lifetime.alive()) showPresence('unknown');
+    } finally {
+      readingPresence = false;
+      if (mode === 'brain' && document.visibilityState !== 'hidden') lifetime.later(refreshPresence, 5000);
+    }
+  }
+  function refreshVisiblePresence() {
+    lifetime.cancelLater();
+    void refreshPresence();
+  }
+  const rotationHint = '拖动旋转，点击选中。点击图或用 Tab 进入后可滚轮缩放，按 Esc 退出。';
+  const brainHint = rotationHint + ' 指针在画布上或画布获得焦点时，自动旋转暂停。';
+  const hint = element('p', { id: 'graph-help', class: 'graph-help' }, brainHint);
+  const hoverTitle = element('strong'), hoverText = element('span');
+  const hoverPreview = element('div', { class: 'graph-hover-preview', hidden: true, 'aria-hidden': 'true' }, hoverTitle, hoverText);
   const kinds = { record: '记忆条目', source: '来源原件', person: '人物', session: '对话来源' };
+  const legend = element('div', { class: 'graph-legend', 'aria-label': '节点类型', hidden: true }, Object.entries(kinds).map(([key, label]) => element('span', { class: 'graph-legend-item kind-' + key }, label)));
   const edgeNames = { source: '来源于', source_ref: '来源于', source_session: '来自同一会话', about_person: '涉及人物', related_memory: '明确关联', related: '明确关联', expand: '展开编码', expands: '展开编码', code_expansion: '展开编码', supersedes: '替代旧理解', replaces: '被新理解替代', replacement: '被新理解替代' };
   const probes = Object.fromEntries(['text', 'muted', 'edge', 'node', 'selected', 'neighbor', 'record', 'source', 'person', 'session'].map(name => [name, element('span', { class: 'graph-color-probe graph-color-' + name, 'aria-hidden': true })]));
   function colors() {
@@ -581,11 +708,12 @@ async function memoryGraphPage() {
     return { background: 'transparent', text: value('text', '#e5e7eb'), muted: value('muted', '#9ca3af'), edge: value('edge', '#78838e'), node: value('node', '#82b4d1'), selected: value('selected', '#ffffff'), neighbor: value('neighbor', '#a1c9e0'),
       kinds: { record: value('record', '#82b4d1'), source: value('source', '#9ca3af'), person: value('person', '#c3aa72'), session: value('session', '#8cb8b1') } };
   }
-  function cleanup() { readGeneration++; graph?.dispose(); graph = null; result = null; selected = null; themeObserver?.disconnect(); mountObserver?.disconnect(); pageCleanups.delete(cleanup); }
+  function cleanup() { readGeneration++; graph?.dispose(); graph = null; result = null; selected = null; themeObserver?.disconnect(); mountObserver?.disconnect(); lifetime.stop(); document.removeEventListener('visibilitychange', refreshVisiblePresence); pageCleanups.delete(cleanup); }
   pageCleanups.add(cleanup);
   function selectNode(node) {
     if (!alive()) return;
     selected = node; graph?.select(node?.id ?? null);
+    panel.hidden = !node && !result;
     for (const row of listing.children) row.setAttribute('aria-pressed', String(row.dataset.nodeId === node?.id));
     if (!node) {
       const emptyGraph = result && !result.nodes.length;
@@ -607,10 +735,19 @@ async function memoryGraphPage() {
           edge.basis ? button('查看依据', () => { startDetail('这条关联的记录依据'); replace($('detail-content'), data(edge.basis)); replace($('detail-footer'), button('关闭', () => $('detail-dialog').close(), 'secondary')); }, 'link small') : null);
       })) : element('p', { class: 'small muted' }, '当前局部没有其它已保存关联。图不会为孤立条目补造联系。'));
   }
+  function previewNode(node) {
+    if (!alive()) return;
+    const show = mode === 'brain' && node != null;
+    hoverTitle.textContent = show ? short(node.label || kinds[node.kind] || '关联节点', 40) : '';
+    hoverText.textContent = show ? short(node.preview || kinds[node.kind] || '', 88) : '';
+    hoverPreview.hidden = !show;
+  }
   function ensureRenderer() {
     if (graph || !alive()) return;
     if (!globalThis.XiangxuMemoryGraph?.create) throw new Error('绘图组件尚未加载，请重新打开插件页面。记忆列表仍可使用。');
-    graph = globalThis.XiangxuMemoryGraph.create(canvas, { onSelect: selectNode, colors: colors(), mode: '3d' });
+    graph = globalThis.XiangxuMemoryGraph.create(canvas, { onSelect: selectNode, onHover: previewNode, colors: colors(), mode, rotationSpeed, runtimeStatus: presenceState });
+    document.addEventListener('visibilitychange', refreshVisiblePresence);
+    void refreshPresence();
     if (typeof ResizeObserver === 'function') { mountObserver = new ResizeObserver(() => { if (alive()) graph?.setColors(colors()); }); mountObserver.observe(container); }
     if (typeof MutationObserver === 'function' && document.documentElement) {
       themeObserver = new MutationObserver(() => { if (alive()) graph?.setColors(colors()); });
@@ -623,12 +760,15 @@ async function memoryGraphPage() {
   async function load() {
     if (!alive()) return;
     const ticket = ++readGeneration;
-    ensureRenderer(); graph.setData({ nodes: [], edges: [] }); result = null; selectNode(null); replace(listing); replace(coverageInfo); status.textContent = '正在读取这一范围的局部关联…'; container.setAttribute('aria-busy', 'true'); drawSelection();
-    if (scope.input.value === 'person' && !person.input.value) { status.textContent = '先选择人物，再查看这段关系的记忆。'; container.setAttribute('aria-busy', 'false'); return; }
+    retry.hidden = true; previewNode(null); result = null; selectNode(null); replace(listing); replace(coverageInfo); status.textContent = '正在读取这一范围的局部关联…'; container.setAttribute('aria-busy', 'true'); drawSelection();
     const args = { instanceId, scope: scope.input.value, limit: 80, edgeLimit: 160,
       ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), ...(query.input.value.trim() ? { query: query.input.value.trim() } : {}),
       ...(seed?.recordKey ? { seedRecordKey: seed.recordKey } : seed?.sourceRef ? { sourceRef: seed.sourceRef } : {}) };
     try {
+      ensureRenderer();
+      graph.setData({ nodes: [], edges: [] });
+      if (!state.status.available) { status.textContent = '当前人格未加载，加载后可查看记忆关联。'; return; }
+      if (scope.input.value === 'person' && !person.input.value) { status.textContent = '先选择人物，再查看这段关系的记忆。'; return; }
       const next = await request('memory.graph', args);
       if (!alive() || ticket !== readGeneration) return;
       if (next.format !== 'persona-memory-graph/1' || !Array.isArray(next.nodes) || !Array.isArray(next.edges)) throw new Error('关联图返回的数据不完整，请刷新后重试。');
@@ -649,7 +789,11 @@ async function memoryGraphPage() {
         '本次未能核对的引用': number(unreadLinks), '完整记忆总量': '未统计整库；画面上限不会删除或缩减记忆' }));
       replace(listing, result.nodes.map(node => button((node.label || kinds[node.kind] || '条目') + ' · ' + (kinds[node.kind] ?? '资料'), () => selectNode(node), 'secondary', { class: 'button graph-node-row', dataset: { nodeId: node.id }, 'aria-pressed': 'false' })));
       selectNode(seed ? result.nodes.find(node => node.id === seed.recordKey) ?? result.nodes.find(node => node.kind === 'record') ?? null : null);
-    } catch (error) { if (!alive() || ticket !== readGeneration) return; status.textContent = '这次读取没有完成；可以重试，或继续使用记忆列表。'; throw error; }
+    } catch (error) {
+      if (!alive() || ticket !== readGeneration) return;
+      status.textContent = '关联图暂时无法显示。可以重试，或切换到其他记忆视图。' + (error?.code ? '（' + error.code + '）' : '');
+      retry.hidden = false;
+    }
     finally { if (alive() && ticket === readGeneration) container.setAttribute('aria-busy', 'false'); }
   }
   let pickerGeneration = 0, pickerCursors = [null], pickerPage = 0;
@@ -662,7 +806,7 @@ async function memoryGraphPage() {
     if (reset) pickerCursors = [null]; pickerCursors[index] = cursor; pickerPage = index;
     replace(picker, element('h2', {}, '选一段经历作为起点'), getItems(page).length ? element('div', { class: 'graph-recent-list' }, getItems(page).map(item => button(item.timeline?.title || item.title || short(item.textPreview, 65) || '交流记录', async () => {
       if (!alive()) return;
-      seed = { instanceId, ...memorySelection(item), label: item.timeline?.title || item.title || '选中的经历' }; state.graphSeed = seed;
+      seed = { instanceId, ...memorySelection(item), label: memorySeedLabel(item) }; state.graphSeed = seed;
       scope.input.value = item.personId ? 'person' : 'unknown'; person.wrapper.hidden = !item.personId;
       if (item.personId) { if (![...person.input.options].some(option => option.value === item.personId)) person.input.append(element('option', { value: item.personId }, personName(item.personId))); person.input.value = item.personId; }
       query.input.value = ''; picker.hidden = true; await load();
@@ -670,21 +814,64 @@ async function memoryGraphPage() {
       paginator(page, next => chooseRecent(next, { pageIndex: index + 1 }), { pageNumber: index + 1, first: () => chooseRecent(), previous: () => chooseRecent(pickerCursors[index - 1], { pageIndex: index - 1 }), label: '近期经历选择' }),
       button('收起选择', () => { pickerGeneration++; picker.hidden = true; }, 'link'));
   }
-  const mode3d = button('3D 视图', () => setMode('3d'), 'secondary compact', { 'aria-pressed': 'true' }), mode2d = button('平面视图', () => setMode('2d'), 'secondary compact', { 'aria-pressed': 'false' });
-  function setMode(mode) { if (!alive()) return; graph?.setMode(mode); mode3d.setAttribute('aria-pressed', String(mode === '3d')); mode2d.setAttribute('aria-pressed', String(mode === '2d')); hint.textContent = mode === '3d' ? '拖动旋转，点击选中。点击图或用 Tab 进入后可滚轮缩放，Esc 退出；也可以用下方列表选择。' : '拖动平移，点击选中。放大、缩小和节点列表同样可用。'; }
+  const modeButtons = Object.entries(views).map(([value, label]) => button(label, () => setMode(value), 'secondary', { dataset: { mode: value }, 'aria-pressed': String(value === mode) }));
+  const speed = element('select', { id: 'graph-rotation-speed', 'aria-controls': canvas.id },
+    [[0, '暂停'], [.45, '慢'], [1, '中'], [2, '快']].map(([value, label]) => element('option', { value: String(value), selected: value === rotationSpeed }, label)));
+  const rotationControl = element('label', { class: 'graph-rotation-control' }, '自动旋转', speed);
+  speed.addEventListener('change', () => {
+    if (!alive() || mode !== 'brain' || cutaway || !graph) return;
+    const next = Number(speed.value);
+    try {
+      graph.setRotationSpeed(next);
+      state.graphRotationSpeed = next;
+    } catch (error) {
+      speed.value = String(state.graphRotationSpeed ?? rotationSpeed);
+      showError(error);
+    }
+  });
+  const cutawayButton = button('剖视', () => {
+    if (!alive() || mode !== 'brain' || !graph) return;
+    graph.setCutaway(!cutaway);
+    cutaway = !cutaway;
+    cutawayButton.setAttribute('aria-pressed', String(cutaway));
+    anatomy.textContent = cutaway ? '剖视显示紫色右半球、青色小脑和灰蓝色脑干。剖视时暂停自动旋转。' : anatomyText;
+    speed.disabled = cutaway;
+    hint.textContent = cutaway ? rotationHint : brainHint;
+    previewNode(null);
+  }, 'secondary compact', { 'aria-pressed': 'false', 'aria-controls': canvas.id });
+  function setMode(next) {
+    if (!alive() || next === mode) return;
+    mode = next;
+    graph?.setMode(mode);
+    container.dataset.graphMode = mode;
+    for (const control of modeButtons) control.setAttribute('aria-pressed', String(control.dataset.mode === mode));
+    canvas.setAttribute('aria-label', views[mode] + '，可用下方列表选择相同的节点');
+    caption.textContent = mode === 'brain' ? brainCaption : '连线来自已保存的关联。位置只用于排布。';
+    anatomy.hidden = presence.hidden = cutawayButton.hidden = rotationControl.hidden = mode !== 'brain';
+    canvas.setAttribute('aria-describedby', mode === 'brain' ? 'graph-presence graph-caption graph-anatomy graph-help' : 'graph-caption graph-help');
+    refreshVisiblePresence();
+    hint.textContent = mode === '2d' ? '拖动平移，点击选中。可以用放大、缩小按钮调整画面。' : mode === 'brain' && !cutaway ? brainHint : rotationHint;
+    legend.hidden = mode === 'brain';
+    previewNode(null);
+  }
   scope.input.addEventListener('change', () => { seed = null; state.graphSeed = null; person.wrapper.hidden = scope.input.value !== 'person'; load().catch(showError); });
   person.input.addEventListener('change', () => { seed = null; state.graphSeed = null; load().catch(showError); });
   query.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); load().catch(showError); } });
-  container.append(element('p', { class: 'subtle-note' }, '每条线都有记录依据。位置只用于排布，不代表情绪强弱或已触发回忆。'),
-    element('div', { class: 'graph-filterbar' }, scope.wrapper, person.wrapper, query.wrapper, button('查看关联', load, 'primary')), focus,
-    element('div', { class: 'row-actions graph-source-actions' }, button('从近期经历选一条', () => chooseRecent(), 'secondary'), button('回到记忆列表', () => openSection('', false), 'link')), picker,
-    element('div', { class: 'graph-controls', 'aria-label': '图形视角' }, mode3d, mode2d, button('放大', () => graph?.zoomIn(), 'secondary compact'), button('缩小', () => graph?.zoomOut(), 'secondary compact'), button('复位视角', () => graph?.reset(), 'secondary compact')),
-    element('div', { class: 'memory-graph-layout' }, element('div', { class: 'memory-graph-stage' }, canvas, hint), panel), status,
-    element('div', { class: 'graph-legend', 'aria-label': '节点类型' }, Object.entries(kinds).map(([key, label]) => element('span', { class: 'graph-legend-item kind-' + key }, label))),
+  container.append(focus,
+    element('div', { class: 'graph-controls' }, element('div', { class: 'graph-modes', role: 'group', 'aria-label': '图形视图' }, modeButtons), presence),
+    element('div', { class: 'memory-graph-layout' },
+      element('figure', { class: 'memory-graph-stage' }, element('div', { class: 'graph-viewport' }, canvas, hoverPreview),
+        element('figcaption', {}, status, retry, legend, element('div', { class: 'graph-camera', role: 'group', 'aria-label': '视角调整' },
+          rotationControl, cutawayButton, button('放大', () => graph?.zoomIn(), 'secondary compact'), button('缩小', () => graph?.zoomOut(), 'secondary compact'), button('复位视角', () => graph?.reset(), 'secondary compact')))), panel),
+    element('div', { class: 'graph-filterbar', role: 'search' }, scope.wrapper, person.wrapper, query.wrapper, button('查看关联', load, 'primary')),
+    element('div', { class: 'row-actions graph-source-actions' }, button('从近期经历选一条', () => chooseRecent(), 'secondary')), picker,
     disclosure({}, element('summary', {}, '以列表选择节点'), listing),
     disclosure({}, element('summary', {}, '本次覆盖范围'), coverageInfo),
+    disclosure({}, element('summary', {}, '读图与操作说明'), caption, anatomy, hint),
     ...Object.values(probes));
-  await load(); return container;
+  // The embedded canvas must be attached before its first measurement, including during slow graph reads.
+  container.mountGraph = load;
+  return container;
 }
 async function retrievalPage() {
   const container = element('div'), instanceId=state.instanceId,generation=state.generation;
@@ -834,7 +1021,7 @@ async function memoryPage() {
   if (state.view === 'graph') return memoryGraphPage();
   if (['retrieval','retrieval-settings','retrieval-diagnostics'].includes(state.view)) return retrievalPage();
   if (state.view === 'timeline') return timelinePage();
-  const container = element('div'), filters = element('div', { class: 'toolbar', role: 'search' }), resultArea = element('div'), ownerInstance = state.instanceId, ownerGeneration = state.generation;
+  const container = element('div', { class: 'memory-list-page' }), filters = element('div', { class: 'toolbar', role: 'search' }), resultArea = element('div', { class: 'memory-results', 'aria-label': '查询结果' }), ownerInstance = state.instanceId, ownerGeneration = state.generation;
   const alive = () => state.instanceId === ownerInstance && state.generation === ownerGeneration && state.page === 'memory';
   const query = field('memory-query', '搜索线索', '', { placeholder: '原话、记忆或编码中的文字', class: 'search' });
   const scope = field('memory-scope', '查询范围', 'all', { choices: [['all', '全部关系'], ['person', '指定人物'], ['global', '共同记忆'], ['unknown', '未知暂存']] });
@@ -857,7 +1044,7 @@ async function memoryPage() {
   async function load(cursor = null, { pageIndex } = {}) {
     if (!alive()) return;
     const generation = ++listGeneration, reset = pageIndex === undefined && cursor == null;
-    const requestedArgs = reset ? { query: query.input.value.trim(), scope: scope.input.value, ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), ...(type.input.value ? { recordType: type.input.value } : {}), pageSize: 12 } : args;
+    const requestedArgs = reset ? { query: query.input.value.trim(), scope: scope.input.value, ...(scope.input.value === 'person' ? { personId: person.input.value } : {}), ...(type.input.value ? { recordType: type.input.value } : {}), pageSize: 6 } : args;
     if (requestedArgs.scope === 'person' && !requestedArgs.personId) throw new Error('请选择要查看的人物。');
     const requestedPage = reset ? 0 : pageIndex ?? pageNumber;
     resultArea.setAttribute('aria-busy', 'true');
@@ -868,7 +1055,7 @@ async function memoryPage() {
       if (reset) pageCursors = [null]; pageCursors[requestedPage] = cursor; pageCursors = pageCursors.slice(0, requestedPage + 1);
       const paging = { pageNumber, first: () => load(), previous: () => load(pageCursors[requestedPage - 1], { pageIndex: requestedPage - 1 }), label: '记忆列表' };
       replace(resultArea, paginator(result, next => load(next, { pageIndex: requestedPage + 1 }), { ...paging, position: 'top' }),
-        getItems(result).length ? element('div', { class: 'record-list' }, getItems(result).map(item => memoryRecord(item, () => openRecord(item)))) : card('查询结果', '', empty('没有匹配的已保留条目', '可以调整查询范围或线索。未知暂存不自动属于当前人物，原件淘汰或明确撤销后也可能不再可查。', '▤')),
+        getItems(result).length ? element('div', { class: 'record-list memory-record-list' }, getItems(result).map(item => memoryRecord(item, () => openRecord(item), 160))) : empty('没有匹配的已保留条目', '可以调整查询范围或搜索线索。未知归属的记录不会自动划给当前人物。', '▤'),
         paginator(result, next => load(next, { pageIndex: requestedPage + 1 }), paging));
       if (memoryRendered) scrollListStart(resultArea); memoryRendered = true;
     } catch (error) {
@@ -881,7 +1068,7 @@ async function memoryPage() {
   person.input.addEventListener('change', () => { if (scope.input.value === 'person') load().catch(showError); });
   type.input.addEventListener('change', () => { if (scope.input.value !== 'person' || person.input.value) load().catch(showError); });
   query.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); load().catch(showError); } }); filters.append(query.wrapper, button('搜索', () => load(), 'primary'));
-  const advancedFilters = disclosure({}, element('summary', {}, '筛选范围与类型'), element('div', { class: 'form-grid' }, scope.wrapper, person.wrapper, type.wrapper));
+  const advancedFilters = disclosure({ open: Boolean(state.memoryPerson) }, element('summary', {}, state.view === 'deep' ? '筛选范围' : '筛选范围与类型'), element('div', { class: 'form-grid' }, scope.wrapper, person.wrapper, state.view === 'deep' ? null : type.wrapper));
   const peopleQuery = field('people-query', '搜索已知人物', '', { placeholder: '姓名、别名或人物 ID' }), peopleResults = element('div');
   let peopleArgs = {}, peoplePage = 1, peopleGeneration = 0, peopleCursors = [null], peopleReadError = null, peopleRendered = false;
   async function loadPeople(cursor = null, { pageIndex } = {}) {
@@ -896,8 +1083,20 @@ async function memoryPage() {
       if (reset) peopleCursors = [null]; peopleCursors[requestedPage] = cursor; peopleCursors = peopleCursors.slice(0, requestedPage + 1);
       const rows = getItems(result), known = new Map([...state.people, ...rows].map(item => [item.personId ?? item.id, item])); state.people = [...known.values()].slice(-200);
       const paging = { pageNumber: peoplePage, first: () => loadPeople(), previous: () => loadPeople(peopleCursors[requestedPage - 1], { pageIndex: requestedPage - 1 }), label: '已知人物列表' };
+      const peopleRows = rows.map(item => {
+        const id = item.personId ?? item.id, name = item.displayName || id;
+        const preview = item.namePreview ?? item.aliases?.slice(0, 3) ?? [];
+        const profile = button([element('span', {}, name), preview.length ? element('small', {}, preview.join(' · ')) : null],
+          () => inspectDocument('relation.get', { personId: id, section: 'all', instanceId: ownerInstance }, '关系 · ' + name, { eyebrow: 'RELATIONSHIP' }),
+          'person-button', { class: 'person-button', 'aria-label': '查看人物 ' + name });
+        const filter = button('筛选此人的记忆', async () => {
+          if (![...person.input.options].some(option => option.value === id)) person.input.append(element('option', { value: id }, name));
+          state.memoryPerson = { id, name }; await openSection('all', false);
+        }, 'link');
+        return element('div', {}, profile, filter);
+      });
       replace(peopleResults, paginator(result, next => loadPeople(next, { pageIndex: requestedPage + 1 }), { ...paging, position: 'top' }),
-        rows.length ? element('div', { class: 'people-list' }, rows.map(item => element('div', {}, button(item.displayName ?? item.personId, () => inspectDocument('relation.get', { personId: item.personId ?? item.id, section: 'all' }, '关系 · ' + (item.displayName ?? item.personId), { eyebrow: 'RELATIONSHIP' }), 'person-button', { class: 'person-button' }), button('筛选此人的记忆', async () => { const id = item.personId ?? item.id; if (![...person.input.options].some(option => option.value === id)) person.input.append(element('option', { value: id }, item.displayName ?? id)); state.memoryPerson = { id, name: item.displayName ?? id }; await openSection('', false); }, 'link')))) : empty('没有匹配的已知人物', '这里不会按姓名自动创建或合并人物。'),
+        rows.length ? element('div', { class: 'people-list' }, peopleRows) : empty('没有匹配的已知人物', '这里不会按姓名自动创建或合并人物。'),
         paginator(result, next => loadPeople(next, { pageIndex: requestedPage + 1 }), paging));
       if (peopleRendered) scrollListStart(peopleResults); peopleRendered = true;
     } catch (error) {
@@ -907,17 +1106,13 @@ async function memoryPage() {
     } finally { if (alive() && generation === peopleGeneration) peopleResults.setAttribute('aria-busy', 'false'); }
   }
   peopleQuery.input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadPeople().catch(showError); } });
-  const relations = card('人物与关系', '按真实人物列表分页。查看主观印象、编码与相处状态。', peopleQuery.wrapper, button('搜索人物', () => loadPeople(), 'secondary compact'), peopleResults);
-  const tabs = sectionTabs([['', '全部记忆'], ['deep', '深刻经历'], ['people', '认识的人']]);
-  container.append(destinations(destination('短期、长期与归档', '按时间线查看同一份经历；超出短期转入长期，长期满后最旧部分转入归档。', () => openSection('timeline')),
-    destination('3D 记忆关联图', '旋转查看经历、来源和人物之间已经保存的联系。', () => { state.graphSeed = null; return openSection('graph'); }),
-    destination('查找关联记忆', '使用文字、可选语义和已有关系查找，并查看过去与现在的理解。', () => openSection('retrieval'))));
-  container.append(tabs);
+  const relations = card('人物与关系', '用姓名、别名或人物编号查找。点开人物可查看已保存的称呼、来源和印象。', peopleQuery.wrapper, button('搜索人物', () => loadPeople(), 'secondary compact'), peopleResults);
   if (state.view === 'people') { await loadPeople(); container.append(relations); return container; }
-  if (state.memoryPerson) { const selected = state.memoryPerson; scope.input.value = 'person'; person.input.disabled = false; if (![...person.input.options].some(item => item.value === selected.id)) person.input.append(element('option', { value: selected.id }, selected.name)); person.input.value = selected.id; container.append(element('div', { class: 'active-filter' }, element('span', {}, '正在看：' + selected.name), button('查看所有人的记忆', async () => { state.memoryPerson = null; await openSection('', false); }, 'link'))); }
+  if (state.memoryPerson) { const selected = state.memoryPerson; scope.input.value = 'person'; person.input.disabled = false; if (![...person.input.options].some(item => item.value === selected.id)) person.input.append(element('option', { value: selected.id }, selected.name)); person.input.value = selected.id; container.append(element('div', { class: 'active-filter' }, element('span', {}, '正在看：' + selected.name), button('清除人物筛选', async () => { state.memoryPerson = null; await openSection(state.view, false); }, 'link'))); }
   if (state.view === 'deep') container.append(element('p', { class: 'subtle-note' }, '人格保留的重要经历。是否回忆、怎样理解和修剪，仍由它自己决定。'), button('查看深刻记忆模块', () => inspectDocument('persona.get', { section: 'deep' }, '深刻记忆'), 'link'));
-  await load(); container.append(filters, advancedFilters, resultArea,
-    destinations(destination('成长记录', '查看已发生的整理与人格变化。', () => navigate('evolution')))); return container;
+  await load(); container.append(element('section', { class: 'memory-search-panel', 'aria-label': '搜索与筛选' }, filters, advancedFilters),
+    element('section', { class: 'memory-results-panel' }, element('h2', {}, '查询结果'), resultArea),
+    state.view === 'all' ? button('查看成长记录', () => navigate('evolution'), 'link') : null); return container;
 }
 async function evolutionPage() {
   const content = element('div'), list = element('div'), filter = field('job-status', '作业状态', '', { choices: [['', '全部状态'], ['queued', '待执行'], ['running', '执行中'], ['paused', '已暂停'], ['prepared', '已准备'], ['committed', '已提交'], ['completed', '已完成'], ['failed', '失败'], ['invalidated', '已失效']] });
@@ -1092,15 +1287,18 @@ async function supportPage() {
 
 async function settingsPage() {
   const instanceId = state.instanceId, generation = state.generation, alive = () => state.instanceId === instanceId && state.page === 'settings' && state.generation === generation;
-  const container = element('div'), current = state.status.available ? await request('config.get') : null;
-  if (!state.view) return element('div', {}, destinations(
-    destination('人格管理', '切换、归档保留或明确清除人格，分别管理已有资料。', () => openSection('instances')),
-    destination('交流与时间', '时区，以及整理机会的呈现方式。', () => openSection('general')),
-    destination('整理资料助手', '可选的资料保真建议，由人格决定是否采纳。', () => openSection('assistant'), current ? current.reviewAssistant?.enabled ? '已开启' : '已关闭' : '加载后查看'),
-    destination('容量与模型预算', '先检查当前资料能否完整载入，再按需要调整资源上限。', () => openSection('budgets')),
-    destination('数据维护与诊断', '备份、恢复、校验以及运行诊断。', () => navigate('maintenance')),
-    destination('报告问题', '复制最小诊断，在 GitHub 提交问题并跟进处理结果。', () => openSection('support')),
-    destination('使用说明', '查看日常操作、记忆方式与可选功能的说明。', () => openSection('user-guide'))));
+  const container = element('div', { class: 'settings-detail' }), current = state.status.available ? await request('config.get') : null;
+  if (!state.view) return element('div', {},
+    destinationGroup('人格与交流',
+      destination('人格管理', '切换、新建或归档人格。', () => openSection('instances')),
+      destination('交流与时间', '设置时区与何时提供整理机会。', () => openSection('general'))),
+    destinationGroup('整理与资源',
+      destination('整理资料助手', '提供核对资料的建议，由人格决定是否采纳。', () => openSection('assistant'), current ? current.reviewAssistant?.enabled ? '已开启' : '已关闭' : '加载后查看'),
+      destination('容量与模型预算', '检查记忆能否完整载入，调整容量和请求上限。', () => openSection('budgets'))),
+    destinationGroup('维护与帮助',
+      destination('数据维护与诊断', '备份、恢复、校验和运行诊断。', () => navigate('maintenance')),
+      destination('报告问题', '复制诊断摘要并前往 GitHub 提交。', () => openSection('support')),
+      destination('使用说明', '查看日常交流、记忆和可选功能的用法。', () => openSection('user-guide'))));
   if (state.view === 'assistant') return current ? reviewAssistantSettings(current) : empty('先启用当前人格', '启用后即可保存这套人格的助手设置。');
   const instances = await request('instances.list', { instanceId: undefined }); state.instances = instanceItems(instances); updateInstanceBar();
   const instanceCards = instanceLifecyclePanel(instances, { alive });
@@ -1119,7 +1317,7 @@ async function settingsPage() {
   const newName = field('instance-new-name', '显示名称', '', { placeholder: '例如 日常相续' }), newRoot = field('instance-new-root', '记忆目录绝对路径', '', { placeholder: 'C:\\Users\\...\\persona-new', hint: '使用独立目录。更换实例不等于移动、合并或覆盖旧数据；实例编号由服务生成。' });
   const autoLoad = element('input', { type: 'checkbox', id: 'instance-auto-load', checked: Boolean(instances.autoLoad) });
   if (['instances', 'startup', 'new-instance', 'new-persona'].includes(state.view)) {
-    if (state.view === 'instances') container.append(card('已保存的人格', '切换只改变使用对象；归档保留资料；清除需要先核对实际范围并输入名称。', instanceCards), destinations(
+    if (state.view === 'instances') container.append(card('已保存的人格', '切换只改变使用对象；归档保留资料；清除需要先核对实际范围并输入名称。', instanceCards), destinationGroup('新建与加载',
       destination('新建人格', '只需填写名称，自动使用新的独立资料目录。', () => openSection('new-persona')),
       destination('启动时加载', '设置下次启动是否自动启用已选人格。', () => openSection('startup')),
       destination('使用其他记忆库', '高级：手工选择已有或新的绝对目录。', () => openSection('new-instance'))));
@@ -1785,12 +1983,14 @@ async function chatPage() {
   const connections = Array.isArray(channels.connections) ? channels.connections : [];
   const platformName = value => ({ qq: 'QQ', wechat: '微信' })[value] ?? value;
   const statusName = value => ({ connected: '已连接', ready: '已就绪', connecting: '正在连接', disconnected: '尚未连接', disabled: '已停用', unconfigured: '尚未配置', unavailable: '暂不可用', error: '连接异常' })[value] ?? value;
-  if (!state.view) return destinations(
-    ...['qq', 'wechat'].map(id => { const item = connections.find(value => value.id === id), authorized = official.connections?.find(value => value.id === id); return destination(id === 'qq' ? 'QQ' : '微信', id === 'qq' ? '一键准备个人 QQ 连接，扫码接入后由相续自主社交。' : '官方扫码接入私聊；群聊需已有兼容桥支持。', () => openSection(id === 'qq' ? 'qq' : item?.config?.mode === 'bridge' && item.configured ? id + '-bridge' : id), (id === 'wechat' ? '未测试 · ' : '') + (item?.connected ? '已连接' : authorized?.connected ? '已授权，待启用' : '未连接')); }),
-    destination('B 站', '可选扫码连接，按授权浏览资料、发表评论或发送私信。', () => openSection('bilibili'), '未测试'),
-    destination('QQ 动态扩展', '仅在自备兼容服务时开启，普通 OneBot 不保证空间接口。', () => openSection('provider-feed'), '未测试'),
-    destination('声音', '选择音色、试听，以及由谁决定声音。', () => openSection('voice')),
-    destination('社交身份', '登记人格的平台账号，核对连接与可用能力。', () => openSection('accounts')));
+  if (!state.view) return element('div', {},
+    destinationGroup('平台连接',
+      ...['qq', 'wechat'].map(id => { const item = connections.find(value => value.id === id), authorized = official.connections?.find(value => value.id === id); return destination(id === 'qq' ? 'QQ' : '微信', id === 'qq' ? '一键准备个人 QQ，扫码后由相续自主社交。' : '官方扫码接入私聊；群聊需已有兼容桥支持。', () => openSection(id === 'qq' ? 'qq' : item?.config?.mode === 'bridge' && item.configured ? id + '-bridge' : id), (id === 'wechat' ? '未测试 · ' : '') + (item?.connected ? '已连接' : authorized?.connected ? '已授权，待启用' : '未连接')); }),
+      destination('B 站', '扫码连接后，按授权浏览、评论或发送私信。', () => openSection('bilibili'), '未测试')),
+    destinationGroup('账号与附加功能',
+      destination('社交身份', '登记平台账号，核对连接与可用能力。', () => openSection('accounts')),
+      destination('声音', '选择音色、试听，或交由相续决定。', () => openSection('voice')),
+      destination('QQ 动态扩展', '需要自备兼容服务；普通 OneBot 可能缺少空间接口。', () => openSection('provider-feed'), '未测试')));
   if (state.view === 'accounts') return socialIdentitiesPanel({ generation, connections });
   if (['qq-official', 'wechat', 'qq-permissions', 'wechat-permissions'].includes(state.view)) {
     const id = state.view.split('-')[0], connection = connections.find(value => value.id === id) ?? { id, enabled: false, connected: false, config: {} };
@@ -1905,12 +2105,18 @@ async function mediaPage() {
   const view = await mediaRequest('media.inspect', { includeConfiguration: true });
   const identity = view.identity ?? {}, limits = view.limits ?? {}, container = element('div');
   const providers = Array.isArray(view.providers) ? view.providers : [];
-  if (!state.view) return element('div', {}, element('p', { class: 'page-note' }, identity.primaryAssetId ? '已保存主参考形象，创作时可沿用。' : '先留下形象描述或参考图，让后续作品有一致的形象。'),
-    button(providers.some(item => item.enabled && item.configured && item.capabilities?.generate) ? '开始创作' : '连接图片服务', () => openSection(providers.some(item => item.enabled && item.configured && item.capabilities?.generate) ? 'create' : 'provider-image'), 'primary'),
-    destinations(destination('形象档案', '外貌描述、参考图，以及谁可以修改。', () => openSection('identity')),
-      destination('作品与任务', '查看已保存的作品和生成进度。', () => openSection('gallery')),
-      destination('可选翻唱服务','使用自备服务和已保存音频制作，查看任务与下载结果。',()=>openSection('provider-cover')),
-      ...['image', 'video'].map(kind => { const provider = providers.find(item => item.kind === kind); return destination(kind === 'image' ? '图片服务' : '视频服务', kind === 'image' ? '连接 Images API 或 ComfyUI。' : '连接已部署的 ComfyUI 视频工作流。', () => openSection('provider-' + kind), provider?.enabled && provider?.configured ? '已开启' : '未开启'); })));
+  if (!state.view) {
+    const canGenerate = providers.some(item => item.enabled && item.configured && item.capabilities?.generate);
+    return element('div', {}, element('div', { class: 'creation-entry' },
+      element('p', { class: 'page-note' }, identity.primaryAssetId ? '已保存主参考形象，创作时可沿用。' : '留下形象描述或参考图，让后续作品保持一致。'),
+      button(canGenerate ? '开始创作' : '连接图片服务', () => openSection(canGenerate ? 'create' : 'provider-image'), 'primary')),
+    destinationGroup('形象与作品',
+      destination('形象档案', '外貌描述、参考图，以及谁可以修改。', () => openSection('identity')),
+      destination('作品与任务', '查看已保存的作品和生成进度。', () => openSection('gallery'))),
+    destinationGroup('创作服务',
+      ...['image', 'video'].map(kind => { const provider = providers.find(item => item.kind === kind); return destination(kind === 'image' ? '图片服务' : '视频服务', kind === 'image' ? '连接 Images API 或 ComfyUI。' : '连接已部署的 ComfyUI 视频工作流。', () => openSection('provider-' + kind), provider?.enabled && provider?.configured ? '已开启' : '未开启'); }),
+      destination('可选翻唱服务', '使用自备服务制作翻唱，查看任务并下载结果。', () => openSection('provider-cover'))));
+  }
   const assets = state.view === 'gallery' ? await mediaRequest('media.listAssets', { limit: 12 }) : { items: [] };
   const description = field('identity-description', '形象描述', identity.description ?? '', { multiline: true, hint: '用于保持角色身份的外貌描述；动作、衣服与场景可以在每次创作时变化。' });
   const locked = element('input', { type: 'checkbox', checked: identity.locked === true });
@@ -2088,11 +2294,14 @@ async function tasksPage() {
 }
 
 async function maintenancePage() {
-  const container = element('div'), resultArea = element('div'), root = state.status.memoryRoot ?? state.instances.find(item => item.id === state.instanceId)?.memoryRoot;
-  if (!state.view) return destinations(destination('检查数据', '检查格式、文件和恢复状态。', () => openSection('validate')),
-    destination('创建备份', '保存一份经过校验的可恢复副本。', () => openSection('backup')),
-    destination('从备份恢复', '替换当前人格的数据，需要明确确认。', () => openSection('restore')),
-    destination('运行诊断', '查看错误、用量、来源缺口和交付回执。', () => openSection('diagnostics')));
+  const container = element('div', { class: 'settings-detail' }), resultArea = element('div'), root = state.status.memoryRoot ?? state.instances.find(item => item.id === state.instanceId)?.memoryRoot;
+  if (!state.view) return element('div', {},
+    destinationGroup('检查与排错',
+      destination('检查数据', '检查格式、文件和恢复状态。', () => openSection('validate')),
+      destination('运行诊断', '查看错误、用量、来源缺口和交付回执。', () => openSection('diagnostics'))),
+    destinationGroup('备份与恢复',
+      destination('创建备份', '保存一份经过校验的可恢复副本。', () => openSection('backup')),
+      destination('从备份恢复', '替换当前人格的数据，需要明确确认。', () => openSection('restore'))));
   async function maintenance(action, args, title, description, danger = false) {
     const confirmation = await confirmOperation({ title, description, preview: { instanceId: state.instanceId, memoryRoot: root, ...args }, danger, accept: title }); if (!confirmation) return;
     const result = await request('maintenance.' + action, args); replace(resultArea, card('维护操作结果', '以下是本次真实返回值，失败与结果未知不会显示为完成。', result?.requiresLoad ? notice('操作后实例保持停用。核对结果后，前往“设置与加载”明确加载；加载时才恢复持久调度。', 'warning') : null, data(result))); toast('维护请求已返回。');

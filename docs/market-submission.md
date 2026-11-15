@@ -1,6 +1,13 @@
 # DSH Market 收录申请
 
-当前发布版本：**0.14.0**。新增只读[3D记忆关联图](memory-graph-3d.md)，原QQ恢复、记忆定位和生命周期修复保持；0.13.6及更早验收保留原范围。目标仓库：[MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona)。[收录PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004)已于2026-10-28T17:23:08Z合并，即北京时间2026-10-29 01:23:08；上游main已包含[目录条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/MingoYung__dsh-Xiangxu-Persona.yml)。这证明目录收录已合并，不表示所有市场客户端缓存均已刷新。
+插件通过 [收录 PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004) 合并入 DSH Market 目录，时间为北京时间 2026-10-29 01:23:08。[目录条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/MingoYung__dsh-Xiangxu-Persona.yml) 指向 [MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona) 仓库，版本以插件 manifest 为准，客户端按市场更新机制刷新。
+
+## 0.14.1
+
+- DSH NEXT 2.0.23-next 使用 Harness SDK 0.2.2-rc.3。此版兼容新旧原生委派参数，并保留独立工作会话和已有结果回收机制。新版隔离宿主的固定响应验证覆盖生命周期 29 项、角色挂载 40 项、委派 35 项和整理 59 项。
+- [记忆页](memory-graph-3d.md)内嵌只读 3D 图谱，支持键盘切换到列表、分页、原件预览及图谱定位。新版 DSH 隔离设置页通过 16 项检查。正式桌面曾观察到浅色主题与深色动态壁纸组合时的低对比度。
+- 历史回补校验来源及内容，Windows 备份发布对暂时的目录占用做有限重试。测试入口要求明确模式及隔离路径，命令帮助只打印用法。见[宿主测试说明](host-test-results.md#重跑命令)。
+- QQ 私聊和群聊通过新版宿主的本地模拟桥验证。真实 QQ／微信收发及真实模型自然聊天属于后续实机验收。
 
 ## 本轮材料与反馈入口
 

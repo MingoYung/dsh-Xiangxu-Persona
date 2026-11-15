@@ -69,6 +69,31 @@ test('same-room participants keep separate external facts and only explicit pers
   assert.equal(f.modelCalls, 0); assert.deepEqual(f.agents.get(A).restrictions[0], { allow: [] });
 });
 
+test('a known platform actor keeps old and new nicknames without giving a same-name actor its memory', async t => {
+  const f = await fixture(t); await f.register();
+  const a = f.agents.get(A), b = f.agents.get(B);
+  const original = user('first-name-source', 'I brought the blue notebook');
+  a.agent.inbox.nextTurn.push(original);
+  await f.enter(A, original, 1);
+  await a.tools.get('persona_decide').execute({ identityPlan: { action: 'new', personId: 'known_actor' } }, { agent: a.agent, callId: 'bind-known-actor' });
+  a.agent.inbox.nextTurn.length = 0;
+  const renamed = { ...facts('A'), sender: { ...facts('A').sender, name: 'New name' } };
+  await f.coordinator.registerExternalChannel(A, renamed);
+  await f.enter(A, user('changed-name-source', 'Still the same notebook', 'A', { xiangxuChannel: renamed }), 2);
+  const other = { ...facts('B'), sender: { ...facts('B').sender, name: 'New name' } };
+  await f.coordinator.registerExternalChannel(B, other);
+  await f.enter(B, user('unrecognized-same-name', 'A different speaker', 'B', { xiangxuChannel: other }), 1);
+  const profile = (await f.coordinator.repository.listPeople()).find(row => row.personId === 'known_actor');
+  assert.deepEqual(profile.names.map(entry => [entry.name, entry.observedOn.senderId, entry.srcRefs[0].sourceEventId]),
+    [['Display A', 'sender-A', 'first-name-source'], ['New name', 'sender-A', 'changed-name-source']]);
+  const lookup = await b.tools.get('persona_introspect').execute({ section: 'names', nameQuery: 'New name' }, { agent: b.agent, callId: 'lookup-name-without-binding' });
+  assert.match(JSON.stringify(lookup), /known_actor/);
+  assert.equal(f.coordinator.contextFor(b.agent).personId, null);
+  const retained = (await f.coordinator.repository.getContext({ personId: 'known_actor' })).records;
+  assert.deepEqual(retained.map(row => row.sourceEventId).sort(), ['changed-name-source', 'first-name-source']);
+  assert.equal(f.modelCalls, 0);
+});
+
 test('unknown or failed platform output stays a draft in hot state and does not acknowledge incoming originals', async t => {
   for (const deliveryStatus of ['unknown', 'failed']) await t.test(deliveryStatus, async st => {
     const f = await fixture(st); await f.register(); let observed;

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { mountCompanionScope } from '../adapters/dsh/companion-scope.js';
 import { createDshCoordinator } from '../adapters/dsh/index.js';
 
-function fixture({ loaded = false, preexisting = false, preset = 'persona-memory', attach, detach } = {}) {
+function fixture({ loaded = false, preexisting = false, preset = 'persona-memory', attach, detach, tools, isWorkerSession } = {}) {
   const handlers = new Map(), cleanup = [], roster = new Map(), selections = new WeakMap(), calls = [], warnings = [];
   const globalTools = new Map([['agent_dispatch', () => 'delegated'], ['shell', () => 'executed']]);
   const localTools = new Map(), masks = new Map(), localHandlers = new Map();
@@ -20,12 +20,12 @@ function fixture({ loaded = false, preexisting = false, preset = 'persona-memory
     roster.set(id, value); selections.set(value.ctx, selected); return value;
   }
   const primary = agent();
-  const ctx = { get(name) { return name === 'agents' ? { get: id => roster.get(id), list: () => preexisting ? [...roster.values()] : [] } : name === 'agentPresets' ? { composedPreset: scope => selections.get(scope) } : undefined; },
+  const ctx = { get(name) { return name === 'agents' ? { get: id => roster.get(id), list: () => preexisting ? [...roster.values()] : [] } : name === 'agentPresets' ? { composedPreset: scope => selections.get(scope) } : name === 'tools' ? (typeof tools === 'function' ? tools() : tools) : undefined; },
     on(name, handler, options) { handlers.set(name, { handler, options }); }, effect: fn => cleanup.push(fn()), logger: { warn: value => warnings.push(value) } };
   const manager = { getCoordinator: () => current, async attachAgent(value) { calls.push({ kind: 'attach', agent: value }); await attach?.(value); if (current) localTools.set(value.id, ['persona_decide']); } };
-  mountCompanionScope(ctx, manager);
+  mountCompanionScope(ctx, manager, { isWorkerSession });
   return { primary, agent, roster, selections, calls, warnings, masks, cleanup, globalTools, localTools, localHandlers, handlers,
-    mountAnother() { const otherHandlers = new Map(), otherCleanup = []; mountCompanionScope({ ...ctx, on(name, handler) { otherHandlers.set(name, handler); }, effect: fn => otherCleanup.push(fn()) }, manager); return { created: value => otherHandlers.get('agent/created')({ agent: value }), cleanup: otherCleanup }; },
+    mountAnother() { const otherHandlers = new Map(), otherCleanup = []; mountCompanionScope({ ...ctx, on(name, handler) { otherHandlers.set(name, handler); }, effect: fn => otherCleanup.push(fn()) }, manager, { isWorkerSession }); return { created: value => otherHandlers.get('agent/created')({ agent: value }), cleanup: otherCleanup }; },
     set current(value) { current = value; }, coordinator,
     created: value => handlers.get('agent/created').handler({ agent: value }),
     select(value, selected) { selections.set(value.ctx, selected); return handlers.get('agent-preset/selected').handler(value.id, selected); },
@@ -201,4 +201,139 @@ test('first prompt assembly waits for full attachment and refreshes the authorit
   assert.equal(first.tools[0].name, 'persona_task'); assert.equal(decorated, 1); first.tools[0].parameters.properties.action.type = 'number'; assert.equal(parameters.properties.action.type, 'string');
   mode = 'ptc'; const ptc = await handlers.get('system-prompt/assemble')({ sections: [], tools: [] }, { agent, scope }, async () => ({ sections: [], tools: [] })); assert.equal(ptc.tools[0].name, 'run_code');
   await cleanup[0]();
+});
+
+test('native tool resolution waits before capturing the first late-selected companion tool set', async () => {
+  let release, captured = 0, receiver;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const tools = { async resolve({ agent }) { captured++; receiver = this; return Object.freeze([...f.visible(agent)]); } };
+  const original = tools.resolve, f = fixture({ loaded: true, preset: 'coding', attach: () => waiting, tools });
+  f.selections.set(f.primary.ctx, 'persona-memory'); // Composition exists; selected event has not arrived.
+  let complete = false;
+  const resolving = tools.resolve({ agent: f.primary }).then(value => { complete = true; return value; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(complete, false); assert.equal(captured, 0); assert.deepEqual(f.visible(), []);
+  release(); assert.deepEqual(await resolving, ['persona_decide']); assert.equal(receiver, tools);
+  assert.equal(f.calls.filter(call => call.kind === 'attach').length, 1);
+  await f.cleanup[0](); assert.equal(tools.resolve, original);
+});
+
+test('the native resolve barrier leaves other presets and trusted workers independent of a slow companion attach', async () => {
+  let release;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const tools = { async resolve({ agent }) { return f.visible(agent); } };
+  const f = fixture({ loaded: true, attach: () => waiting, tools, isWorkerSession: id => id === 'worker' });
+  const resolving = tools.resolve({ agent: f.primary });
+  const coding = f.agent('coding', 'coding'), worker = f.agent('worker');
+  assert.deepEqual(await tools.resolve({ agent: coding }), ['agent_dispatch', 'shell']);
+  assert.deepEqual(await tools.resolve({ agent: worker }), ['agent_dispatch', 'shell']);
+  assert.equal(f.calls.length, 1); release(); await resolving; await f.cleanup[0]();
+});
+
+test('native resolve propagates attachment failure before capturing a partial tool set', async () => {
+  let captured = 0;
+  const failure = Object.assign(new Error('attachment failed'), { code: 'ATTACH_FAILED' });
+  const tools = { async resolve() { captured++; return []; } };
+  const f = fixture({ loaded: true, tools, attach: async () => { throw failure; } });
+  await assert.rejects(tools.resolve({ agent: f.primary }), error => error === failure);
+  assert.equal(captured, 0); await f.cleanup[0]();
+});
+
+test('aborting native resolve does not cancel shared attachment or capture stale definitions', async () => {
+  let release, captured = 0;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const tools = { async resolve({ agent }) { captured++; return f.visible(agent); } };
+  const f = fixture({ loaded: true, tools, attach: () => waiting }), controller = new AbortController();
+  const abort = Object.assign(new Error('cancelled by host'), { name: 'AbortError' });
+  const resolving = tools.resolve({ agent: f.primary, signal: controller.signal });
+  await new Promise(resolve => setImmediate(resolve)); controller.abort(abort);
+  await assert.rejects(resolving, error => error === abort); assert.equal(captured, 0);
+  release(); assert.deepEqual(await tools.resolve({ agent: f.primary }), ['persona_decide']);
+  assert.equal(f.calls.filter(call => call.kind === 'attach').length, 1); await f.cleanup[0]();
+});
+
+test('traced service proxies and overlapping preset revisions share and release one native resolve barrier', async () => {
+  const prototype = { async resolve({ agent }) { assert.equal(this[Symbol.for('cordis.original')], raw); return f.visible(agent); } };
+  const raw = Object.create(prototype), proxies = [];
+  const proxy = () => { const value = new Proxy(raw, { get(target, key, receiver) { return key === Symbol.for('cordis.original') ? target : Reflect.get(target, key, receiver); } }); proxies.push(value); return value; };
+  const f = fixture({ loaded: true, tools: proxy }), wrapper = raw.resolve, next = f.mountAnother();
+  assert.equal(raw.resolve, wrapper); assert.equal(Object.hasOwn(raw, 'resolve'), true);
+  assert.deepEqual(await proxies[0].resolve({ agent: f.primary }), ['persona_decide']);
+  assert.equal(f.calls.filter(call => call.kind === 'attach').length, 1);
+  await f.cleanup[0](); assert.equal(raw.resolve, wrapper); assert.equal(f.calls.filter(call => call.kind === 'detach').length, 0);
+  assert.deepEqual(await proxies.at(-1).resolve({ agent: f.primary }), ['persona_decide']);
+  await next.cleanup[0](); assert.equal(raw.resolve, prototype.resolve); assert.equal(Object.hasOwn(raw, 'resolve'), false);
+  assert.equal(f.calls.filter(call => call.kind === 'detach').length, 1);
+});
+
+test('leaving a preset during native resolution drains its late attachment before the next preset snapshot', async () => {
+  let release, captured = 0;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const tools = { async resolve({ agent }) { captured++; return f.visible(agent); } };
+  const f = fixture({ loaded: true, tools, attach: () => waiting });
+  const resolving = tools.resolve({ agent: f.primary });
+  await new Promise(resolve => setImmediate(resolve)); const leaving = f.select(f.primary, 'coding');
+  release(); assert.deepEqual(await resolving, ['agent_dispatch', 'shell']); await leaving;
+  assert.equal(captured, 1); assert.equal(f.localTools.size, 0); await f.cleanup[0]();
+});
+
+test('native resolve cannot attach an Agent replaced under the same session ID', async () => {
+  const tools = { async resolve({ agent }) { return agent.id; } };
+  const f = fixture({ loaded: true, tools }), replacement = f.agent(f.primary.id);
+  assert.equal(await tools.resolve({ agent: f.primary }), f.primary.id); assert.equal(f.calls.length, 0);
+  await tools.resolve({ agent: replacement }); assert.equal(f.calls[0].agent, replacement); await f.cleanup[0]();
+});
+
+test('an already aborted native resolution never starts a companion attachment', async () => {
+  let captured = 0;
+  const tools = { async resolve() { captured++; } }, f = fixture({ loaded: true, tools });
+  const controller = new AbortController(); controller.abort(new Error('already stopped'));
+  await assert.rejects(tools.resolve({ agent: f.primary, signal: controller.signal }), /already stopped/);
+  assert.equal(f.calls.length, 0); assert.equal(captured, 0); await f.cleanup[0]();
+});
+
+test('last scope disposal preserves an independently installed tools resolve wrapper', async () => {
+  const tools = { async resolve() { return 'native'; } }, f = fixture({ loaded: true, tools });
+  const ours = tools.resolve, later = async function (...args) { return ours.apply(this, args); };
+  tools.resolve = later;
+  await f.cleanup[0](); assert.equal(tools.resolve, later); assert.equal(await tools.resolve({ agent: f.primary }), 'native');
+});
+
+test('an in-flight native resolution waits for a replacement preset revision before taking its snapshot', async () => {
+  let release, count = 0;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const tools = { async resolve({ agent }) { return f.visible(agent); } };
+  const original = tools.resolve, f = fixture({ loaded: true, tools, attach: () => ++count === 1 ? waiting : undefined });
+  const resolving = tools.resolve({ agent: f.primary });
+  await new Promise(resolve => setImmediate(resolve));
+  const oldCleanup = f.cleanup[0](), next = f.mountAnother();
+  release(); assert.deepEqual(await resolving, ['persona_decide']); await oldCleanup;
+  assert.deepEqual(f.calls.map(call => call.kind), ['attach', 'detach', 'attach']);
+  assert.notEqual(tools.resolve, original); await next.cleanup[0](); assert.equal(tools.resolve, original);
+});
+
+test('native resolution starting after preset leave waits for its exact retiring mask without attaching unrelated agents', async () => {
+  let releaseDetach, captured = 0;
+  const waiting = new Promise(resolve => { releaseDetach = resolve; });
+  const tools = { async resolve({ agent }) { captured++; return f.visible(agent); } };
+  const f = fixture({ loaded: true, tools, detach: () => waiting });
+  await f.created(f.primary); const leaving = f.select(f.primary, 'coding');
+  let complete = false;
+  const resolving = tools.resolve({ agent: f.primary }).then(value => { complete = true; return value; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(complete, false); assert.equal(captured, 0);
+  const unrelated = f.agent('other-coding', 'coding');
+  assert.deepEqual(await tools.resolve({ agent: unrelated }), ['agent_dispatch', 'shell']);
+  assert.equal(f.calls.filter(call => call.kind === 'attach').length, 1);
+  releaseDetach(); assert.deepEqual(await resolving, ['agent_dispatch', 'shell']); await leaving;
+  assert.equal(f.localTools.size, 0); await f.cleanup[0]();
+});
+
+test('an aborted native resolve handles a later shared attachment rejection without an unhandled promise', async () => {
+  let rejectAttach, captured = 0;
+  const waiting = new Promise((_resolve, reject) => { rejectAttach = reject; });
+  const tools = { async resolve() { captured++; } }, f = fixture({ loaded: true, tools, attach: () => waiting });
+  const controller = new AbortController(), resolving = tools.resolve({ agent: f.primary, signal: controller.signal });
+  await new Promise(resolve => setImmediate(resolve)); controller.abort(new Error('request cancelled'));
+  await assert.rejects(resolving, /request cancelled/); rejectAttach(new Error('late attach failure'));
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(captured, 0); await f.cleanup[0]();
 });

@@ -37,7 +37,9 @@ test('structured-only native mail preserves actor, original empty text, independ
 });
 
 test('channel intake accepts media-only events and fingerprints rich facts before native dispatch',async t=>{
-  const root=await temp(t);let disk=null;const received=[];const service=createChannelService({getCoordinator:()=>({memoryRoot:root,ready:Promise.resolve(),agents:new Map()}),port:0,storage:{read:async()=>disk,write:async next=>{disk=structuredClone(next);}},channelPort:{create:async b=>b,send:async(b,m)=>received.push(m),close:async()=>{}},clientFactory:()=>({probe:async()=>({connected:true,status:'connected',capabilities:{text:true,group:true}})})});t.after(()=>service.close());await service.ready;
+  const root=await temp(t);let disk=null;const received=[];
+  const coordinator={memoryRoot:root,ready:Promise.resolve(),agents:new Map()};
+  const service=createChannelService({getCoordinator:()=>coordinator,port:0,storage:{read:async()=>disk,write:async next=>{disk=structuredClone(next);}},channelPort:{create:async b=>b,send:async(b,m)=>received.push(m),close:async()=>{}},clientFactory:()=>({probe:async()=>({connected:true,status:'connected',capabilities:{text:true,group:true}})})});t.after(()=>service.close());await service.ready;
   await service.configure({id:'qq',config:{apiUrl:'http://127.0.0.1:32123',accountId:'100',allowedGroupIds:['200']}});const ingress=await service.rotateIngress({id:'qq'}),status=await service.start({id:'qq'}),url=status.connections[0].callbackUrl;
   const post=async payload=>{const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+ingress.ingressToken},body:JSON.stringify(payload)});return{http:response.status,body:await response.json()};};
   assert.equal((await post(event())).body.status,'accepted');assert.equal(received[0].text,'');assert.equal(received[0].structured.rich.faces[0].faceId,'14');

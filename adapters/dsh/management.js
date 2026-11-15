@@ -117,6 +117,9 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
   const initialized = new WeakSet(), active = new Map(); let operationQueue = Promise.resolve();
   const serializeOps = callback => { const task = operationQueue.then(callback); operationQueue = task.catch(() => {}); return task; };
   const instanceList = async () => typeof listInstances === 'function' ? listInstances() : { items: [], activeInstanceId: null };
+  function failedStartup(instances, instanceId) {
+    return instances.autoLoad && !instances.activeInstanceId && instanceId === instances.selectedInstanceId ? instances.error : null;
+  }
   async function coordinator(args, optional = false) {
     const value = await getCoordinator(args.instanceId);
     if (!value) { if (optional) return null; throw error('PERSONA_NOT_LOADED', 'Load a personality instance before this operation'); }
@@ -192,10 +195,24 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
     if (action.startsWith('maintenance.') && ['validate', 'backup', 'restore', 'recover'].includes(action.slice(12))) {
       const method = maintenance[action.slice(12)]; if (!method) throw error('MANAGEMENT_MAINTENANCE_UNAVAILABLE', 'Maintenance port unavailable'); return method(args);
     }
-    const c = await coordinator(args, action === 'status');
+    const c = await coordinator(args, action === 'status' || action === 'runtime.presence');
+    if (action === 'runtime.presence') {
+      if (!c) {
+        const instances = await instanceList();
+        return { state: failedStartup(instances, args.instanceId ?? instances.selectedInstanceId) ? 'error' : 'unloaded' };
+      }
+      if (c.initializationError) return { state: 'error' };
+      const { sleep } = await c.repository.getRuntime();
+      return { state: ['awake', 'sleeping'].includes(sleep?.state) ? sleep.state : 'unknown' };
+    }
     if (action === 'status') {
       const instances = await instanceList();
-      if (!c) return { available: false, unloaded: true, instances, instanceId: args.instanceId ?? instances.activeInstanceId ?? null, runtime: null, capacity: null, agents: [], errors: [] };
+      if (!c) {
+        const instanceId = args.instanceId ?? instances.selectedInstanceId ?? instances.activeInstanceId ?? null;
+        const failure = failedStartup(instances, instanceId);
+        return { available: false, unloaded: !failure, instances, instanceId, runtime: null, capacity: null, agents: [],
+          errors: failure ? [{ code: failure.code ?? 'INITIALIZATION_FAILED', message: short(failure.message, 600) }] : [] };
+      }
       if (c.initializationError) return { available: false, instances, memoryRoot: c.memoryRoot, errors: [{ code: c.initializationError.code ?? 'INITIALIZATION_FAILED', message: short(c.initializationError.message, 600) }] };
       const state = await c.repository.getRuntime(), capacity = await c.repository.getCapacity(), jobs = Object.values(state.execution?.consolidationJobs ?? {});
       const self = await c.repository.getSelfProfile?.();
@@ -234,8 +251,19 @@ export function createManagementService({ getCoordinator, listInstances, lifecyc
     }
     if (action === 'state.get') return pageDetail(action, args, await repo.getRuntime());
     if (action === 'people.list') {
-      const needle = String(args.query ?? '').toLocaleLowerCase(), people = (await repo.listPeople()).filter(row => !needle || JSON.stringify(row).toLocaleLowerCase().includes(needle));
-      return pageList(action, args, people.map(row => ({ id: row.personId, personId: row.personId, displayName: short(row.displayName, 160), aliases: (row.aliases ?? []).slice(0, 10).map(value => short(value, 80)), updatedAt: row.updatedAt })));
+      const needle = String(args.query ?? '').trim().toLocaleLowerCase();
+      const matches = value => typeof value === 'string' && value.toLocaleLowerCase().includes(needle);
+      const people = [];
+      for (const row of await repo.listPeople()) {
+        const aliases = (row.aliases ?? []).filter(value => typeof value === 'string' && value);
+        const names = [...new Set([...(row.names ?? []).map(entry => entry?.name), ...aliases])]
+          .filter(value => typeof value === 'string' && value && value !== row.displayName);
+        if (needle && ![row.personId, row.displayName, ...names].some(matches)) continue;
+        const preview = needle ? [...names.filter(matches), ...names.filter(value => !matches(value))] : names;
+        people.push({ id: row.personId, personId: row.personId, displayName: short(row.displayName, 160),
+          aliases: aliases.slice(0, 10).map(value => short(value, 80)), namePreview: preview.slice(0, 3).map(value => short(value, 80)), updatedAt: row.updatedAt });
+      }
+      return pageList(action, args, people);
     }
     if (action === 'persona.get') {
       if (args.section === 'deep') return pageDetail(action, args, await repo.introspect({ section: 'deep' }));

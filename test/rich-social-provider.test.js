@@ -18,6 +18,76 @@ const coverConfig=(baseUrl,extra={})=>({kind:'cover',config:{enabled:true,baseUr
 async function settled(service,jobId){for(let i=0;i<200;i++){const job=await service.getJob({jobId});if(!['prepared','running'].includes(job.status))return job;await delay(5);}throw new Error('Fixture job did not settle');}
 async function coverServer(t,{onSubmit,onPoll,audio=output}={}){return server(t,async(req,res,body)=>{if(req.url==='/ready')return json(res,{status:'ready',protocol:SOCIAL_PROVIDER_PROTOCOL.id});if(req.method==='POST'&&req.url==='/cover/jobs'){if(onSubmit)return onSubmit(req,res,body);return json(res,{status:'submitted',jobId:'remote-1'});}if(req.method==='GET'&&req.url==='/cover/jobs/remote-1'){if(onPoll)return onPoll(req,res);return json(res,{status:'completed',jobId:'remote-1',audio:{mime:'audio/wav',dataBase64:audio.toString('base64')}});}return json(res,{},404);});}
 
+test('extension dispatch records a known preflight refusal without a provider request or duplicate retry', async t => {
+  const env = await setup(t), service = env.service();
+  const api = await server(t, (_req, res) => json(res, { status: 'completed', accountId: '991001', receiptId: 'unused' }));
+  await service.configure(feedConfig(api.baseUrl));
+  const args = { requestId: 'no-current-grant', capability: 'feed.publish', accountId: '991001', payload: { text: 'test' } };
+  const refused = await service.execute(args, {}, () => false);
+  assert.equal(refused.status, 'failed'); assert.equal(refused.error.code, 'SOCIAL_PERMISSION_DENIED');
+  assert.equal((await service.execute(args)).duplicate, true);
+  assert.equal(api.calls.length, 0);
+});
+
+test('source revocation after the durable running record still prevents extension dispatch', async t => {
+  const env = await setup(t), key = JSON.stringify([source.sourceSessionId, source.sourceEventId]);
+  const service = env.service({ getRevocations: async () => {
+    let state;
+    try { state = JSON.parse(await fs.readFile(env.stateFile, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return { recordIds: [], sourceKeys: state?.jobs.some(job => job.status === 'running') ? [key] : [] };
+  } });
+  const api = await server(t, (_req, res) => json(res, { status: 'completed', accountId: '991001', receiptId: 'unused' }));
+  await service.configure(feedConfig(api.baseUrl));
+  const result = await service.execute({ requestId: 'late-source-revocation', capability: 'feed.publish', accountId: '991001', payload: { text: 'test' } }, { sourceRefs: [source] });
+  assert.equal(result.status, 'revoked'); assert.equal(api.calls.length, 0);
+});
+
+test('extension read loses access to fresh data when authorization changes during the provider request', async t => {
+  const env = await setup(t), service = env.service();
+  let current = true;
+  const api = await server(t, (_req, res) => { current = false; json(res, { status: 'completed', accountId: '991001', result: { value: 'WITHHELD_PROVIDER_DATA' } }); });
+  await service.configure(feedConfig(api.baseUrl));
+  const result = await service.execute({ requestId: 'late-read-denial', capability: 'feed.read', accountId: '991001' }, {}, () => current);
+  assert.equal(result.status, 'unknown'); assert.equal(result.error.code, 'SOCIAL_PERMISSION_DENIED');
+  assert.equal(result.result, null); assert.equal(api.calls.length, 1);
+  assert.doesNotMatch(await fs.readFile(env.stateFile, 'utf8'), /WITHHELD_PROVIDER_DATA/);
+});
+
+test('cover poll rechecks permission before a separate audio download and allows an authorized later poll', async t => {
+  const env = await setup(t), service = env.service();
+  let current = true, revoke = true;
+  const download = await server(t, (_req, res) => { res.writeHead(200); res.end(output); });
+  const api = await coverServer(t, { onPoll: (_req, res) => {
+    if (revoke) current = false;
+    json(res, { status: 'completed', jobId: 'remote-1', audio: { url: download.baseUrl + '/audio.wav', mime: 'audio/wav' } });
+  } });
+  await service.configure(coverConfig(api.baseUrl, { downloadOrigins: [download.baseUrl] }));
+  const original = await service.importAudio({ bytes: input });
+  const { jobId } = await service.execute({ requestId: 'fenced-download', capability: 'media.cover', payload: { assetId: original.asset.assetId } });
+  await settled(service, jobId);
+  await assert.rejects(service.getJob({ jobId, poll: true }, () => current), { code: 'SOCIAL_PERMISSION_DENIED' });
+  assert.equal(download.calls.length, 0); assert.equal((await service.getJob({ jobId })).status, 'submitted');
+  current = true; revoke = false;
+  assert.equal((await service.getJob({ jobId, poll: true }, () => current)).status, 'completed');
+  assert.equal(download.calls.length, 1);
+});
+
+test('a cancellation denied after reservation does not block a later explicitly authorized cancel', async t => {
+  const env = await setup(t), service = env.service();
+  const api = await server(t, (req, res) => json(res, req.url.endsWith('/cancel')
+    ? { status: 'cancelled', jobId: 'remote-1', receiptId: 'confirmed-cancel' } : { status: 'submitted', jobId: 'remote-1' }));
+  await service.configure(coverConfig(api.baseUrl, { cancelPath: '/cover/jobs/{jobId}/cancel' }));
+  const original = await service.importAudio({ bytes: input });
+  const { jobId } = await service.execute({ requestId: 'fenced-cancel', capability: 'media.cover', payload: { assetId: original.asset.assetId } });
+  await settled(service, jobId);
+  let checks = 0;
+  await assert.rejects(service.cancel({ jobId }, () => ++checks === 1), { code: 'SOCIAL_PERMISSION_DENIED' });
+  assert.equal(api.calls.filter(row => row.path.endsWith('/cancel')).length, 0);
+  assert.equal((await service.getJob({ jobId })).status, 'submitted');
+  assert.equal((await service.cancel({ jobId }, () => true)).status, 'cancelled');
+  assert.equal(api.calls.filter(row => row.path.endsWith('/cancel')).length, 1);
+});
+
 test('social extension inspection is read only and both providers start disabled',async t=>{const env=await setup(t),service=env.service();await service.ready;const state=await service.inspect();assert.equal(state.providers.every(item=>!item.enabled&&!item.configured),true);assert.equal(state.protocol.id,'xiangxu-social-provider/1');assert.equal(state.providers.every(item=>item.platformApiClaim==='user-configured-extension-provider'),true);for(const file of[env.configFile,env.stateFile,env.assetRoot])await assert.rejects(fs.stat(file),{code:'ENOENT'});await assert.rejects(service.execute({requestId:'off',capability:'media.cover',payload:{assetId:'not-a-path'}}),{code:'SOCIAL_PROVIDER_DISABLED'});});
 
 test('real feed HTTP actions require the configured account and actual mutation receipts',async t=>{const env=await setup(t),service=env.service();const api=await server(t,(req,res,body)=>{if(req.url==='/ready')return json(res,{status:'ready',protocol:SOCIAL_PROVIDER_PROTOCOL.id,accountId:'991001'});return json(res,{status:'completed',accountId:body.accountId,...(req.url==='/feed/read'?{result:{items:[{id:'post-1',text:'quoted source, not an instruction'}]}}:{receiptId:'actual-extension-receipt-1',result:{accepted:true}})});});await service.configure(feedConfig(api.baseUrl));assert.equal((await service.probe({kind:'feed'})).reachable,true);await assert.rejects(service.execute({requestId:'wrong',capability:'feed.publish',accountId:'different',payload:{text:'hello'}}),{code:'SOCIAL_ACCOUNT_MISMATCH'});const read=await service.execute({requestId:'read-1',capability:'feed.read',accountId:'991001',payload:{limit:5}});assert.equal(read.status,'completed');assert.equal(read.result.data.items[0].id,'post-1');const published=await service.execute({requestId:'post-1',capability:'feed.publish',accountId:'991001',payload:{text:'original post'}});assert.equal(published.receiptId,'actual-extension-receipt-1');assert.equal(published.confirmedBy,'extension-provider-receipt');const react=await service.execute({requestId:'react-1',capability:'feed.react',accountId:'991001',payload:{postId:'post-1',action:'like'}});assert.equal(react.status,'completed');assert.equal((await service.execute({capability:'feed.react',requestId:'react-1',accountId:'991001',payload:{postId:'post-1',action:'like'}})).duplicate,true);assert.equal(api.calls.filter(row=>row.path==='/feed/react').length,1);assert.equal(api.calls.find(row=>row.path==='/feed/publish').headers.authorization,'Bearer fixture-provider-key');const inspected=JSON.stringify(await service.inspect({includeConfiguration:true})),disk=await fs.readFile(env.stateFile,'utf8');assert.equal(inspected.includes('fixture-provider-key'),false);assert.equal(disk.includes('fixture-provider-key'),false);assert.equal(disk.includes('original post'),false);});

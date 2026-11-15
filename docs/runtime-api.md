@@ -12,6 +12,8 @@ await runtime.open();
 
 `clock` is an epoch-ms function, or `{now(),setTimeout(fn,delay),clearTimeout(id)}`. Supplying a fake clock or `autoSchedule:false` allows a caller to drive `handleDue()` without real timers. No fixed polling interval is installed. Long timers are split only to respect the native timer range; this never triggers an early personality decision.
 
+The required environment snapshot carries `now` in epoch milliseconds, `timezone`, and `localTime` derived from that same instant with the configured offset. One request keeps the same instant while fitting its context budget. An event's `sourceAt` remains separate from the `observedAt` when the adapter received or recovered it.
+
 ## Model port
 
 `model.complete({purpose,messages,context?,run?,requestId,signal,maxOutputTokens})` returns:

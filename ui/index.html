@@ -6,6 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>dsh-Xiangxu-Persona · 相续人格管理</title>
   <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./brain-anatomy.js"></script>
   <script type="module" src="./memory-graph.js"></script>
   <script type="module" src="./app.js"></script>
 </head>
@@ -25,6 +26,7 @@
       </div>
       <main id="main" tabindex="-1">
         <div class="page-header"><div class="page-heading"><button id="page-back" class="button link page-back" type="button" hidden>返回相处</button><h1 id="page-title">相处</h1><p id="page-description">连接后显示近况和常用操作。</p></div><div id="page-actions" class="page-actions"></div></div>
+        <div id="page-subnav" hidden></div>
         <div id="global-error" class="notice error" role="alert" hidden></div>
         <section id="page-content" aria-live="polite"><div class="connection-card"><h2>正在连接</h2><p class="muted" id="connection-detail">连接后可以查看这个人格的近况。</p><button id="connect-retry" class="button secondary" type="button">重新连接</button></div></section>
         <footer class="page-footer"><span id="last-updated">尚未读取数据</span><span id="build-version">DSH 插件</span></footer>

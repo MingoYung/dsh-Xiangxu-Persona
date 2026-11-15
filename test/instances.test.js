@@ -4,6 +4,8 @@ import * as fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createInstanceManager } from '../adapters/dsh/instances.js';
+import { restoreBackup } from '../core/maintenance.js';
+import { MemoryRepository } from '../core/repository.js';
 
 async function fixture(t,options={}) {
   const base=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'xiangxu-instances-'))), root=path.join(base,'memory'), registryPath=path.join(base,'instances.json'), calls=[];
@@ -54,4 +56,36 @@ test('switching instances does not attach an existing conversation owned by anot
   await fs.writeFile(path.join(f.root,'host-checkpoints.json'),JSON.stringify({sessions:{'session-a':10}}));
   await f.manager.load({memoryRoot:path.join(f.base,'second'),name:'第二实例'});assert.deepEqual(await f.manager.attachAgent(agent),{status:'different_instance'});
   assert.deepEqual(await f.manager.attachAgent({id:'new',session:{id:'new'}}),{attached:true});
+});
+
+test('restoring and recovering an inactive instance preserves the selected instance across restart', async t => {
+  const f = await fixture(t), second = path.join(f.base, 'second'), backup = path.join(f.base, 'backup');
+  const repository = new MemoryRepository({ root: second });
+  await repository.open();
+  await repository.close();
+  const { activeInstanceId: instanceId } = await f.manager.load({ memoryRoot: second });
+  await f.manager.maintenance.backup({ instanceId, destination: backup });
+  await f.manager.select({ instanceId: 'default' });
+
+  const restored = await f.manager.maintenance.restore({ instanceId, source: backup });
+  assert.equal(restored.loaded, false);
+  assert.equal(restored.requiresLoad, true);
+  assert.equal((await f.manager.listInstances()).autoLoad, true);
+
+  await assert.rejects(restoreBackup({ root: second, source: backup, fault(phase) {
+    if (phase === 'after_root_moved') throw new Error('interrupted backup restore');
+  } }), /interrupted backup restore/);
+  assert.equal((await f.manager.maintenance.recover({ instanceId })).recovered, true);
+  assert.equal((await f.manager.listInstances()).autoLoad, true);
+  assert.equal(f.manager.current.memoryRoot, f.root);
+
+  await f.manager.close();
+  const cold = createInstanceManager({ initialRoot: f.root, registryPath: f.registryPath, createCoordinator: f.createCoordinator });
+  try {
+    await cold.ready;
+    assert.equal(cold.current.memoryRoot, f.root);
+    assert.equal((await cold.listInstances()).activeInstanceId, 'default');
+  } finally {
+    await cold.close();
+  }
 });

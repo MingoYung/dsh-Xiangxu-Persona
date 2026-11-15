@@ -65,7 +65,10 @@ async function frontend(overrides = {}) {
       stack.at(-1).append(node); if (!['input', 'img', 'br', 'hr', 'meta', 'link', 'source', 'area', 'base', 'embed', 'param', 'wbr'].includes(tag) && !token.endsWith('/>')) stack.push(node);
     } else if (token.trim()) stack.at(-1).append(new Element('#text', decode(token)));
   }
-  const document = { body, createElement: tag => new Element(tag), createTextNode: text => new Element('#text', text), getElementById: id => ids.get(id), querySelectorAll: selector => body.querySelectorAll(selector), querySelector: selector => body.querySelector(selector) };
+  const documentEvents = new EventTarget();
+  const document = { body, visibilityState: 'visible',
+    addEventListener: documentEvents.addEventListener.bind(documentEvents), removeEventListener: documentEvents.removeEventListener.bind(documentEvents),
+    dispatchEvent: documentEvents.dispatchEvent.bind(documentEvents), createElement: tag => new Element(tag), createTextNode: text => new Element('#text', text), getElementById: id => ids.get(id), querySelectorAll: selector => body.querySelectorAll(selector), querySelector: selector => body.querySelector(selector) };
   const channels = ['qq', 'wechat'].map(id => ({ id, configured: false, enabled: false, connected: false, config: { allowedPrivateIds: [], allowedGroupIds: [] }, capabilities: {} }));
   const mediaView = { identity: { version: 0, description: '', primaryAssetId: null, locked: false }, limits: { imageBytes: 8388608, descriptionChars: 2048, assetBytes: 268435456 }, providers: [{ kind: 'image', enabled: false, type: 'openai-images', hasApiKey: true, capabilities: {} }, { kind: 'video', enabled: false, type: 'comfyui', capabilities: {} }], usage: { assetBytes: 0 }, jobs: [] };
   const response = async (action, args) => {
@@ -73,6 +76,7 @@ async function frontend(overrides = {}) {
     if (action === 'ui.reveal') return { revealed: true };
     if (action === 'instances.list') return { items: [{ id: 'default', name: '隔离测试人格', active: true, loaded: true }], activeInstanceId: 'default', selectedInstanceId: 'default' };
     if (action === 'status') return { available: true, runtime: { sleep: { state: 'awake' }, globalMuted: false }, capacity: {}, agents: [] };
+    if (action === 'runtime.presence') return { state: 'awake' };
     if (action === 'people.list') return { items: [] };
     if (action === 'memory.list') return { items: [], total: 0 };
     if (action === 'channels.status') return { connections: channels, voice: { supported: false } };
@@ -116,22 +120,24 @@ function graphSample(label = '当前人格记忆') {
     edges: [{ source: recordKey, target: 'source:session-one:source-one', kind: 'source', basis: { field: 'srcRefs' } }], coverage: { entireStoreRead: false, total: null, truncated: false } };
 }
 async function graphFrontend(overrides = {}) {
-  const data = graphSample(), trace = { created: [], disposed: 0, data: [], modes: [], zooms: 0 };
+  const data = graphSample(), trace = { created: [], disposed: 0, data: [], modes: [], presence: [], zooms: 0 };
   const ui = await frontend({ 'memory.graph': () => data, 'memory.timeline.status': () => timelineStatus,
     'memory.timeline.list': args => page(timelineRows.map(row => ({ ...row, recordKey: JSON.stringify(['chat', 'staging', null, row.id]) })), args),
     'memory.detail': () => ({ id: 'same-id', recordKey: data.nodes[0].id, scope: 'global', personId: null, text: '按需读取的原文' }),
     'sources.read': () => [{ available: true, sourceSessionId: 'session-one', sourceEventId: 'source-one', text: '原件正文' }], ...overrides });
   ui.context.XiangxuMemoryGraph = { create(canvas, options) {
     trace.created.push({ canvas, options }); return { setData(value) { trace.data.push(structuredClone(value)); }, select() {}, setColors() {}, resize() {}, reset() {},
-      setMode(value) { trace.modes.push(value); }, zoomIn() { trace.zooms++; }, zoomOut() { trace.zooms--; }, dispose() { trace.disposed++; } };
+      setRuntimeStatus(value) { trace.presence.push(value); }, setMode(value) { trace.modes.push(value); }, zoomIn() { trace.zooms++; }, zoomOut() { trace.zooms--; }, dispose() { trace.disposed++; } };
   } };
   return { ...ui, graphTrace: trace, graphData: data };
 }
 
-test('memory graph is explicit, local and read-only; record and source details load only on click with full identities', async () => {
+test('memory opens the embedded read-only graph; details load only on click with full identities', async () => {
   const ui = await graphFrontend(); await ui.evaluate("navigate('memory')");
-  assert.equal(ui.calls.some(call => call.action === 'memory.graph'), false); assert.equal(ui.graphTrace.created.length, 0);
-  const entry = ui.walk(content(ui)).find(node => node.getAttribute('aria-label') === '3D 记忆关联图'); assert.ok(entry); await entry.emit('click');
+  assert.equal(ui.ids.get('memory-tab-graph').getAttribute('aria-selected'), 'true');
+  assert.equal(content(ui).getAttribute('aria-labelledby'), 'memory-tab-graph');
+  assert.equal(ui.calls.some(call => call.action === 'memory.list'), false);
+  assert.equal(ui.graphTrace.created.length, 1);
   assert.match(content(ui).textContent, /位置只用于排布/); assert.match(ui.ids.get('graph-status').textContent, /2 个节点，1 条关联/);
   const graphRead = ui.calls.find(call => call.action === 'memory.graph'); assert.equal(graphRead.args.instanceId, 'default'); assert.equal(graphRead.args.scope, 'global');
   assert.equal(graphRead.args.limit, 80); assert.equal(graphRead.args.edgeLimit, 160); assert.equal(ui.calls.some(call => call.action === 'sources.read' || call.action === 'memory.detail'), false);
@@ -144,11 +150,96 @@ test('memory graph is explicit, local and read-only; record and source details l
   await ui.evaluate("navigate('settings')"); assert.equal(ui.graphTrace.disposed, 1);
 });
 
+test('memory graph names selected originals even when their display fields are blank', async () => {
+  const rows = [
+    { id: 'blank', title: '', label: ' \n\t', expected: '交流原件' },
+    { id: 'named', timeline: { title: '　' }, title: '', label: ' 有效标签 ', expected: '有效标签' },
+  ].map(row => ({ ...row, recordType: 'chat', scope: 'global', recordKey: JSON.stringify(['chat', 'global', null, row.id]) }));
+  const ui = await graphFrontend({ 'memory.list': args => page(rows, args) });
+  for (const [index, row] of rows.entries()) {
+    await ui.evaluate("navigate('memory','all')");
+    await ui.button(cards(ui)[index], '在 3D 图中查看').emit('click');
+    assert.equal(content(ui).querySelector('.graph-focus').querySelector('span').textContent, '围绕：' + row.expected);
+    assert.equal(ui.calls.filter(call => call.action === 'memory.graph').at(-1).args.seedRecordKey, row.recordKey);
+  }
+});
+
+test('a failed embedded graph read preserves memory tabs, and an inline retry recovers it', async () => {
+  let fails = true;
+  const ui = await graphFrontend({ 'memory.graph': () => {
+    if (fails) throw Object.assign(new Error('graph fixture temporarily offline'), { code: 'READ_UNAVAILABLE' });
+    return graphSample();
+  } });
+  await ui.evaluate("navigate('memory')");
+  assert.match(ui.ids.get('graph-status').textContent, /READ_UNAVAILABLE/);
+  assert.equal(ui.ids.get('page-subnav').hidden, false);
+  assert.equal(ui.ids.get('global-error').hidden, true);
+  assert.equal(ui.button(content(ui), '重试读取').hidden, false);
+  fails = false;
+  await ui.button(content(ui), '重试读取').emit('click');
+  assert.match(ui.ids.get('graph-status').textContent, /2 个节点/);
+  assert.equal(ui.button(content(ui), '重试读取').hidden, true);
+  await ui.ids.get('memory-tab-all').emit('click'); await tick();
+  assert.equal(ui.graphTrace.disposed, 1);
+  assert.equal(ui.ids.get('memory-tab-all').getAttribute('aria-selected'), 'true');
+  assert.equal(ui.calls.filter(call => call.action === 'memory.list').at(-1).args.pageSize, 6);
+});
+
+test('leaving a pending embedded graph keeps the new tab active when the old graph read finishes', async () => {
+  let release, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  const ui = await graphFrontend({ 'memory.graph': () => new Promise(resolve => { release = resolve; entered(); }) });
+  const graphRead = ui.evaluate("navigate('memory')");
+  await started;
+  assert.ok(ui.walk(content(ui)).some(node => node.id === 'memory-graph-canvas'));
+  await ui.ids.get('memory-tab-all').emit('click'); await tick();
+  release(graphSample('过期的记忆关联'));
+  await graphRead;
+  assert.equal(ui.graphTrace.disposed, 1);
+  assert.equal(ui.ids.get('memory-tab-all').getAttribute('aria-selected'), 'true');
+  assert.doesNotMatch(content(ui).textContent, /过期的记忆关联/);
+});
+
 test('graph mode and zoom controls expose selection state without changing memory or model settings', async () => {
   const ui = await graphFrontend(); await ui.evaluate("navigate('memory','graph')");
   await ui.button(content(ui), '平面视图').emit('click'); assert.deepEqual(ui.graphTrace.modes, ['2d']); assert.equal(ui.button(content(ui), '平面视图').getAttribute('aria-pressed'), 'true');
   await ui.button(content(ui), '放大').emit('click'); await ui.button(content(ui), '缩小').emit('click'); assert.equal(ui.graphTrace.zooms, 0);
   assert.equal(ui.calls.filter(call => call.action === 'memory.graph').length, 1);
+});
+
+test('brain presence refreshes only while visible and stops when switching views or pages', async () => {
+  let runtime = 'awake';
+  const ui = await graphFrontend({ 'runtime.presence': () => ({ state: runtime }) });
+  const presenceCalls = () => ui.calls.filter(call => call.action === 'runtime.presence');
+  const poll = () => [...ui.timers.values()].find(timer => timer.delay === 5000);
+  await ui.evaluate("navigate('memory','graph')");
+  assert.equal(ui.ids.get('graph-presence').dataset.runtime, 'awake');
+  assert.equal(presenceCalls().length, 1);
+  assert.equal(poll()?.delay, 5000);
+
+  ui.document.visibilityState = 'hidden';
+  ui.document.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(poll(), undefined);
+  assert.equal(presenceCalls().length, 1);
+  runtime = 'sleeping';
+  ui.document.visibilityState = 'visible';
+  ui.document.dispatchEvent(new Event('visibilitychange'));
+  await tick();
+  assert.equal(ui.ids.get('graph-presence').dataset.runtime, 'sleeping');
+  assert.deepEqual(ui.graphTrace.presence, ['sleeping']);
+
+  await ui.button(content(ui), '平面视图').emit('click');
+  assert.equal(ui.ids.get('graph-presence').hidden, true);
+  assert.equal(poll(), undefined);
+  assert.equal(presenceCalls().length, 2);
+  await ui.button(content(ui), '脑形视图').emit('click');
+  await tick();
+  assert.equal(presenceCalls().length, 3);
+  assert.equal(poll()?.delay, 5000);
+  await ui.evaluate("navigate('settings')");
+  ui.document.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(poll(), undefined);
+  assert.equal(presenceCalls().length, 3);
 });
 
 test('a slower graph query cannot replace newer selected results and empty unknown scope gives a concrete next step', async () => {
@@ -204,7 +295,7 @@ test('an old page status cannot overwrite a new persona or create a hidden secon
 
 test('memory, timeline and retrieval detail buttons retain the selected compound identity on every detail page', async () => {
   const row = { ...timelineRows[0], id: 'same', personId: 'b', scope: 'person', recordKey: '["chat","person","b","same"]' };
-  for (const view of ['', 'timeline', 'retrieval']) {
+  for (const view of ['all', 'timeline', 'retrieval']) {
     const ui = await frontend({ 'memory.list': () => ({ items: [row], total: 1 }), 'memory.timeline.status': () => timelineStatus,
       'memory.timeline.list': () => ({ items: [row], total: 1 }), 'memory.search': () => ({ items: [row], total: 1 }),
       'memory.detail': args => args.cursor ? { format: 'json_text_fragment', text: '}', fragment: { from: 1, total: 2, complete: true }, nextCursor: null }
@@ -275,31 +366,44 @@ test('other social entry points separate untested acceptance from their actual c
 });
 function memoryUi(overrides={}){const rows=records(34);return frontend({'memory.list':args=>page(rows.filter(row=>(!args.query||row.text.includes(args.query))&&(!args.recordType||row.recordType===args.recordType)),args),...overrides});}
 
+test('memory list trims leading whitespace before shortening the preview and keeps the detail original', async () => {
+  const text = '\r\n'.repeat(8) + '第一行\n第二行' + '正文'.repeat(130) + '\n';
+  const row = { id: 'raw-whitespace', recordType: 'chat', scope: 'global' };
+  const ui = await memoryUi({ 'memory.list': args => page([{ ...row, textPreview: text.slice(0, 240) }], args), 'memory.detail': () => ({ ...row, text }) });
+  await ui.evaluate("navigate('memory','all')");
+  assert.equal(cards(ui)[0].querySelector('.record-text').textContent, text.trimStart().slice(0, 160) + '…');
+  await ui.button(cards(ui)[0], '查看详情 →').emit('click');
+  assert.equal(ui.ids.get('detail-content').querySelector('.detail-value').textContent, text);
+});
+
 test('34 retained records expose top and bottom pagination and all entries are reachable in both directions',async()=>{
- const ui=await memoryUi();await ui.evaluate("navigate('memory')");
- assert.equal(pagers(ui).length,2);assert.match(summary(ui),/第 1 页.*显示 1–12 条.*共 34 条/);assert.equal(ui.button(top(ui),'上一页').disabled,true);
+ const ui=await memoryUi();await ui.evaluate("navigate('memory','all')");
+ assert.equal(pagers(ui).length,2);assert.match(summary(ui),/第 1 页.*显示 1–6 条.*共 34 条/);assert.equal(ui.button(top(ui),'上一页').disabled,true);
  const seen=new Set(cards(ui).map(n=>n.textContent.match(/entry-\d+/)?.[0]));
- await move(ui,'下一页 →');assert.match(summary(ui),/第 2 页.*13–24/);cards(ui).forEach(n=>seen.add(n.textContent.match(/entry-\d+/)?.[0]));
- await move(ui,'下一页 →');assert.match(summary(ui),/第 3 页.*25–34/);cards(ui).forEach(n=>seen.add(n.textContent.match(/entry-\d+/)?.[0]));assert.equal(seen.size,34);assert.equal(ui.button(top(ui),'下一页 →').disabled,true);
- await move(ui,'上一页');assert.match(summary(ui),/第 2 页.*13–24/);await move(ui,'回到第一页');assert.match(summary(ui),/第 1 页.*1–12/);
+ for (let pageNumber = 2; pageNumber <= 6; pageNumber++) {
+   await move(ui,'下一页 →'); assert.ok(cards(ui).length <= 6);
+   cards(ui).forEach(node => seen.add(node.textContent.match(/entry-\d+/)?.[0]));
+ }
+ assert.match(summary(ui),/第 6 页.*31–34/);assert.equal(seen.size,34);assert.equal(ui.button(top(ui),'下一页 →').disabled,true);
+ await move(ui,'上一页');assert.match(summary(ui),/第 5 页.*25–30/);await move(ui,'回到第一页');assert.match(summary(ui),/第 1 页.*1–6/);
  assert.equal(ui.calls.filter(c=>c.action==='memory.list').at(-1).args.cursor,undefined);assert.equal(ui.ids.get('global-error').hidden,true);
 });
 
 test('query and record type changes reset the memory cursor and empty state still explains navigation',async()=>{
- const ui=await memoryUi();await ui.evaluate("navigate('memory')");await move(ui,'下一页 →');ui.ids.get('memory-query').value='entry-31';await ui.button(content(ui),'搜索').emit('click');
+ const ui=await memoryUi();await ui.evaluate("navigate('memory','all')");await move(ui,'下一页 →');ui.ids.get('memory-query').value='entry-31';await ui.button(content(ui),'搜索').emit('click');
  assert.match(summary(ui),/第 1 页.*共 1 条/);assert.equal(ui.calls.filter(c=>c.action==='memory.list').at(-1).args.cursor,undefined);assert.equal(ui.button(top(ui),'上一页').disabled,true);
  ui.ids.get('memory-type').value='deep';await ui.ids.get('memory-type').emit('change');await tick();assert.match(summary(ui),/未找到匹配条目.*共 0 条/);assert.equal(ui.button(top(ui),'下一页 →').disabled,true);assert.match(content(ui).textContent,/可以修改线索后重新查询/);
 });
 
 test('a changed result cursor prompts explicit reload instead of silently losing the next page',async()=>{
  let changed=false;const rows=records(36),ui=await memoryUi({'memory.list':args=>{if(args.cursor&&!changed){changed=true;throw Object.assign(new Error('changed'),{code:'MANAGEMENT_CURSOR_STALE'});}return page(rows,args);}});
- await ui.evaluate("navigate('memory')");await move(ui,'下一页 →');assert.match(content(ui).textContent,/资料在翻页期间发生了变化/);assert.equal(ui.calls.filter(c=>c.action==='memory.list').length,2);assert.equal(ui.ids.get('global-error').hidden,true);
+ await ui.evaluate("navigate('memory','all')");await move(ui,'下一页 →');assert.match(content(ui).textContent,/资料在翻页期间发生了变化/);assert.equal(ui.calls.filter(c=>c.action==='memory.list').length,2);assert.equal(ui.ids.get('global-error').hidden,true);
  await ui.button(content(ui),'回到第一页重新读取').emit('click');assert.match(summary(ui),/第 1 页.*共 36 条/);assert.equal(ui.calls.filter(c=>c.action==='memory.list').length,3);
 });
 
 test('failed next-page reads do not advance the displayed page or corrupt retry position',async()=>{
  let fail=true;const rows=records(34),ui=await memoryUi({'memory.list':args=>{if(args.cursor&&fail){fail=false;throw Object.assign(new Error('temporary read failure'),{code:'READ_UNAVAILABLE'});}return page(rows,args);}});
- await ui.evaluate("navigate('memory')");await move(ui,'下一页 →');assert.match(summary(ui),/第 1 页/);assert.equal(ui.ids.get('global-error').hidden,false);await move(ui,'下一页 →');assert.match(summary(ui),/第 2 页.*13–24/);assert.equal(ui.ids.get('global-error').hidden,true);
+ await ui.evaluate("navigate('memory','all')");await move(ui,'下一页 →');assert.match(summary(ui),/第 1 页/);assert.equal(ui.ids.get('global-error').hidden,false);await move(ui,'下一页 →');assert.match(summary(ui),/第 2 页.*7–12/);assert.equal(ui.ids.get('global-error').hidden,true);
 });
 
 test('late people pages cannot write another personality instance cache or visible list',async()=>{
@@ -312,6 +416,32 @@ test('late people pages cannot write another personality instance cache or visib
 test('34 known people use retained cursor history for previous and first-page navigation',async()=>{
  const rows=Array.from({length:34},(_,i)=>({personId:'person-'+i,displayName:'人物'+i})),ui=await frontend({'people.list':args=>args.pageSize===100?{items:[]}:page(rows,args)});
  await ui.evaluate("navigate('memory','people')");assert.match(summary(ui),/1–15.*共 34 条/);await move(ui,'下一页 →');assert.match(summary(ui),/第 2 页.*16–30/);await move(ui,'下一页 →');assert.match(summary(ui),/第 3 页.*31–34/);await move(ui,'上一页');assert.match(summary(ui),/第 2 页.*16–30/);await move(ui,'回到第一页');assert.match(summary(ui),/第 1 页.*1–15/);
+});
+
+test('person details show named provenance and open only available originals in the viewed instance', async () => {
+  const available = { sourceSessionId: 'known-session', sourceEventId: 'known-event', available: true };
+  const unavailable = { sourceSessionId: 'old-session', sourceEventId: 'old-event', available: false };
+  const identity = { personId: 'person-a', displayName: '甲', aliases: ['旧别名'], names: [
+    { name: '夜猫', kind: 'platform_nickname', srcRefs: [available, unavailable], observedOn: { platform: 'qq', accountId: '123', senderId: '456' } },
+    { name: '阿甲', kind: 'nickname', srcRefs: [] },
+  ] };
+  const ui = await frontend({
+    'people.list': args => page([{ personId: 'person-a', displayName: '甲', namePreview: ['夜猫', '旧别名'] }], args),
+    'relation.get': () => ({ identity, impression: { summary: '已有相处资料' } }),
+    'sources.read': () => ({ text: '来源原件实际返回' }),
+  });
+  await ui.evaluate("navigate('memory','people')");
+  assert.match(content(ui).textContent, /夜猫 · 旧别名/);
+  const person = ui.walk(content(ui)).find(node => node.getAttribute('aria-label') === '查看人物 甲');
+  await person.emit('click');
+  const detail = ui.ids.get('detail-content');
+  assert.match(detail.textContent, /平台昵称 · 在QQ中出现 · 1 条来源可查询 · 1 条来源不可用/);
+  assert.match(detail.textContent, /阿甲昵称 · 未关联来源/);
+  assert.match(detail.textContent, /旧档案中的别名 · 来源未记录/);
+  assert.equal(ui.calls.some(call => call.action === 'sources.read'), false);
+  await ui.button(detail, '查看来源原件').emit('click');
+  assert.deepEqual(ui.calls.find(call => call.action === 'sources.read').args, { instanceId: 'default', sourceRefs: [available] });
+  assert.match(detail.textContent, /来源原件实际返回/);
 });
 
 test('bounded retrieval candidates retain all response-budget pages and explain their limited candidate scope',async()=>{
@@ -339,7 +469,7 @@ test('QQ capability rows show human-readable names without changing grants',asyn
 
 test('a successful list retry leaves unrelated errors visible',async()=>{
  let fail=true;const rows=records(34),ui=await memoryUi({'memory.list':args=>{if(args.cursor&&fail){fail=false;throw Object.assign(new Error('old list read'),{code:'READ_UNAVAILABLE'});}return page(rows,args);}});
- await ui.evaluate("navigate('memory')");await move(ui,'下一页 →');ui.evaluate("showError(Object.assign(new Error('unrelated settings error'),{code:'SETTINGS_FAILED'}))");await move(ui,'下一页 →');assert.match(summary(ui),/第 2 页/);assert.equal(ui.ids.get('global-error').hidden,false);assert.match(ui.ids.get('global-error').textContent,/SETTINGS_FAILED.*unrelated settings error/);
+ await ui.evaluate("navigate('memory','all')");await move(ui,'下一页 →');ui.evaluate("showError(Object.assign(new Error('unrelated settings error'),{code:'SETTINGS_FAILED'}))");await move(ui,'下一页 →');assert.match(summary(ui),/第 2 页/);assert.equal(ui.ids.get('global-error').hidden,false);assert.match(ui.ids.get('global-error').textContent,/SETTINGS_FAILED.*unrelated settings error/);
 });
 
 test('changing retrieval conditions clears busy state and suppresses the obsolete result',async()=>{
@@ -358,7 +488,7 @@ test('Bilibili expanded permission confirmation uses the same contextual names a
 
 const revealCalls = ui => ui.calls.filter(call=>call.action==='ui.reveal');
 test('memory initial rendering keeps focus while successful page and query reads request local host reveal',async()=>{
- const ui=await memoryUi();await ui.evaluate("navigate('memory')");assert.equal(revealCalls(ui).length,0);assert.equal(top(ui).getAttribute('tabindex'),null);
+ const ui=await memoryUi();await ui.evaluate("navigate('memory','all')");assert.equal(revealCalls(ui).length,0);assert.equal(top(ui).getAttribute('tabindex'),null);
  await move(ui,'下一页 →');await tick();assert.equal(top(ui).getAttribute('data-reveal-state'),'revealed');assert.equal(revealCalls(ui).length,1);assert.equal(revealCalls(ui)[0].args.top,150);assert.deepEqual(Object.keys(revealCalls(ui)[0].args),['top']);assert.equal(top(ui).getAttribute('tabindex'),'-1');assert.equal(ui.focusEvents.at(-1).target,top(ui));assert.equal(ui.focusEvents.at(-1).options.preventScroll,true);
  ui.ids.get('memory-query').value='entry-31';await ui.button(content(ui),'搜索').emit('click');assert.equal(revealCalls(ui).length,2);assert.equal(ui.scrollEvents.some(event=>event.target.classList.contains('pagination-top')),false);
 });
@@ -371,11 +501,11 @@ test('people pages and manually requested retrieval candidates ask the existing 
 
 test('failed or superseded memory page reads never request host reveal or move keyboard focus',async()=>{
  let entered,release,mode='fail';const pending=new Promise(r=>entered=r),rows=records(34),ui=await memoryUi({'memory.list':args=>{if(!args.cursor)return page(rows,args);if(mode==='fail'){mode='wait';throw new Error('temporary read error');}entered();return new Promise(r=>release=r);}});
- await ui.evaluate("navigate('memory')");await move(ui,'下一页 →');assert.equal(revealCalls(ui).length,0);const late=move(ui,'下一页 →');await pending;await ui.evaluate("navigate('memory')");const focusCount=ui.focusEvents.length;release(page(rows,{cursor:'offset:12',pageSize:12}));await late;assert.equal(revealCalls(ui).length,0);assert.equal(ui.focusEvents.length,focusCount);assert.match(summary(ui),/第 1 页/);
+ await ui.evaluate("navigate('memory','all')");await move(ui,'下一页 →');assert.equal(revealCalls(ui).length,0);const late=move(ui,'下一页 →');await pending;await ui.evaluate("navigate('memory','all')");const focusCount=ui.focusEvents.length;release(page(rows,{cursor:'offset:6',pageSize:6}));await late;assert.equal(revealCalls(ui).length,0);assert.equal(ui.focusEvents.length,focusCount);assert.match(summary(ui),/第 1 页/);
 });
 
 test('an older host without local reveal keeps successful results without a direct scroll fallback',async()=>{
- const ui=await memoryUi({'ui.reveal':()=>{throw Object.assign(new Error('unsupported local UI action'),{code:'LOCAL_UI_UNAVAILABLE'});}});await ui.evaluate("navigate('memory')");await move(ui,'下一页 →');await tick();assert.equal(top(ui).getAttribute('data-reveal-state'),'error');assert.equal(top(ui).getAttribute('data-reveal-code'),'LOCAL_UI_UNAVAILABLE');assert.match(top(ui).getAttribute('data-reveal-message'),/unsupported local UI action/);assert.match(summary(ui),/第 2 页.*13–24/);assert.equal(ui.ids.get('global-error').hidden,true);assert.equal(ui.scrollEvents.some(event=>event.target.classList.contains('pagination-top')),false);
+ const ui=await memoryUi({'ui.reveal':()=>{throw Object.assign(new Error('unsupported local UI action'),{code:'LOCAL_UI_UNAVAILABLE'});}});await ui.evaluate("navigate('memory','all')");await move(ui,'下一页 →');await tick();assert.equal(top(ui).getAttribute('data-reveal-state'),'error');assert.equal(top(ui).getAttribute('data-reveal-code'),'LOCAL_UI_UNAVAILABLE');assert.match(top(ui).getAttribute('data-reveal-message'),/unsupported local UI action/);assert.match(summary(ui),/第 2 页.*7–12/);assert.equal(ui.ids.get('global-error').hidden,true);assert.equal(ui.scrollEvents.some(event=>event.target.classList.contains('pagination-top')),false);
 });
 
 const supportSample = { schemaVersion: 'xiangxu-support/1', plugin: { name: 'dsh-xiangxu-persona', version: '0.13.1' }, environment: { os: 'win32' }, errors: { counts: [{ code: 'ECONNREFUSED', count: 1 }] } };

@@ -22,6 +22,43 @@ async function fixture(t) {
 }
 const chat = (id, text) => ({ personId: null, sourceSessionId: 's', sourceEventId: id, sourceKind: 'assistant', contentClass: 'participant_dialogue', channelId: 'c', role: 'assistant', text, sourceAt: 1000, observedAt: 1000 });
 
+test('runtime presence distinguishes a failed startup from a stopped instance and skips budget and capacity scans', async () => {
+  const registry = { autoLoad: true, selectedInstanceId: 'one', activeInstanceId: null, error: { code: 'INSTANCE_LOAD_FAILED', message: '启动失败' } };
+  let sleep = 'awake';
+  const coordinator = { repository: { getRuntime: async () => ({ sleep: { state: sleep } }), getCapacity: () => assert.fail('presence should not scan capacity') } };
+  const service = createManagementService({ getCoordinator: id => id === registry.activeInstanceId ? coordinator : null, listInstances: () => registry });
+  assert.deepEqual(await service.dispatch('runtime.presence', { instanceId: 'one' }), { state: 'error' });
+  const status = await service.dispatch('status', { instanceId: 'one' });
+  assert.equal(status.unloaded, false);
+  assert.equal(status.errors[0].code, 'INSTANCE_LOAD_FAILED');
+  assert.deepEqual(await service.dispatch('runtime.presence', { instanceId: 'other' }), { state: 'unloaded' });
+  registry.autoLoad = false;
+  assert.deepEqual(await service.dispatch('runtime.presence', { instanceId: 'one' }), { state: 'unloaded' });
+  registry.activeInstanceId = 'one';
+  assert.deepEqual(await service.dispatch('runtime.presence', { instanceId: 'one' }), { state: 'awake' });
+  sleep = 'sleeping';
+  assert.deepEqual(await service.dispatch('runtime.presence', { instanceId: 'one' }), { state: 'sleeping' });
+});
+
+test('known-person search matches names but does not use the private source identifiers as names', async t => {
+  const { service, repository, calls } = await fixture(t);
+  const original = (await repository.ingest({ ...chat('private-source-id', '叫我 Night Cat'), personId: 'a', role: 'user', sourceKind: 'user' })).record;
+  const identity = (await repository.listPeople())[0];
+  const ref = { sourceSessionId: original.sourceSessionId, sourceEventId: original.sourceEventId, available: true };
+  const names = ['一号', '二号', '三号', 'Night Cat'].map(name => ({ name, kind: 'nickname', srcRefs: name === 'Night Cat' ? [ref] : [], updatedAt: 5000 }));
+  await repository.store.transaction({ json: { 'people/a/identity.json': { ...identity, aliases: ['旧别名'], names } } });
+  const result = await service.dispatch('people.list', { query: ' night ', pageSize: 15 });
+  assert.equal(result.total, 1);
+  assert.equal(result.items[0].personId, 'a');
+  assert.deepEqual(result.items[0].namePreview, ['Night Cat', '一号', '二号']);
+  assert.doesNotMatch(JSON.stringify(result), /private-source-id/);
+  assert.equal((await service.dispatch('people.list', { query: '旧别名' })).total, 1);
+  assert.equal((await service.dispatch('people.list', { query: 'private-source-id' })).total, 0);
+  const detail = await service.dispatch('relation.get', { personId: 'a', section: 'all' });
+  assert.deepEqual(JSON.parse(detail.text).identity.names.at(-1).srcRefs, [ref]);
+  assert.deepEqual(calls, []);
+});
+
 test('graph management returns bounded real source and expansion relations without loading original bodies or executing commands', async t => {
   const { service, repository, calls } = await fixture(t), original = (await repository.ingest(chat('graph-source', 'PRIVATE_ORIGINAL_ONLY_ON_DEMAND'))).record;
   const run = await repository.prepareConsolidation({ personId: null });

@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createChannelService } from '../adapters/dsh/channels/service.js';
 
+const qqReply = (...bubbles) => '\x60\x60\x60xiangxu-qq\n' + JSON.stringify(bubbles) + '\n\x60\x60\x60';
+
 function wave() {
   const value = Buffer.alloc(46);
   value.write('RIFF'); value.writeUInt32LE(38, 4); value.write('WAVEfmt ', 8); value.writeUInt32LE(16, 16);
@@ -15,14 +17,14 @@ async function fixture(t, { voiceMode = 'voice', generationFailure = false, fina
   const base = await mkdtemp(join(tmpdir(), 'xiangxu-channel-audio-')), audioPath = join(base, 'owned-test.wav');
   let disk = null, current = { memoryRoot: join(base, 'A'), ready: Promise.resolve(), agents: new Map(),
     voice: { inspect: async () => ({ effective: { available: true, resolvedVoiceId: 'win-sapi:test', rate: 1, pitch: 1 } }) } };
-  const received = [], texts = [], voices = []; let generated = 0, cleaned = 0, closed = 0, savedBeforeGeneration = null;
+  const received = [], texts = [], voices = [], synthesisInputs = []; let generated = 0, cleaned = 0, closed = 0, savedBeforeGeneration = null;
   const storage = { read: async () => structuredClone(disk), write: async next => {
     if (finalWriteFailure && next.receipts.some(row => row.voiceDelivery?.status === 'delivered')) throw Object.assign(new Error('test audio receipt fault'), { code: 'TEST_AUDIO_RECEIPT' });
     disk = structuredClone(next);
   } };
   const speechPort = {
     catalog: async () => ({ supported: true, provider: 'win-sapi', voices: [{ id: 'win-sapi:test', name: 'Test', lang: 'zh-CN', localService: true, default: true }] }),
-    async synthesize(args) { generated++; savedBeforeGeneration = structuredClone(disk.receipts.find(row => row.kind === 'outbound')); if (generationFailure) return { status: 'unavailable', reason: 'isolated_failure' }; await writeFile(audioPath, wave()); return { status: 'generated', path: audioPath, bytes: 46, mime: 'audio/wav' }; },
+    async synthesize(args) { generated++; synthesisInputs.push(args.text); savedBeforeGeneration = structuredClone(disk.receipts.find(row => row.kind === 'outbound')); if (generationFailure) return { status: 'unavailable', reason: 'isolated_failure' }; await writeFile(audioPath, wave()); return { status: 'generated', path: audioPath, bytes: 46, mime: 'audio/wav' }; },
     async cleanup() { cleaned++; if (cleanupFailure) throw Object.assign(new Error('isolated cache lock'), { code: 'TEST_AUDIO_CACHE_LOCKED' }); await rm(audioPath, { force: true }); },
   };
   const service = createChannelService({ getCoordinator: () => current, storage, speechPort, port: 0,
@@ -44,7 +46,7 @@ async function fixture(t, { voiceMode = 'voice', generationFailure = false, fina
   }
   const accepted = await inbound();
   const output = (extra = {}) => service.output({ sessionId: accepted.sessionId, sourceEventId: 'assistant-real-id', seq: 20, text: '本轮实际生成的正文', deliveryId: 'chosen-delivery', ...extra });
-  return { service, output, inbound, texts, voices, received, disk: () => structuredClone(disk), generated: () => generated, cleaned: () => cleaned, checkpoint: () => savedBeforeGeneration,
+  return { service, output, inbound, texts, voices, received, synthesisInputs, disk: () => structuredClone(disk), generated: () => generated, cleaned: () => cleaned, checkpoint: () => savedBeforeGeneration,
     audioPath, current: () => current, setCurrent: value => { current = value; }, closed: () => closed, accepted };
 }
 
@@ -64,6 +66,26 @@ test('both persists acknowledged text before synthesis and never claims a failed
   assert.equal(result.status, 'delivered'); assert.equal(result.voiceUnavailable, true); assert.equal(result.voiceDelivery.status, 'failed');
   assert.equal(f.texts.length, 1); assert.equal(f.voices.length, 0); assert.equal(f.cleaned(), 1);
   assert.equal((await f.output()).voiceUnavailable, true); assert.equal(f.generated(), 1);
+});
+
+test('selected QQ bubbles honor voice-only mode and dual mode retains all text acknowledgements before speaking', async t => {
+  const expected = ['前半句', '后半句'], text = qqReply(...expected);
+  const voice = await fixture(t);
+  const voiceResult = await voice.output({ text });
+  assert.equal(voiceResult.status, 'delivered');
+  assert.equal(voiceResult.text, expected.join('\n'));
+  assert.deepEqual(voice.texts, []);
+  assert.deepEqual(voice.synthesisInputs, [expected.join('\n')]);
+  assert.equal((await voice.output({ text })).duplicate, true);
+  assert.equal(voice.voices.length, 1);
+
+  const both = await fixture(t, { voiceMode: 'both' });
+  const bothResult = await both.output({ text });
+  assert.equal(bothResult.status, 'delivered');
+  assert.deepEqual(both.texts, expected);
+  assert.deepEqual(both.synthesisInputs, [expected.join('\n')]);
+  assert.deepEqual(both.checkpoint().bubbles.map(value => value.status), ['delivered', 'delivered']);
+  assert.equal(bothResult.voiceDelivery.status, 'delivered');
 });
 
 test('an audio receipt write failure preserves already durable text delivery and never replays the voice', async t => {

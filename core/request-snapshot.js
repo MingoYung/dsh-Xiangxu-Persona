@@ -2,6 +2,7 @@ import { SCHEMA_VERSION, newId } from './schema.js';
 import { extractSourceDependencies } from './source-dependencies.js';
 import { fitDeepMemoryReferences } from './deep-memory.js';
 import { selfProfileContext } from './onboarding.js';
+import { formatLocalTime } from './decision-time.js';
 import { contextBudgetError, sectionText, requiredSelfProfile, fitStructuredSection, recentMemorySection } from './context-continuity.js';
 
 const description = value => typeof value === 'string' ? value : value?.desc ?? value?.text ?? '';
@@ -26,7 +27,9 @@ async function assembleContinuity({ context = {}, material = {}, state = {}, con
     storeBytes: { used: capacity.physicalBytes ?? null, limit: capacity.storeBytes ?? null },
     pressure: capacity.pressure ?? null, unresolvedGaps: capacity.memoryGapCount ?? null }
     : { available: false, errorCode: capacity?.errorCode ?? null };
-  const essential = { now, timezone: context.timezone ?? context.environment?.timezone ?? config.timezone,
+  const timezone = context.timezone ?? context.environment?.timezone ?? config.timezone;
+  const localTime = formatLocalTime(now, timezone);
+  const essential = { now, timezone, localTime,
     target, sleep: state.sleep?.state ?? 'awake', resources,
     delivery: context.deliveryFacts ?? context.environment?.deliveryFacts,
     memoryAvailability: context.memoryAvailability ?? material.memoryAvailability ?? { storeContent: 'not_assessed', retrieval: 'not_requested' },
@@ -50,7 +53,8 @@ async function assembleContinuity({ context = {}, material = {}, state = {}, con
   await add('anchor', sectionText('anchor', persona.anchor?.text ?? ''), { budget: budgets.anchorTokens, required: true });
   const axes = Object.fromEntries(Object.entries(persona.axes ?? {}).map(([name, value]) => [name, description(value)]));
   await add('persona', Object.keys(axes).length ? sectionText('persona', { axes }) : '', { budget: budgets.personaTokens, required: true });
-  const relationship = ownId !== null || material.identity || relation.summary ? { personId: ownId, identity: material.identity ?? null, summary: relation.summary ?? '' } : null;
+  const { names: personNames, ...identityCore } = material.identity ?? {};
+  const relationship = ownId !== null || material.identity || relation.summary ? { personId: ownId, identity: material.identity ? identityCore : null, summary: relation.summary ?? '' } : null;
   await add('relationship', relationship ? sectionText('relationship', relationship) : '', { budget: budgets.relationTokens, required: true });
   const activePlan = state.currentDecision ? { reply: state.currentDecision.replyPlan?.action,
     target: state.currentDecision.replyPlan?.target, replyAt: state.currentDecision.replyPlan?.replyAt,
@@ -102,7 +106,7 @@ async function assembleContinuity({ context = {}, material = {}, state = {}, con
     if (deepReferences.text) await add('deep_memory_reference', deepReferences.text, { budget, truncated: deepReferences.truncated,
       referenceOnly: true, automaticRecall: false, total: deepReferences.total, shown: deepReferences.shown });
   }
-  const relationDetails = await fitStructuredSection('relationship_details', { signatures: relation.signatures, coordinates: relation.coordinates,
+  const relationDetails = await fitStructuredSection('relationship_details', { ...(personNames?.length ? { names: personNames } : {}), signatures: relation.signatures, coordinates: relation.coordinates,
     events: relation.events, interpretations: material.interpretations, codes: material.codes, boundaries: facets.filter(item => item.kind === 'boundary') },
   { counter, budget: budgets.relationTokens, canFit });
   await add('relationship_details', relationDetails.text, { budget: budgets.relationTokens, truncated: relationDetails.truncated }); extensions.relationship = relationDetails;
@@ -121,7 +125,7 @@ async function assembleContinuity({ context = {}, material = {}, state = {}, con
   const snapshot = { schemaVersion: SCHEMA_VERSION, requestId: context.requestId ?? newId('req'), sessionId: context.sessionId ?? context.environment?.sessionId ?? '',
     personId: ownId, conversationStyle: config.conversationStyle ?? 'short_chat', personaVersion: persona.version ?? 0, relationVersion: relation.version ?? null,
     environmentVersion: context.environment?.version ?? context.environmentVersion ?? 0,
-    now, timezone: context.timezone ?? context.environment?.timezone ?? config.timezone,
+    now, timezone, localTime,
     mandatoryContext: { complete: true, segments: result.filter(item => item.required).map(item => item.name),
       optional: Object.fromEntries(Object.entries(extensions).map(([name, value]) => [name, { shown: value.shown, omitted: value.omitted }])) },
     selfProfileReference: { version: material.selfProfile?.version ?? 0, shown: selfProfile.shown, omitted: selfProfile.omitted, fullProfileAvailable: Boolean(material.selfProfile) },

@@ -75,6 +75,35 @@ test('actual bridge transport and permission service complete avatar and Qzone t
   const service=createQQAccountService({...f.ports,getBridge:async()=>({...f.bridge,operations:driver.inspectAccountCapabilities().operations,executeAccount:(...args)=>driver.executeAccount(...args)})});t.after(()=>service.close());
   assert.equal((await f.execute('profile.avatar',{assetId},'actual-avatar-port',service)).status,'completed');const result=await f.execute('feed.publish',{text:'only fixture',imageAssetIds:[assetId],visibility:4},'actual-qzone-port',service);assert.equal(result.result.tid,'real-mock-tid');assert.deepEqual(writes.map(v=>v.name),['set_qq_avatar','send_qzone_msg']);assert.equal(writes[1].payload.ugc_right,4);assert.equal(writes[1].payload.images[0],'base64://'+png.toString('base64'));
 });
+test('bridge account mutation rechecks the captured grant after its last asynchronous account probe', async t => {
+  const f = await fixture(t), began = deferred(), finish = deferred(), writes = [];
+  let allowed = true;
+  f.authorization = () => ({ assertCurrent: () => allowed });
+  const driver = createBridgeClient({ platform: 'qq', protocol: 'onebot11', accountId: ACCOUNT, apiUrl: 'http://127.0.0.1:39745' }, {
+    fetchImpl: async url => {
+      const action = new URL(url).pathname.slice(1);
+      if (action === 'get_status') { began.resolve(); await finish.promise; }
+      if (action === 'set_qq_profile') writes.push(action);
+      const data = action === 'get_login_info' ? { user_id: ACCOUNT } : action === 'get_status' ? { online: true, good: true }
+        : action === 'get_version_info' ? { app_name: 'NapCat', app_version: '4.18.41' } : action === 'set_qq_profile' ? { result: 0 } : null;
+      return Response.json({ status: 'ok', retcode: 0, data });
+    },
+  });
+  await driver.inspectCapabilities();
+  const service = createQQAccountService({ ...f.ports, getBridge: async () => ({ ...f.bridge,
+    operations: driver.inspectAccountCapabilities().operations, executeAccount: (...args) => driver.executeAccount(...args) }) });
+  t.after(async () => { finish.resolve(); await service.close(); });
+  const execute = () => f.execute('profile.update', { nickname: '隔离测试名' }, 'bridge-final-probe', service);
+  const pending = execute();
+  await Promise.race([began.promise, pending.then(() => assert.fail('account request returned before its final probe'))]);
+  allowed = false; finish.resolve();
+  await assert.rejects(pending, { code: 'QQ_ACCOUNT_PERMISSION' });
+  const [row] = (await f.index()).receipts;
+  const event = JSON.parse(await fs.readFile(path.join(f.archiveRoot, 'receipts', row.receiptId, '000001.json'), 'utf8'));
+  assert.equal(event.event, 'not_dispatched'); assert.equal(event.transportCalls, 0);
+  assert.equal((await execute()).duplicate, true);
+  assert.deepEqual(writes, []);
+});
 test('postdispatch account replacement preserves a returned Qzone tid as evidence while reporting outcome unknown',async t=>{
   const f=await fixture(t);f.executeHook=(operation,_payload,context)=>{f.bridge={...f.bridge,accountId:'300003',connectionId:'b'.repeat(64)};return{status:'completed',operation,accountId:ACCOUNT,receiptId:'receipt-'+context.operationId,tid:'returned-tid-before-change',confirmedBy:'onebot-api-success'};};
   const result=await f.execute('feed.publish',{text:'test',visibility:64});assert.equal(result.status,'unknown');assert.equal(f.calls.length,1);const detail=await f.service.read({accountOperation:'receipt',accountId:ACCOUNT,receiptId:result.receiptId});const event=JSON.parse(detail.text).events[0];assert.equal(event.response.tid,'returned-tid-before-change');assert.equal(event.status,'unknown');assert.equal((await f.execute('feed.publish',{text:'test',visibility:64})).duplicate,true);assert.equal(f.calls.length,1);

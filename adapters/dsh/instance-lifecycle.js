@@ -59,11 +59,11 @@ async function removeUninitializedLock(file, identity) {
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
 function knownFile(name) {
-  return ['config.json', 'registry.json', 'host-checkpoints.json', 'host-channels.json', 'extensions/qq-social/state.json'].includes(name)
-    || /^(?:meta\/state|self\/(?:persona|history|profile)|global\/(?:state|index|codes|deep|usage-checkpoints)|identity\/profile|voice\/profile|ops\/management|operator\/(?:request|response|receipt))\.json$/.test(name)
+  return ['config.json', 'registry.json', 'host-checkpoints.json', 'host-channels.json', 'host-delivery-facts.json', 'extensions/qq-social/state.json'].includes(name)
+    || /^(?:meta\/state|self\/(?:persona|history|profile)|global\/(?:state|index|codes|deep|usage-checkpoints|prepared-associations)|identity\/profile|voice\/profile|ops\/management|operator\/(?:request|response|receipt))\.json$/.test(name)
     || /^global\/(?:outbox|snapshots|usage|revocations)\.jsonl$/.test(name)
     || /^staging\/(?:events|hot)\.jsonl$/.test(name)
-    || /^people\/[A-Za-z0-9_-]{1,160}\/(?:identity|index|codes|impression|pending|state)\.json$/.test(name)
+    || /^people\/[A-Za-z0-9_-]{1,160}\/(?:identity|index|codes|impression|pending|state|prepared-associations)\.json$/.test(name)
     || /^people\/[A-Za-z0-9_-]{1,160}\/(?:stream|hot)\.jsonl$/.test(name)
     || name === 'timeline/catalog.json'
     || /^timeline\/long\/(?:unknown|person-[A-Za-z0-9_-]{1,160})\.jsonl$/.test(name)

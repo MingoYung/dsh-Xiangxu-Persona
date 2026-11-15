@@ -17,12 +17,13 @@ export function validateRetrievalInput(input = {}) {
   const query = input.query ?? '';
   if (typeof query !== 'string' || Array.from(query).length > RETRIEVAL_LIMITS.queryChars) throw retrievalError('SCHEMA_INVALID', 'Search query must contain at most 2000 characters');
   const mode = input.mode ?? 'auto', timeMode = input.timeMode ?? 'all', depth = input.associationDepth ?? 1, diversity = input.diversity ?? 'none', limit = input.limit ?? 5;
-  if (!['auto', 'lexical', 'hybrid'].includes(mode) || !['all', 'current', 'past', 'asOf'].includes(timeMode) || !['none', 'source'].includes(diversity)) throw retrievalError('SCHEMA_INVALID', 'Unknown retrieval mode');
+  if (!['auto', 'lexical', 'hybrid', 'prepared'].includes(mode) || !['all', 'current', 'past', 'asOf'].includes(timeMode) || !['none', 'source'].includes(diversity)) throw retrievalError('SCHEMA_INVALID', 'Unknown retrieval mode');
   if (!Number.isSafeInteger(limit) || limit < 0 || limit > 1000 || !Number.isSafeInteger(depth) || depth < 0 || depth > 2) throw retrievalError('SCHEMA_INVALID', 'Search limit/depth exceeds its technical range');
   if (input.asOf !== undefined && (!Number.isSafeInteger(input.asOf) || input.asOf < 0)) throw retrievalError('SCHEMA_INVALID', 'asOf must be epoch milliseconds');
   if (timeMode === 'asOf' && input.asOf === undefined || timeMode !== 'asOf' && input.asOf !== undefined) throw retrievalError('SCHEMA_INVALID', 'asOf is required only with timeMode:asOf');
   const seedIds = input.seedIds ?? [];
   if (!Array.isArray(seedIds) || seedIds.length > RETRIEVAL_LIMITS.seedIds || seedIds.some(id => typeof id !== 'string' || !id || Array.from(id).length > 200)) throw retrievalError('SCHEMA_INVALID', 'Search seedIds must contain at most 16 bounded record IDs');
+  if (mode === 'prepared' && (query !== '' || !seedIds.length || input.scope === 'all')) throw retrievalError('SCHEMA_INVALID', 'Prepared association lookup requires an empty query and selected seedIds in one person or global scope');
   return { ...input, query, mode, timeMode, associationDepth: depth, diversity, limit, seedIds: [...new Set(seedIds)] };
 }
 export function temporalReference(item, { timeMode = 'all', asOf } = {}, now) {

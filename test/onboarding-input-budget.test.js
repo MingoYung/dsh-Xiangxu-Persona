@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { MemoryRepository } from '../core/repository.js';
 import { PersonaRuntime } from '../core/runtime.js';
+import { REFERENCE_UNDERSTANDING } from '../core/onboarding.js';
 
 const environment = { version: 1, channelId: 'channel_a', sessionId: 'session_a', platform: 'fixture', timezone: 'UTC' };
 const target = { channelId: 'channel_a', sessionId: 'session_a', personId: 'a' };
@@ -35,7 +36,11 @@ function actualEnvironment(snapshotText) {
 }
 
 test('small control requests fit actual framing while retaining full route, availability and unconsumed source tails', async t => {
-  const f = await fixture(t, { inputBudget: 6000 });
+  // Preserve the original source-page headroom as the required fixed guidance grows.
+  // JSON encodes the added newline as two characters; count its actual wire framing.
+  const fixedReferenceFraming = Array.from(JSON.stringify('\n' + REFERENCE_UNDERSTANDING)).length - 2;
+  const inputBudget = 6000 + fixedReferenceFraming;
+  const f = await fixture(t, { inputBudget });
   await f.repository.updateSelfProfile({ current: { name: '相续' } }, { actor: 'persona' });
   const source = await f.runtime.accept(original('long', 'BEGIN_TEXT_' + '很长的原始消息😀'.repeat(3000)), environment);
   await f.runtime.accept(original('unseen_tail', '这条尚未被这一页读取'), environment);
@@ -44,10 +49,11 @@ test('small control requests fit actual framing while retaining full route, avai
     wakeSummary: [{ personId: 'a', channelId: 'channel_a', sessionId: 'session_a', records: pending }] });
   assert.equal(f.requests.length, 1);
   const request = f.requests[0], serialized = JSON.stringify(request.messages);
-  assert.ok(Array.from(serialized).length <= 6000);
+  assert.ok(Array.from(serialized).length <= inputBudget);
   assert.equal(serialized.split('BEGIN_TEXT_').length - 1, 1);
   const payload = JSON.parse(request.messages.at(-1).content);
   assert.equal(payload.pending.length, 1); assert.equal(payload.pending[0].fragment.complete, false);
+  assert.equal(payload.pending[0].text, Array.from(source.record.text).slice(payload.pending[0].fragment.from, payload.pending[0].fragment.to).join(''));
   assert.equal(payload.pendingPage.originalsRemainQueryable, true);
   assert.ok(!JSON.stringify(payload.wakeSummary).includes('BEGIN_TEXT_'));
   assert.equal(result.pendingPage.completeEventIds.length, 0);
@@ -94,7 +100,17 @@ test('impossible framing keeps sources and offsets untouched, does not call the 
   const f = await fixture(t, { inputBudget: 256 });
   const source = await f.runtime.accept(original('too-small', '原文仍需保留'), environment);
   const before = await f.repository.getRuntime();
+  let clock = 1000;
+  f.runtime.clock = () => ++clock;
+  const probeClocks = [], compose = f.runtime.compose.bind(f.runtime);
+  f.runtime.compose = async (...args) => {
+    const snapshot = await compose(...args);
+    probeClocks.push(actualEnvironment(snapshot.injectedText).now);
+    return snapshot;
+  };
   await assert.rejects(f.runtime.handleSignal('new_message', { personId: 'a', environment, incoming: source.record }), { code: 'MODEL_INPUT_BUDGET' });
+  assert.ok(probeClocks.length > 1);
+  assert.equal(new Set(probeClocks).size, 1, 'budget fitting does not move the time of one request');
   assert.equal(f.requests.length, 0); assert.equal((await f.repository.getSnapshots()).length, 0);
   assert.equal((await f.repository.getPending())[0].text, source.record.text);
   assert.deepEqual((await f.repository.getRuntime()).execution?.pendingOffsets, before.execution?.pendingOffsets);

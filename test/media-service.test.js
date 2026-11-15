@@ -21,6 +21,26 @@ async function finished(service,jobId,states=['completed','failed','unknown']){f
 async function images(t,{image=second,onRequest}={}){return server(t,async(req,res,bytes)=>{onRequest?.(req,bytes);if(req.url.startsWith('/models/'))return json(res,{id:'fixture-image'});if(['/images/generations','/images/edits'].includes(req.url))return json(res,{created:1,data:[{b64_json:image.toString('base64')}]});json(res,{},404);});}
 async function configure(service,baseUrl,extra={}){return service.configureProvider({kind:'image',config:{enabled:true,type:'openai-images',baseUrl,model:'fixture-image',...extra}});}
 
+test('ComfyUI rechecks withdrawn provenance between reference upload and workflow submission', async t => {
+  let revoked = { recordIds: [], sourceKeys: [] };
+  const env = await setup(t), service = env.service({ getRevocations: async () => revoked });
+  const api = await server(t, (req, res) => {
+    if (req.url === '/upload/image') {
+      revoked = { recordIds: [], sourceKeys: [JSON.stringify([ref.sourceSessionId, ref.sourceEventId])] };
+      return json(res, { name: 'owned-reference.png', subfolder: '', type: 'input' });
+    }
+    return json(res, {}, 404);
+  });
+  await configureComfy(service, api, 'image', 'edit');
+  const imported = await service.importReference({ dataBase64: first.toString('base64') });
+  const request = { requestId: 'source-withdrawn-after-upload', kind: 'image', prompt: 'fixture reference', referenceAssetId: imported.asset.assetId };
+  const job = await service.generate(request, { actor: 'persona', sourceRefs: [ref] });
+  const final = await finished(service, job.jobId, ['revoked']);
+  assert.equal(final.error.code, 'MEDIA_SOURCE_REVOKED');
+  assert.deepEqual(api.requests.map(call => call.path), ['/upload/image']);
+  assert.equal((await service.generate(request)).status, 'revoked');
+});
+
 test('media inspection is read only, providers are off, and no key or asset directory is created',async t=>{const env=await setup(t),service=env.service();await service.ready;const value=await service.inspect();assert.equal(value.identity.primaryAssetId,null);assert.equal(value.providers.every(item=>!item.enabled),true);assert.equal(await env.store.readJson(IDENTITY_PROFILE_PATH,null),null);await assert.rejects(fs.stat(env.assetRoot),{code:'ENOENT'});await assert.rejects(fs.stat(env.providerConfigPath),{code:'ENOENT'});await assert.rejects(service.generate({requestId:'off',kind:'image',prompt:'test'}),{code:'MEDIA_PROVIDER_DISABLED'});});
 
 test('reference bytes, identity selection, user lock and bounded history persist without a provider',async t=>{const env=await setup(t);let service=env.service();const imported=await service.importReference({dataBase64:first.toString('base64'),mime:'image/png',setAsPrimary:true,name:'主参考'});assert.equal(imported.asset.width,1);assert.equal(imported.identity.primaryAssetId,imported.asset.assetId);await service.updateIdentity({description:'同一角色',locked:true});await assert.rejects(service.updateIdentity({description:'别的角色'},{actor:'persona'}),{code:'MEDIA_IDENTITY_LOCKED'});await assert.rejects(service.updateIdentity({locked:false},{actor:'persona'}),{code:'MEDIA_IDENTITY_LOCKED'});assert.equal((await service.getAsset({assetId:imported.asset.assetId,preview:true})).dataUrl,'data:image/png;base64,'+first.toString('base64'));await service.close();service=env.service();assert.equal((await service.inspect()).identity.locked,true);assert.deepEqual((await service.readAssetBytes(imported.asset.assetId)).bytes,first);await service.updateIdentity({locked:false});for(let i=0;i<12;i++)await service.updateIdentity({description:'版本'+i},{actor:'persona'});assert.ok((await service.inspect()).identity.history.length<=MEDIA_LIMITS.history);await assert.rejects(service.deleteAsset({assetId:imported.asset.assetId}),{code:'MEDIA_ASSET_PINNED'});});

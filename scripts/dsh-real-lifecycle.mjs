@@ -4,7 +4,8 @@ import { mkdir, readFile, writeFile, appendFile, readdir } from 'node:fs/promise
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
-import { optionsFrom, prepareProfile } from './dsh-integration.mjs';
+import { parseArgs } from 'node:util';
+import { canonicalPath, isolatedEnvironment, isolatedPaths, optionsFrom, prepareProfile } from './dsh-integration.mjs';
 
 // Importing the earlier harness does not run its guarded main. Its fixture,
 // scenarios and model outputs are never invoked by this independent runner.
@@ -151,7 +152,7 @@ async function install(options){
 export class Engine{
   constructor(options,dir,root,overlay){
     this.options=options;this.dir=dir;this.root=root;this.frames=[];this.pending=new Map();this.counter=0;this.log=Promise.resolve();this.closed=false;this.ready=false;let out='',err='';
-    this.child=spawn(options.exe,[options.cli,'--profile',options.profile,'--patch',overlay],{cwd:projectRoot,windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',DSH_HOME:options.home,PERSONA_MEMORY_ROOT:root},stdio:['pipe','pipe','pipe']});
+    this.child=spawn(options.exe,[options.cli,'--profile',options.profile,'--patch',overlay],{cwd:projectRoot,windowsHide:true,env:{...(options.env??process.env),ELECTRON_RUN_AS_NODE:'1',DSH_HOME:options.home,PERSONA_MEMORY_ROOT:root},stdio:['pipe','pipe','pipe']});
     this.child.stdout.setEncoding('utf8');this.child.stderr.setEncoding('utf8');
     this.child.stdout.on('data',chunk=>{out+=chunk;let i;while((i=out.indexOf('\n'))>=0){let s=out.slice(0,i);out=out.slice(i+1);this.consume(s);}});
     this.child.stderr.on('data',chunk=>{this.log=this.log.then(()=>appendFile(join(dir,'stderr.txt'),clean(chunk)));err+=chunk;let i;while((i=err.indexOf('\n'))>=0){let s=err.slice(0,i);err=err.slice(i+1);if(s.startsWith('PM_REAL_OBSERVER_READY '))this.ready=true;}});
@@ -167,7 +168,7 @@ export class Engine{
 }
 export async function start(options,dir,memoryRoot){
   await mkdir(dir,{recursive:true});const observer=join(options.artifacts,'real-observer.mjs');await writeFile(observer,observerSource);
-  const overlay=join(dir,'overlay.yml');await writeFile(overlay,JSON.stringify([{id:'tools',config:{mode:'native'}},{insert:[{id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'}},{id:'persona-real-observer',name:pathToFileURL(observer).href,config:observerConfig(options,dir)}]}],null,2));
+  const overlay=join(dir,'overlay.yml');await writeFile(overlay,JSON.stringify([{insert:[{id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'}},{id:'persona-real-observer',name:pathToFileURL(observer).href,config:observerConfig(options,dir)}]}],null,2));
   const e=new Engine(options,dir,memoryRoot,overlay);if(!await e.wait(()=>e.ready,30000))throw new Error('Real provider observation did not become ready; no model prompt sent');
   await e.request('initialize',{cwd:options.cwd??projectRoot,provider:options.provider,model:options.model,...(options.reasoningEffort?{reasoningEffort:options.reasoningEffort}:{}),maxTokens:4096});return e;
 }
@@ -246,20 +247,60 @@ function recoveredCursorFeedback(errors,events){
   });
 }
 
+const lifecycleUsage = `Usage: node scripts/dsh-real-lifecycle.mjs --real [--home NEW_PATH] [--artifacts PATH] [--resume-dir PATH] [--start-phase N]
+Set --home or DSH_TEST_HOME to an explicit isolated home. Resume requires the same home and an evidence checkpoint from this runner.
+Continuation options: --wake-modes-only, --native-policy-probe-only, --read-long-source-only, --recover-completed-wake-job ID, --resume-selected-wake-job ID.
+Additional options: --pause-after-initial, --retry-run ID, --request-observation-reset, --new-preference, --identity-followup-only.
+--real may dispatch billable model requests. --help shows this message without creating files or starting DSH.`;
+
 export async function runRealLifecycle(argv=process.argv.slice(2)){
-  const option=(name,fallback)=>{const i=argv.indexOf(name);return i<0?fallback:argv[i+1];};
-  const defaults=optionsFrom([],process.env),base=resolve(option('--artifacts',join(projectRoot,'work','persona-real-validation')));
-  const options={...defaults,profile:'persona-memory-real-validation',provider:'deepseek-official',model:'deepseek-flash',artifacts:base};
-  await mkdir(base,{recursive:true});if(!existsSync(options.exe))throw new Error('Installed DSH executable missing');
-  const priorArg=argv.includes('--resume-dir')?resolve(option('--resume-dir')):null;
-  const withinBase=path=>{const rel=relative(base,path);return rel!==''&&!rel.startsWith('..')&&!isAbsolute(rel);};
+  const { values, tokens } = parseArgs({ args: argv, tokens: true, options: {
+    help: { type: 'boolean', short: 'h' }, real: { type: 'boolean' }, home: { type: 'string' }, artifacts: { type: 'string' },
+    'resume-dir': { type: 'string' }, 'start-phase': { type: 'string' }, 'wake-modes-only': { type: 'boolean' },
+    'native-policy-probe-only': { type: 'boolean' }, 'read-long-source-only': { type: 'boolean' },
+    'recover-completed-wake-job': { type: 'string' }, 'resume-selected-wake-job': { type: 'string' }, 'retry-run': { type: 'string' },
+    'pause-after-initial': { type: 'boolean' }, 'request-observation-reset': { type: 'boolean' },
+    'new-preference': { type: 'boolean' }, 'identity-followup-only': { type: 'boolean' },
+  } });
+  if (new Set(tokens.map(token => token.name)).size !== tokens.length) throw new Error('Each option can be set only once');
+  if (values.help) return { usage: lifecycleUsage };
+  if (!values.real) throw new Error('Use --real to explicitly select the paid lifecycle test. See --help.');
+  if (Object.values(values).some(value => typeof value === 'string' && !value.trim())) throw new Error('Option values must be nonempty');
+  const option=(name,fallback)=>values[name.slice(2)]??fallback;
+  const has=name=>option(name)!==undefined;
+  const requestedPhase=has('--start-phase')?Number(option('--start-phase')):null;
+  if (requestedPhase!==null && (!Number.isInteger(requestedPhase) || requestedPhase<1 || requestedPhase>9)) throw new Error('--start-phase must be an integer from 1 to 9');
+  const defaults=optionsFrom([],process.env),resume=has('--resume-dir');
+  const paths=await isolatedPaths({...defaults,testHome:option('--home',defaults.testHome),artifacts:option('--artifacts',join(projectRoot,'work','persona-real-validation'))},{resume});
+  const base=paths.artifacts,home=paths.home;
+  const options={...defaults,...paths,profile:'persona-memory-real-validation',provider:'deepseek-official',model:'deepseek-flash',env:isolatedEnvironment(home,true)};
+  if(!existsSync(options.exe))throw new Error('Installed DSH executable missing');
+  const priorArg=resume?await canonicalPath(resolve(option('--resume-dir'))):null;
+  const withinBase=path=>{const rel=relative(base,path);return rel!==''&&rel!=='..'&&!rel.startsWith('../')&&!rel.startsWith('..\\')&&!isAbsolute(rel);};
   if(priorArg&&!withinBase(priorArg))throw new Error('Resume evidence directory must stay inside this dedicated validation root');
   const prior=priorArg?await json(join(priorArg,'result.json')):null;
-  if((argv.includes('--wake-modes-only')||argv.includes('--native-policy-probe-only')||argv.includes('--recover-completed-wake-job'))&&(!prior?.sessions?.A2||!prior?.sessions?.B2))throw new Error('Wake continuation requires the completed isolated A2/B2 state');
+  const markerPath=join(home,'.xiangxu-real-lifecycle.json');
+  const ownership={version:1,dshHome:home,artifactRoot:base};
+  if (resume) {
+    const marker=await json(markerPath);
+    if (marker?.version!==ownership.version || marker.dshHome!==home || marker.artifactRoot!==base || prior?.dshHome!==home) throw new Error('Resume requires the original isolated lifecycle home and its matching evidence checkpoint');
+  }
+  if((has('--wake-modes-only')||has('--native-policy-probe-only')||has('--recover-completed-wake-job'))&&(!prior?.sessions?.A2||!prior?.sessions?.B2))throw new Error('Wake continuation requires the completed isolated A2/B2 state');
   if(priorArg&&(!prior?.memoryRoot||!prior.sessions?.A||!prior.sessions?.B))throw new Error('Resume result lacks the isolated memory/session identities');
-  const runId=(prior?'continuation-':'run-')+Date.now()+'-'+randomUUID().slice(0,8),dir=join(base,runId),memoryRoot=prior?.memoryRoot??join(dir,'memory');await mkdir(dir,{recursive:true});
-  if(!withinBase(resolve(memoryRoot)))throw new Error('The memory root must stay inside this dedicated validation evidence root');
-  options.artifacts=dir;options.maxActualDispatches=argv.includes('--read-long-source-only')?8:null;
+  const runId=(prior?'continuation-':'run-')+Date.now()+'-'+randomUUID().slice(0,8),dir=join(base,runId);
+  const memoryRoot=await canonicalPath(resolve(prior?.memoryRoot??join(dir,'memory')));
+  if(!withinBase(memoryRoot))throw new Error('The memory root must stay inside this dedicated validation evidence root');
+  if (!resume) {
+    await mkdir(dirname(home),{recursive:true});
+    await mkdir(home);
+    await mkdir(options.env.APPDATA,{recursive:true});
+    await mkdir(options.env.LOCALAPPDATA,{recursive:true});
+    await writeFile(options.env.NPM_CONFIG_USERCONFIG,'');
+    await writeFile(options.env.NPM_CONFIG_GLOBALCONFIG,'');
+    await writeFile(markerPath,JSON.stringify(ownership),{flag:'wx'});
+  }
+  await mkdir(dir,{recursive:true});
+  options.artifacts=dir;options.maxActualDispatches=has('--read-long-source-only')?8:null;
   const priorChat=prior?await chatRecords(memoryRoot):[];
   options.sourceProbes=priorChat.filter(row=>unknownWakeSources.includes(row.sourceEventId)&&Number.isSafeInteger(row.sourceCursor)).map(row=>({sessionId:row.sourceSessionId,seq:row.sourceCursor,sourceEventId:row.sourceEventId}));
   if(priorArg)for(const entry of await readdir(priorArg,{withFileTypes:true}))if(entry.isDirectory()&&entry.name.startsWith('engine-')){
@@ -268,11 +309,11 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
       for(const role of ['user','assistant']){const row=eligible.find(row=>row.role===role);if(row&&!options.sourceProbes.some(probe=>probe.sourceEventId===row.sourceEventId))options.sourceProbes.push({sessionId:row.sourceSessionId,seq:row.sourceCursor,sourceEventId:row.sourceEventId,expectedTextSha256:createHash('sha256').update(row.text??'').digest('hex'),reason:'raw_after_actual_native_compaction',compactionSummarySeq:event.seq,compactionEvidence:join(priorArg,entry.name,'rpc.jsonl')});}
     }
   }
-  const report={runId,startedAt:new Date().toISOString(),route:{provider:options.provider,model:options.model},profile:options.profile,memoryRoot,sourceDigests:await hashes(),phases:[],claims:{realDshEngine:true,allModelCallsRealProvider:true,externalHttpWire:false,spontaneousLongTermPersonalityProven:false},testInputs:'Synthetic participants and experiences for the explicitly authorized lifecycle validation.'};
+  const report={runId,startedAt:new Date().toISOString(),route:{provider:options.provider,model:options.model},profile:options.profile,dshHome:home,memoryRoot,sourceDigests:await hashes(),phases:[],claims:{realDshEngine:true,allModelCallsRealProvider:true,externalHttpWire:false,spontaneousLongTermPersonalityProven:false},testInputs:'Synthetic participants and experiences for the explicitly authorized lifecycle validation.'};
   report.observerSha256=createHash('sha256').update(observerSource).digest('hex');
   if(prior)report.priorRun={directory:priorArg,status:prior.status,error:prior.error,modelAttemptCount:prior.modelAttemptCount,usageTotals:prior.usageTotals,earlier:prior.priorRun,note:'Same memory and participant sessions; earlier experiences are preserved and not resent. Prior failures are not counted as passes.'};
-  const startPhase=argv.includes('--start-phase')?Number(argv[argv.indexOf('--start-phase')+1]):prior?2:1;
-  report.startPhase=startPhase;if(!Number.isInteger(startPhase)||startPhase<1||startPhase>9)throw new Error('start-phase must be 1..9');
+  const startPhase=requestedPhase??(prior?2:1);
+  report.startPhase=startPhase;
   report.beforeStartupRuntime=prior?await json(join(memoryRoot,'global','state.json')):null;
   await writeFile(join(dir,'manifest.json'),JSON.stringify(report,null,2));await install(options);
   let e=await start(options,join(dir,'engine-1'),memoryRoot),engineDirs=[e.dir];
@@ -291,7 +332,7 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
   try{
     if(prior){
       const known=(await json(join(memoryRoot,'host-checkpoints.json')))?.sessions??{};
-      for(const id of (argv.includes('--read-long-source-only')?[report.sessions.B2]:argv.includes('--recover-completed-wake-job')?[]:((argv.includes('--wake-modes-only')||argv.includes('--native-policy-probe-only'))?[report.sessions.A2,report.sessions.B2]:[A,B,...(startPhase>=7?[report.sessions.A2,report.sessions.B2]:[])])).filter(Boolean))if(Object.hasOwn(known,id))await e.request('session/resume',{sessionId:id});
+      for(const id of (has('--read-long-source-only')?[report.sessions.B2]:has('--recover-completed-wake-job')?[]:((has('--wake-modes-only')||has('--native-policy-probe-only'))?[report.sessions.A2,report.sessions.B2]:[A,B,...(startPhase>=7?[report.sessions.A2,report.sessions.B2]:[])])).filter(Boolean))if(Object.hasOwn(known,id))await e.request('session/resume',{sessionId:id});
       await snapshot(memoryRoot,join(dir,'preserved-initial-memory'));
     }
     else await phase('01-natural-experience',async()=>{
@@ -299,7 +340,7 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
       const receipt=await e.prompt(A,input);await pause(300);const registry=await json(join(memoryRoot,'registry.json'));
       return {input,receipt,identityRoutes:registry?.items??[],observed:e.events(A).some(x=>x.type==='tool/call'&&JSON.stringify(x.data).includes('identityPlan'))};
     });
-    if(argv.includes('--read-long-source-only')){
+    if(has('--read-long-source-only')){
       await phase('14-read-long-assistant-source-tail',async()=>{
         const {B2}=report.sessions,sourceEventId=unknownWakeSources[0],original=(await chatRecords(memoryRoot)).find(row=>row.sourceEventId===sourceEventId);
         if(!original||original.role!=='assistant'||Array.from(original.text).length!==632)throw new Error('Expected preserved original 632-character assistant C1 source');
@@ -322,7 +363,7 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
       });
       report.status=report.phases.every(phase=>phase.status.startsWith('completed'))?'completed-long-source-tail':'partial-long-source-tail';return report;
     }
-    if(argv.includes('--native-policy-probe-only')){
+    if(has('--native-policy-probe-only')){
       await phase('00-native-history-policy-probe',async()=>{
         const policies=await lines(join(e.dir,'native-history-policy.jsonl')),sourceProbes=await lines(join(e.dir,'host-source-probes.jsonl'));
         const nativePresetReady=[report.sessions.A2,report.sessions.B2].every(sessionId=>policies.some(row=>row.sessionId===sessionId&&row.preset==='persona-memory'&&row.presetCompactionPresent&&row.presetPrunerPresent&&row.compactionConfig?.maxTokens===4096&&row.compactionConfig?.headroomTokens===8192&&row.compactionConfig?.compactionRetries===0&&row.compositionIsolation.every(item=>item.leakedServices.length===0)));
@@ -332,9 +373,9 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
       });
       report.status='completed-native-policy-probe';return report;
     }
-    if(argv.includes('--wake-modes-only')){
-      if(argv.includes('--resume-selected-wake-job'))await operator(options,memoryRoot,'config',{processingLimits:{consolidationInputChars:4000}},dir);
-      else if(!argv.includes('--recover-completed-wake-job'))await operator(options,memoryRoot,'config',{consolidationMode:'sleep'},dir);
+    if(has('--wake-modes-only')){
+      if(has('--resume-selected-wake-job'))await operator(options,memoryRoot,'config',{processingLimits:{consolidationInputChars:4000}},dir);
+      else if(!has('--recover-completed-wake-job'))await operator(options,memoryRoot,'config',{consolidationMode:'sleep'},dir);
       const {A2}=report.sessions,routes=(await json(join(memoryRoot,'registry.json')))?.items??[],aId=routes.find(route=>route.sessionId===A2)?.personId;
       if(!aId)throw new Error('The preserved observed A2 route must remain recognized before a wake invitation');
       let explicitAlreadyObserved=false;
@@ -379,7 +420,7 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
           return result;
         }finally{const trace=await monitor.stop();if(result)result.runtimeFileTrace=trace;await writeFile(join(destination,'trace-status.json'),JSON.stringify(trace,null,2));}
       };
-      if(argv.includes('--recover-completed-wake-job')){
+      if(has('--recover-completed-wake-job')){
         await phase('11c-completed-job-cold-wake-recovery',async()=>{
           const jobId=option('--recover-completed-wake-job'),before=report.beforeStartupRuntime,originalJob=before?.execution?.consolidationJobs?.[jobId];
           if(before?.sleep?.state!=='sleeping'||before.sleep.wakeJobId!==jobId||originalJob?.status!=='completed')throw new Error('Cold recovery must start from the original committed job still bound to sleep');
@@ -400,7 +441,7 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
         report.coldRecoveryExit=await e.close();e=await start(options,join(dir,'engine-after-cold'),memoryRoot);engineDirs.push(e.dir);
         for(const id of [report.sessions.A2,report.sessions.B2])await e.request('session/resume',{sessionId:id});
       }
-      else if(argv.includes('--resume-selected-wake-job'))await phase('11b-selected-job-explicit-continuation',async()=>{
+      else if(has('--resume-selected-wake-job'))await phase('11b-selected-job-explicit-continuation',async()=>{
         const jobId=option('--resume-selected-wake-job'),selected=await json(join(memoryRoot,'global','state.json')),originalJob=selected?.execution?.consolidationJobs?.[jobId];
         if(!originalJob||selected.sleep?.state!=='sleeping'||selected.sleep.wakeJobId!==jobId)throw new Error('Explicit continuation must match the already selected sleeping job');
         const destination=join(dir,'wake-observation','selected-job-continuation'),monitor=await observeRuntimeFiles(memoryRoot,destination),beforeWakes=(await lines(join(e.dir,'runtime-wakes.jsonl'))).length;
@@ -446,21 +487,21 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
       });
       report.status=report.phases.every(p=>p.status.startsWith('completed'))?'completed-wake-mode-observations':'partial-wake-mode-observations';return report;
     }
-    if(argv.includes('--pause-after-initial')){
+    if(has('--pause-after-initial')){
       report.initialExit=await e.close();await writeFile(join(dir,'await-source-ready.json'),JSON.stringify({at:Date.now(),continueFile:join(dir,'continue.json'),note:'No model requests dispatched while waiting; restart loads the verified current implementation.'},null,2));
       process.stdout.write(JSON.stringify({pausedAfterInitial:true,runDirectory:dir,continueFile:join(dir,'continue.json')})+'\n');
       const until=Date.now()+1200000;while(!existsSync(join(dir,'continue.json'))){if(Date.now()>until)throw Object.assign(new Error('Source-ready handoff timed out'),{code:'HANDOFF_TIMEOUT'});await pause(250);}
       e=await start(options,join(dir,'engine-after-initial'),memoryRoot);engineDirs.push(e.dir);await e.request('session/resume',{sessionId:A});
     }
-    if(argv.includes('--retry-run'))await phase('03b-original-run-structure-retry',async()=>{
-      const runId=argv[argv.indexOf('--retry-run')+1],beforePersona=await json(join(memoryRoot,'self','persona.json')),before=await json(join(memoryRoot,'journal','runs',runId+'.json'));
+    if(has('--retry-run'))await phase('03b-original-run-structure-retry',async()=>{
+      const runId=option('--retry-run'),beforePersona=await json(join(memoryRoot,'self','persona.json')),before=await json(join(memoryRoot,'journal','runs',runId+'.json'));
       if(before?.status!=='prepared'||!before.candidatePatch||!before.validationError)throw new Error('Explicit technical retry needs the original prepared run and actual retained candidate/error');
       const response=await operator(options,memoryRoot,'consolidate',{runId},dir),after=await json(join(memoryRoot,'journal','runs',runId+'.json')),afterPersona=await json(join(memoryRoot,'self','persona.json'));
       return {runId,response,priorCandidate:before.candidatePatch,priorValidationError:before.validationError,committedRun:after,personaBefore:beforePersona,personaAfter:afterPersona,
         personalityChanged:JSON.stringify(beforePersona)!==JSON.stringify(afterPersona),nonemptyCommits:after?.status==='committed'&&after.validatedPatch?.length>0?1:0,
         observed:after?.status==='committed'&&Boolean(after.commitMarker)&&after.validatedPatch?.length>0};
     });
-    if(argv.includes('--request-observation-reset')){
+    if(has('--request-observation-reset')){
       let allowB=false;
       await phase('03c-user-request-observation-scope',async()=>{
         const input='林岚在你仍观察的窗口说：接下来我想验证周闻的新来信以及换新窗口后的认人。你上一轮选择只留意我，这个选择已经生效；之前被排除的旧来信不需要补回。现在你愿不愿意重新观察周闻，也允许我们接下来换窗口来找你？请你自己选择并用persona_decide保存。技术语法说明：attention:null清除当前观察过滤，省略attention会保留旧过滤，数组[]是选择谁都不观察；不是必须选null，你也可以拒绝或选择自己的范围。';
@@ -497,7 +538,7 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
     });
     if(startPhase<=4)await phase('04-on-write-increment',async()=>{
       await operator(options,memoryRoot,'config',{consolidationMode:'on_write'},dir);const before=await runs(memoryRoot),beforeState=await json(join(memoryRoot,'global','state.json'));
-      const input=argv.includes('--new-preference')?'周闻带来一条新的口味：我最近发现自己喜欢不加糖的桂花乌龙。你可以随意回应，觉得值得记的再记。这是周闻自己的新偏好，不是林岚的。':'周闻补一句：我更喜欢跑完后喝温豆浆，不喝冰咖啡。你可以随意回应，觉得值得记的再记。这是周闻自己的口味，不是林岚的。';const receipt=await e.prompt(B,input);
+      const input=has('--new-preference')?'周闻带来一条新的口味：我最近发现自己喜欢不加糖的桂花乌龙。你可以随意回应，觉得值得记的再记。这是周闻自己的新偏好，不是林岚的。':'周闻补一句：我更喜欢跑完后喝温豆浆，不喝冰咖啡。你可以随意回应，觉得值得记的再记。这是周闻自己的口味，不是林岚的。';const receipt=await e.prompt(B,input);
       const record=await e.wait(async()=>(await chatRecords(memoryRoot)).find(x=>x.sourceEventId===receipt.messageId),10000);
       if(!record)return {input,receipt,observed:false,reason:'No accepted participant C1 for this receipt; attention/gaps remain in the captured state. No old excluded input was replayed.'};
       const findCommit=async()=>{const list=await runs(memoryRoot);return list.find(x=>x.status==='committed'&&x.commitMarker&&!before.some(y=>y.runId===x.runId)&&record&&x.inputSlices?.some(slice=>slice.key==='chat:'+record.id&&slice.complete));};
@@ -509,7 +550,7 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
     });
     if(startPhase<=5)await phase('05-explicit-forget',async()=>{
       await operator(options,memoryRoot,'config',{consolidationMode:'sleep'},dir);
-      const preference=argv.includes('--new-preference')?'喜欢不加糖的桂花乌龙':'跑完后更喜欢温豆浆、不喝冰咖啡';
+      const preference=has('--new-preference')?'喜欢不加糖的桂花乌龙':'跑完后更喜欢温豆浆、不喝冰咖啡';
       const input='周闻明确更正一件事：我刚才“'+preference+'”的说法不准确，请不要继续保留为我的口味。请先用memory_search定位这条口味的原话、相关回复或派生记忆，再实际用memory_forget明确撤销选定记录，而不只是以后少提；其他第一次夜跑和暗号请保留。不需要反过来给我编造别的偏好。你可以直说执行结果，不要把自然淘汰叫成明确撤销。';
       const before=e.events(B).length,receipt=await e.prompt(B,input),events=e.events(B).slice(before),revocations=await lines(join(memoryRoot,'global','revocations.jsonl'));
       return {input,receipt,revocations,observed:events.some(x=>x.type==='tool/call'&&JSON.stringify(x.data).includes('memory_forget'))&&revocations.length>0};
@@ -517,7 +558,7 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
     report.firstExit=await e.close();
     e=await start(options,join(dir,'engine-2'),memoryRoot);engineDirs.push(e.dir);
     if(startPhase>6)for(const id of [report.sessions.A2,report.sessions.B2].filter(Boolean))await e.request('session/resume',{sessionId:id});
-    if(argv.includes('--identity-followup-only')){
+    if(has('--identity-followup-only')){
       await operator(options,memoryRoot,'config',{consolidationMode:'sleep'},dir);
       await phase('10-identity-assignment-contract-followup',async()=>{
         const {A2,B2}=report.sessions,before=(await json(join(memoryRoot,'registry.json')))?.items??[],expectedB=before.find(r=>r.sessionId===B)?.personId,expectedA=before.find(r=>r.sessionId===A2)?.personId;
@@ -588,4 +629,4 @@ export async function runRealLifecycle(argv=process.argv.slice(2)){
   }
   return report;
 }
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))runRealLifecycle().then(r=>{console.log(JSON.stringify({runId:r.runId,status:r.status,phases:r.phases.map(p=>({name:p.name,status:p.status})),modelAttemptCount:r.modelAttemptCount,usageTotals:r.usageTotals,error:r.error},null,2));process.exitCode=r.status==='technical-failure'?1:0;}).catch(e=>{console.error(JSON.stringify(summaryError(e)));process.exitCode=1;});
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))runRealLifecycle().then(r=>{if(r.usage){console.log(r.usage);return;}console.log(JSON.stringify({runId:r.runId,status:r.status,phases:r.phases.map(p=>({name:p.name,status:p.status})),modelAttemptCount:r.modelAttemptCount,usageTotals:r.usageTotals,error:r.error},null,2));process.exitCode=r.status==='technical-failure'?1:0;}).catch(e=>{console.error(JSON.stringify(summaryError(e)));process.exitCode=1;});

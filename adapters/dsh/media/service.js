@@ -104,7 +104,9 @@ export function createMediaService({store,assetRoot,providerConfigPath,fetchImpl
     if(result.outputs){for(const output of result.outputs){mediaInfo(output.bytes,job.kind);const asset=await putAsset(output.bytes,{name:output.name,origin:'generated',referenceVersion:job.referenceVersion,jobId,...sourceLinks(job)});resultAssetIds.push(asset.assetId);}}
     await saveManifest({...manifest,jobs:manifest.jobs.map(value=>value.jobId===jobId?{...value,...Object.fromEntries(['status','remoteJobId','error'].filter(key=>result[key]!==undefined).map(key=>[key,result[key]])),...(result.outputs?{resultAssetIds}:{}),updatedAt:clock()}:value)});return safeJob(findJob(jobId));},{internal:true});}
   function launch(job,config,reference){const controller=new AbortController();controllers.set(job.jobId,controller);const task=(async()=>{
-    await setJob(job.jobId,{status:'running'});const result=await submit(fetchImpl,config,job,reference,abortSignal(controller));await applyResult(job.jobId,result);
+    const running=await setJob(job.jobId,{status:'running'});
+    if(running.status!=='running')return;
+    const result=await submit(fetchImpl,config,job,reference,abortSignal(controller),()=>assertNotRevoked(job));await applyResult(job.jobId,result);
   })().catch(async error=>{try{await setJob(job.jobId,{status:error.code==='MEDIA_PROVIDER_HTTP'&&/HTTP 4\d\d/.test(error.message)?'failed':'unknown',error:safeError(error)});}catch{}}).finally(()=>{controllers.delete(job.jobId);tasks.delete(job.jobId);});tasks.set(job.jobId,task);}
   async function inspect({includeConfiguration=false}={}){return queue(async()=>({identity:clone(identity),providers:providers.providers.map(value=>publicProvider(value,includeConfiguration===true)),limits:clone(LIMITS),usage:await usage(),jobs:manifest.jobs.slice(-20).map(safeJob),sources:MEDIA_PROVIDER_SOURCES}));}
   return{

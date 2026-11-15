@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { appendFile, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import { parseArgs } from 'node:util';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -14,21 +15,77 @@ const textOf = message => (message?.content ?? []).filter(x => x.type === 'text'
 const readJson = async path => { try { return JSON.parse(await readFile(path, 'utf8')); } catch { return null; } };
 
 export function optionsFrom(argv = process.argv.slice(2), env = process.env) {
-  const flag = name => argv.includes(name);
-  const value = (name, fallback) => { const i = argv.indexOf(name); return i < 0 ? fallback : argv[i + 1]; };
-  const install = env.DSH_TEST_INSTALL ?? join(env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs', 'DSH NEXT');
-  return { projectRoot, profile: 'persona-memory-validation', home: env.DSH_TEST_HOME ?? env.DSH_HOME ?? join(homedir(), '.dsh'),
+  const { values, tokens } = parseArgs({ args: argv, tokens: true, options: {
+    help: { type: 'boolean', short: 'h' }, 'fixture-only': { type: 'boolean' }, 'real-only': { type: 'boolean' }, 'base-only': { type: 'boolean' },
+    home: { type: 'string' }, artifacts: { type: 'string' }, install: { type: 'string' },
+  } });
+  if (new Set(tokens.map(token => token.name)).size !== tokens.length) throw new Error('Each option can be set only once');
+  const testHome = values.home ?? env.DSH_TEST_HOME;
+  const install = values.install ?? env.DSH_TEST_INSTALL ?? join(env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'), 'Programs', 'DSH NEXT');
+  return { projectRoot, profile: 'persona-memory-validation', testHome, configuredHome: env.DSH_HOME,
+    home: testHome ?? env.DSH_HOME ?? join(homedir(), '.dsh'),
     exe: join(install, 'DSH NEXT.exe'), cli: join(install, 'resources', 'app.asar', 'lib', 'desktop-cli.js'),
     pluginCli: join(install, 'resources', 'app.asar', 'lib', 'plugin-cli.js'),
-    artifacts: resolve(value('--artifacts', env.DSH_TEST_ARTIFACTS ?? join(projectRoot, 'work', 'dsh-integration'))),
-    fixtureOnly: flag('--fixture-only'), realOnly: flag('--real-only'), baseOnly: flag('--base-only'),
+    artifacts: resolve(values.artifacts ?? env.DSH_TEST_ARTIFACTS ?? join(projectRoot, 'work', 'dsh-integration')),
+    fixtureOnly: values['fixture-only'], realOnly: values['real-only'], baseOnly: values['base-only'], help: values.help,
     provider: env.DSH_TEST_PROVIDER, model: env.DSH_TEST_MODEL,
     requestTimeout: Number(env.DSH_TEST_TIMEOUT_MS ?? 120000), installTimeout: Number(env.DSH_TEST_INSTALL_TIMEOUT_MS ?? 180000) };
 }
 
+const integrationUsage = `Usage: node scripts/dsh-integration.mjs (--fixture-only | --base-only | --real-only) [--home NEW_PATH] [--artifacts PATH] [--install PATH]
+Choose exactly one mode. --real-only may dispatch billable model requests.
+Set --home or DSH_TEST_HOME to a new absolute path outside production DSH homes. DSH_TEST_ARTIFACTS and DSH_TEST_INSTALL supply matching defaults.
+--help shows this message without creating files or starting DSH.`;
+
+async function pathExists(path) {
+  try { await lstat(path); return true; }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
+
+export async function canonicalPath(path) {
+  try { return await realpath(path); }
+  catch (error) {
+    const parent = dirname(path);
+    if (error.code !== 'ENOENT' || parent === path || await pathExists(path)) throw error;
+    return resolve(await canonicalPath(parent), relative(parent, path));
+  }
+}
+
+function within(root, path) {
+  const rel = relative(root, path);
+  return !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + sep);
+}
+
+export async function isolatedPaths(options, { resume = false } = {}) {
+  if (!options.testHome || !isAbsolute(options.testHome)) throw Object.assign(new Error('Set --home or DSH_TEST_HOME to a new absolute path'), { code: 'DSH_TEST_HOME_REQUIRED' });
+  const home = resolve(options.testHome), artifacts = resolve(options.artifacts);
+  const [realHome, realArtifacts] = await Promise.all([canonicalPath(home), canonicalPath(artifacts)]);
+  const defaultHome = join(homedir(), '.dsh'), configuredHome = options.configuredHome && resolve(options.configuredHome);
+  const protectedHomes = [defaultHome];
+  // A caller may explicitly set both variables to the same fresh test root.
+  if (configuredHome && relative(home, configuredHome)) protectedHomes.push(configuredHome);
+  for (const root of protectedHomes) {
+    const resolvedRoot = await canonicalPath(root);
+    if (within(root, home) || within(home, root) || within(root, artifacts) ||
+        within(resolvedRoot, realHome) || within(realHome, resolvedRoot) || within(resolvedRoot, realArtifacts)) {
+      throw Object.assign(new Error('Test home and artifacts must stay outside production DSH homes'), { code: 'DSH_TEST_HOME_CONFLICT' });
+    }
+  }
+  if (!resume && await pathExists(realHome)) throw Object.assign(new Error('The test home must be a new path; existing homes are never reused'), { code: 'DSH_TEST_HOME_EXISTS' });
+  return { home: realHome, artifacts: realArtifacts };
+}
+
+export function isolatedEnvironment(home, real) {
+  const osNames = new Set(['path', 'systemroot', 'windir', 'comspec', 'pathext', 'temp', 'tmp', 'programfiles', 'programfiles(x86)', 'programdata', 'allusersprofile', 'number_of_processors', 'processor_architecture', 'os', 'lang', 'lc_all']);
+  const scopedNames = new Set(['home', 'userprofile', 'appdata', 'localappdata', 'dsh_home', 'electron_run_as_node', 'persona_memory_root', 'npm_config_userconfig', 'npm_config_globalconfig']);
+  const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) => real ? !scopedNames.has(name.toLowerCase()) : osNames.has(name.toLowerCase())));
+  return { ...inherited, HOME: home, USERPROFILE: home, APPDATA: join(home, 'platform', 'roaming'), LOCALAPPDATA: join(home, 'platform', 'local'),
+    NPM_CONFIG_USERCONFIG: join(home, 'empty.npmrc'), NPM_CONFIG_GLOBALCONFIG: join(home, 'empty-global.npmrc') };
+}
+
 async function nativeCommand(options, args, label, entry = options.cli) {
   const child = spawn(options.exe, [entry, ...args], { cwd: projectRoot, windowsHide: true,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DSH_HOME: options.home }, stdio: ['ignore', 'pipe', 'pipe'] });
+    env: { ...(options.env ?? process.env), ELECTRON_RUN_AS_NODE: '1', DSH_HOME: options.home }, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = ''; child.stdout.on('data', x => { stdout += x; }); child.stderr.on('data', x => { stderr += x; });
   const result = await new Promise((done, reject) => {
     const timer = setTimeout(() => { child.kill(); done({ code: null, timedOut: true }); }, options.installTimeout);
@@ -91,7 +148,10 @@ export function apply(ctx, config) {
   const capture = (kind, options) => appendFileSync(join(config.artifacts,'requests.jsonl'), JSON.stringify({kind,at:Date.now(),provider:options.provider,model:options.model,tools:(options.tools||[]).map(x=>x.name),messages:serial(options.messages||[])})+'\n');
   const route = ctx.get('agentDefaultModel').currentSelection();
   process.stderr.write('PERSONA_VALIDATION_ROUTE '+JSON.stringify({provider:route.provider,model:route.model,reasoningEffort:route.reasoningEffort})+'\n');
-  ctx.on('llm/stream', (options,next) => {capture('host-llm-stream-input',options);return next();});
+  ctx.on('llm/stream', (options,next) => {
+    if (config.fixture && options.provider !== 'persona-fixture-validation') throw new Error('Fixture run refused a non-fixture provider');
+    capture('host-llm-stream-input',options);return next();
+  });
   const captureState=(kind,agent,position={})=>{
     const state=ctx.get('personaMemory')?.agents?.get(agent?.id);
     appendFileSync(join(config.artifacts,'adapter-state.jsonl'),JSON.stringify({kind,at:Date.now(),sessionId:agent?.id,...position,
@@ -179,7 +239,6 @@ async function writeOverlay(options, dir, fixture) {
   await writeFile(plugin, fixturePlugin);
   const overlay = join(dir, 'test-overlay.yml');
   const entries = [
-    { id: 'tools', config: { mode: 'native' } },
     { insert: [
       ...(!options.baseOnly ? [{ id:'agent-preset-registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'persona-memory'} }] : []),
       { id:'persona-validation-probe',name:pathToFileURL(plugin).href,config:{artifacts:dir,fixture,attachPreset:!options.baseOnly} },
@@ -204,7 +263,7 @@ class RpcProcess {
   constructor(options, overlay, dir, memoryRoot) {
     this.options=options;this.dir=dir;this.events=[];this.pending=new Map();this.counter=0;this.route=null;this.closed=false;this.lines='';this.stderrLines='';this.logTail=Promise.resolve();
     this.child=spawn(options.exe,[options.cli,'--profile',options.profile,'--patch',overlay],{cwd:projectRoot,windowsHide:true,
-      env:{...process.env,ELECTRON_RUN_AS_NODE:'1',DSH_HOME:options.home,PERSONA_MEMORY_ROOT:memoryRoot},stdio:['pipe','pipe','pipe']});
+      env:{...(options.env??process.env),ELECTRON_RUN_AS_NODE:'1',DSH_HOME:options.home,PERSONA_MEMORY_ROOT:memoryRoot},stdio:['pipe','pipe','pipe']});
     this.child.stdout.setEncoding('utf8');this.child.stderr.setEncoding('utf8');
     this.child.stdout.on('data',chunk=>{this.lines+=chunk;let i;while((i=this.lines.indexOf('\n'))>=0){const line=this.lines.slice(0,i);this.lines=this.lines.slice(i+1);this.consume(line);}});
     this.child.stderr.on('data',chunk=>{this.logTail=this.logTail.then(()=>appendFile(join(dir,'stderr.txt'),redact(chunk)));this.stderrLines+=chunk;let i;while((i=this.stderrLines.indexOf('\n'))>=0){const line=this.stderrLines.slice(0,i);this.stderrLines=this.stderrLines.slice(i+1);if(line.startsWith('PERSONA_VALIDATION_ROUTE ')){try{this.route=JSON.parse(line.slice('PERSONA_VALIDATION_ROUTE '.length));}catch{}}}});
@@ -238,17 +297,18 @@ async function dialogueRecords(memoryRoot) {
 const errorSummary=error=>({code:error.code??error.name,message:redact(error.message),data:safe(error.data??null)});
 
 async function runEngine(options, fixture) {
-  const label=fixture?'deterministic-host-fixture':'real-model';const dir=join(options.runArtifacts??options.artifacts,label);const memoryRoot=join(dir,'memory');await mkdir(memoryRoot,{recursive:true});
+  const synthetic=fixture||options.baseOnly;
+  const label=options.baseOnly?'base-sdk':fixture?'deterministic-host-fixture':'real-model';const dir=join(options.runArtifacts??options.artifacts,label);const memoryRoot=join(dir,'memory');await mkdir(memoryRoot,{recursive:true});
   const sourceDigests={};for(const file of ['adapters/dsh/index.js','adapters/dsh/model.js','adapters/dsh/normalize.js','adapters/dsh/control.js','core/index.js','core/runtime.js','core/repository.js','core/store.js','core/schema.js','core/prompts.js','package.json','cordis.patch.yml','scripts/dsh-integration.mjs']){try{sourceDigests[file]=createHash('sha256').update(await readFile(join(projectRoot,file))).digest('hex');}catch{}}
-  const overlay=await writeOverlay(options,dir,fixture);const rpc=new RpcProcess(options,overlay,dir,memoryRoot);const report={label,fixture,sourceDigests,startedAt:new Date().toISOString(),checks:{},memoryRoot,claims:{realDshEngine:true,realModel:!fixture&&!options.baseOnly,externalHttpWireObserved:false}};
+  const overlay=await writeOverlay(options,dir,synthetic);const rpc=new RpcProcess(options,overlay,dir,memoryRoot);const report={label,fixture,sourceDigests,startedAt:new Date().toISOString(),checks:{},memoryRoot,claims:{realDshEngine:true,realModel:!synthetic,externalHttpWireObserved:false}};
   try {
     await rpc.waitFor(()=>rpc.route||rpc.spawnError,20000);if(rpc.spawnError)throw rpc.spawnError;
-    const provider=fixture?'persona-fixture-validation':options.provider??rpc.route?.provider??'deepseek-official';
-    const model=fixture?'fixture-v1':options.model??rpc.route?.model??'deepseek-flash';
-    report.route={provider,model,source:fixture?'test-only deterministic provider':options.provider||options.model?'explicit test environment':'host non-secret default selection'};
+    const provider=synthetic?'persona-fixture-validation':options.provider??rpc.route?.provider??'deepseek-official';
+    const model=synthetic?'fixture-v1':options.model??rpc.route?.model??'deepseek-flash';
+    report.route={provider,model,source:synthetic?'test-only deterministic provider':options.provider||options.model?'explicit test environment':'host non-secret default selection'};
     report.initialize=await rpc.request('initialize',{cwd:projectRoot,provider,model,maxTokens:4096});
     report.checks.initialized=report.initialize.serverInfo?.name==='deepseek-harness-sdk-runtime';
-    if(options.baseOnly){report.status='base-initialize-passed';return report;}
+    if(options.baseOnly){report.status=report.checks.initialized?'base-initialize-passed':'failed';return report;}
     const sid='persona_validation_'+(fixture?'fixture_':'real_')+randomUUID().replaceAll('-','');report.sessionId=sid;
     const prompt='PM_SESSION '+sid+' PM_CASE normal PM_FACT lavender-tea. This is a dedicated integration test. First use persona_decide to choose a reply for this session (not sleep). Then use memory_search with scope all for PM_FACT. Finally answer briefly and include PM_FINAL_normal. I prefer lavender tea.';
     report.promptReceipt=await rpc.request('session/prompt',{sessionId:sid,contentBlocks:[{type:'text',text:prompt}]});
@@ -375,19 +435,34 @@ async function runEngine(options, fixture) {
 }
 
 export async function runIntegration(options=optionsFrom()) {
-  await mkdir(options.artifacts,{recursive:true});
+  if ([options.fixtureOnly, options.realOnly, options.baseOnly].filter(Boolean).length !== 1) throw new Error('Choose exactly one of --fixture-only, --base-only or --real-only. See --help.');
+  if (Boolean(options.provider) !== Boolean(options.model)) throw new Error('Set DSH_TEST_PROVIDER and DSH_TEST_MODEL together');
+  if (![options.requestTimeout, options.installTimeout].every(value => Number.isSafeInteger(value) && value > 0 && value <= 2147483647)) throw new Error('DSH test timeouts must be positive integers up to 2147483647 ms');
+  options = { ...options, ...await isolatedPaths(options) };
   if(!existsSync(options.exe))throw Object.assign(new Error('Installed DSH NEXT executable was not found'),{code:'HOST_NOT_FOUND'});
-  if(Boolean(options.provider)!==Boolean(options.model))throw new Error('Set DSH_TEST_PROVIDER and DSH_TEST_MODEL together');
+  await mkdir(dirname(options.home),{recursive:true});
+  await mkdir(options.home);
+  options.env = isolatedEnvironment(options.home, options.realOnly);
+  await mkdir(options.env.APPDATA,{recursive:true});
+  await mkdir(options.env.LOCALAPPDATA,{recursive:true});
+  await writeFile(options.env.NPM_CONFIG_USERCONFIG, '');
+  await writeFile(options.env.NPM_CONFIG_GLOBALCONFIG, '');
+  await mkdir(options.artifacts,{recursive:true});
   await prepareProfile(options);
   options.runArtifacts=join(options.artifacts,'run-'+Date.now()+'-'+randomUUID().slice(0,8));await mkdir(options.runArtifacts,{recursive:true});
   const result={runArtifacts:options.runArtifacts,startedAt:new Date().toISOString(),profile:options.profile,home:options.home,projectRoot,artifactRoot:options.artifacts,runs:[]};
-  if(!options.fixtureOnly)result.runs.push(await runEngine(options,false));
-  if(!options.realOnly&&!options.baseOnly)result.runs.push(await runEngine(options,true));
+  result.runs.push(await runEngine(options, options.fixtureOnly === true));
   result.finishedAt=new Date().toISOString();result.status=result.runs.every(x=>x.status==='passed'||x.status==='base-initialize-passed')?'passed':'partial-or-failed';
   await writeFile(join(options.artifacts,'result.json'),JSON.stringify(safe(result),null,2));
   return result;
 }
 
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  runIntegration().then(result=>{console.log(JSON.stringify({status:result.status,artifactRoot:result.artifactRoot,runs:result.runs.map(x=>({label:x.label,status:x.status,route:x.route,checks:x.checks,error:x.error}))},null,2));process.exitCode=result.status==='passed'?0:1;}).catch(error=>{console.error(JSON.stringify(errorSummary(error)));process.exitCode=1;});
+async function main() {
+  const options = optionsFrom();
+  if (options.help) { console.log(integrationUsage); return; }
+  const result = await runIntegration(options);
+  console.log(JSON.stringify({status:result.status,artifactRoot:result.artifactRoot,runs:result.runs.map(x=>({label:x.label,status:x.status,route:x.route,checks:x.checks,error:x.error}))},null,2));
+  process.exitCode=result.status==='passed'?0:1;
 }
+
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(error=>{console.error(JSON.stringify(errorSummary(error)));process.exitCode=1;});

@@ -14,7 +14,7 @@ function toolsFixture() {
   return { masks, guards, schemas: () => names.map(name => ({ name })), restrict: value => { assert(value.allow.every(name => names.includes(name))); masks.add(value); return () => masks.delete(value); },
     guard: value => { guards.add(value); return () => guards.delete(value); } };
 }
-function fixture(n) {
+function fixture(n, { flatActivation = false } = {}) {
   const meta = binding(n), agents = new Map(), logs = new Map(), handlers = new Map(), starts = [], requests = [];
   const parent = { id: meta.parentSessionId, session: { id: meta.parentSessionId, header: { id: meta.parentSessionId }, requestHeader: () => ({ config: { provider: 'isolated-fixture', model: 'fixture' } }) } };
   agents.set(parent.id, parent); let settle, disposed = 0, altered;
@@ -24,9 +24,12 @@ function fixture(n) {
   const subagents = { getProvider: () => ({ inheritsParentContext: false, capabilities: { agentPreset: true }, prepareContinuable() {} }), resolveMaxDepth: () => 3,
     startActivation: async spec => {
       starts.push(spec); assert.deepEqual(lookupTaskWorker(spec.childId)?.parentSessionId, parent.id);
-      const header = { id: spec.childId, parentSession: parent.id, agentPreset: spec.request.agentPreset, isSeeded: false, ...(spec.request.cwd ? { cwd: spec.request.cwd } : {}) };
+      const activation = flatActivation ? spec : spec.request;
+      assert.equal(activation.parent, parent);
+      assert.equal(activation.maxDepth, 3);
+      const header = { id: spec.childId, parentSession: activation.parent.id, agentPreset: activation.agentPreset, isSeeded: false, ...(activation.cwd ? { cwd: activation.cwd } : {}) };
       const child = { id: spec.childId, session: { id: spec.childId, header, seq: 2 }, ctx: { tools: toolsFixture() } };
-      agents.set(child.id, child); logs.set(child.id, { session: header, events: [{ seq: 0, type: 'agent-preset/selected', data: { agentPreset: TASK_WORKER_PRESET } }, { seq: 1, type: 'user/message', data: { id: 'native-task-envelope', source: { kind: 'user' }, content: [{ type: 'text', text: spec.request.prompt[0].text }] } }] });
+      agents.set(child.id, child); logs.set(child.id, { session: header, events: [{ seq: 0, type: 'agent-preset/selected', data: { agentPreset: TASK_WORKER_PRESET } }, { seq: 1, type: 'user/message', data: { id: 'native-task-envelope', source: { kind: 'user' }, content: [{ type: 'text', text: activation.prompt[0].text }] } }] });
       for (const handler of handlers.get('agent/created') ?? []) handler({ agent: child });
       const result = new Promise(resolve => { settle = value => { agents.delete(child.id); resolve(value); }; });
       const receipt = { childId: child.id, messageId: 'native-task-envelope', result, dispose: async () => { disposed++; settle({ output: [], stopReason: 'aborted' }); } };
@@ -58,6 +61,22 @@ test('native spawn uses a reserved child ID, independent preset, existing policy
   await f.host.close(); assert.equal(lookupTaskWorker(f.meta.sessionId).roleTombstone, true); assert.equal('workspace' in lookupTaskWorker(f.meta.sessionId), false);
 });
 
+test('flat DSH activation starts one worker with the same parent, workspace and caller-owned delivery', async t => {
+  const f = fixture('flat', { flatActivation: true });
+  t.after(() => f.host.close());
+  const workspace = path.resolve('flat-worker-workspace');
+  const request = { ...f.meta, prompt: 'complete independently', workspace };
+  const receipt = await f.host.start(request);
+  assert.equal(receipt.workspace, workspace);
+  assert.equal(receipt.sessionId, f.meta.sessionId);
+  assert.equal(f.starts[0].delivery, 'caller');
+  assert.equal(f.agents.get(receipt.sessionId).session.header.agentPreset, TASK_WORKER_PRESET);
+  const events = await f.host.readEvents({ sessionId: receipt.sessionId, limit: 10 });
+  assert.equal(events.events[1].data.content[0].text, request.prompt);
+  assert.equal((await f.host.start(request)).duplicate, true);
+  assert.equal(f.starts.length, 1);
+});
+
 test('a lost native start acknowledgement is not automatically submitted again', async () => {
   const f = fixture('lost'); f.altered = () => { throw Error('ack lost after native child created'); };
   await assert.rejects(f.host.start({ ...f.meta, prompt: 'one expensive task' }), /ack lost/);
@@ -75,6 +94,28 @@ test('persisted task recovery hydrates trustworthy ownership and does not submit
   const state = await f.host.inspect({ sessionId: f.meta.sessionId }); assert.equal(state.status, 'completed'); assert.equal(state.result.output[0].text, 'retained full report');
   const page = await f.host.readEvents({ sessionId: f.meta.sessionId, afterSeq: 0, limit: 50 }); assert.deepEqual(page.events.map(x => x.seq), [1, 2]); assert.equal(page.complete, true);
   await f.host.close();
+});
+
+test('stored task recovery does not return an older turn’s output as the latest failed result', async t => {
+  const f = fixture('cold-latest-turn');
+  t.after(() => f.host.close());
+  const header = { id: f.meta.sessionId, parentSession: f.meta.parentSessionId, agentPreset: TASK_WORKER_PRESET, isSeeded: false };
+  const output = [{ type: 'text', text: 'the earlier turn’s report' }];
+  const events = [
+    { seq: 0, type: 'turn/start', data: {} },
+    { seq: 1, type: 'assistant/message', data: { message: { content: output } } },
+    { seq: 2, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    { seq: 3, type: 'turn/start', data: {} },
+    { seq: 4, type: 'turn/end', data: { reason: { kind: 'error' } } },
+  ];
+  f.logs.set(f.meta.sessionId, { session: header, events });
+  f.host.registerTask(f.meta);
+  const observed = await f.host.inspect({ sessionId: f.meta.sessionId });
+  assert.equal(observed.status, 'failed');
+  assert.deepEqual(observed.result, { output: [], stopReason: 'error' });
+  const archive = await f.host.readEvents({ sessionId: f.meta.sessionId, limit: 10 });
+  assert.deepEqual(archive.events, events);
+  assert.equal(f.starts.length, 0);
 });
 
 test('source queries reject a foreign parent, inherited history or conflicting actual worker preset', async () => {

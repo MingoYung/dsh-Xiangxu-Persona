@@ -7,10 +7,12 @@ import { countStringValues, serializedBytes, assertRecordCapacity, assertDocumen
 import { SELF_PROFILE_PATH, emptySelfProfile, validateSelfProfile, validateSelfProfilePatch, applySelfProfilePatch, selfProfileLinks, redactSelfProfile } from './self-profile.js';
 import { validateRetrievalInput, temporalReference, lexicalCandidates, associationCandidates, mergeCandidates, retrievalRecordKey } from './retrieval.js';
 import { RetrievalState } from './retrieval-semantic.js';
+import { buildPreparedAssociations, preparedAssociationBytes, readPreparedAssociations } from './prepared-associations.js';
+import { applyPersonNameUpdates, redactPendingPersonNames, redactPersonNames } from './person-names.js';
 import { MEMORY_GRAPH_LIMITS, validateMemoryGraphInput, parseGraphRecordKey, graphScopeAllows, graphDocumentRows, projectMemoryGraph, graphError } from './memory-graph.js';
 import { TimelineStorage, TIMELINE_CATALOG, TIMELINE_FIELDS, unifiedRecord, timelineChars, timelineOrder, isTimelinePath, validateTimelineAnnotation, redactTimelineRecord, validateTimelineCatalog as validateTimelineCatalogForGraph } from './timeline.js';
 import {
-  SCHEMA_VERSION, SchemaError, defaultConfig, mergeConfig, emptyPersona, emptyRuntime,
+  SCHEMA_VERSION, PERSON_NAME_LIMITS, SchemaError, defaultConfig, mergeConfig, emptyPersona, emptyRuntime,
   newId, sourceKey, countChars, safeId, validateChat, validateHot, validateMemoryItem,
   validatePersona, validateMeta, validateDeepMemory, validateCode, validateSignature, validateFacet, validatePatch,
   validateRelationEvent, validateImpression, validateInterpretation, validateConfig, validateRuntime, validateSrcRef
@@ -22,6 +24,7 @@ const digest = (value) => createHash('sha256').update(value).digest('hex');
 const doc = (now) => ({ schemaVersion: SCHEMA_VERSION, version: 0, updatedAt: now, items: [] });
 const conflict = (message) => Object.assign(new Error(message), { code: 'VERSION_CONFLICT' });
 const personPath = (id, file) => 'people/' + safeId(id) + '/' + file;
+const associationCachePath = personId => personId ? personPath(personId, 'prepared-associations.json') : 'global/prepared-associations.json';
 const streamPath = (id) => id ? personPath(id, 'stream.jsonl') : 'staging/events.jsonl';
 const hotPath = (id) => id ? personPath(id, 'hot.jsonl') : 'staging/hot.jsonl';
 const sourceRef = (record, available = true) => ({
@@ -466,12 +469,29 @@ export class MemoryRepository {
     return this.store.readJson(personPath(personId, 'state.json'), { schemaVersion: SCHEMA_VERSION, version: 0, personId,
       lastSeenAt: null, lastDeliveredAt: null, relationDescription: '', pendingEventIds: [], updatedAt: this.now() });
   }
-  upsertPerson(input = {}) {
+  upsertPerson(input = {}, { nameUpdates } = {}) {
+    return this._writePerson(input, { nameUpdates });
+  }
+  recordPersonNames({ personId, nameUpdates, observedOn } = {}) {
+    return this._writePerson({ personId: safeId(personId) }, { nameUpdates, observedOn, requireExisting: true });
+  }
+  async _personIdentity(personId, meta) {
+    return redactPersonNames(await this.store.readJson(personPath(personId, 'identity.json')), meta);
+  }
+  _writePerson(input, { nameUpdates, observedOn, requireExisting = false } = {}) {
     return this._queue(async () => {
+      if (Object.hasOwn(input, 'names')) throw new SchemaError('Use a person name update to write typed names');
       const personId = safeId(input.personId ?? newId('p')); const meta = await this._meta(); const now = this.now();
-      const prior = await this.store.readJson(personPath(personId, 'identity.json'));
+      const prior = await this._personIdentity(personId, meta);
+      if (requireExisting && (!prior || !meta.personIds.includes(personId))) {
+        throw Object.assign(new Error('Person name update target is unknown'), { code: 'PERSON_NAME_TARGET_UNKNOWN' });
+      }
+      const names = nameUpdates === undefined && !requireExisting ? undefined :
+        applyPersonNameUpdates(prior?.names, nameUpdates, { meta, personId, now, observedOn });
+      if (requireExisting && isDeepStrictEqual(prior.names ?? [], names)) return copy(prior);
       const identity = this._bump({ schemaVersion: SCHEMA_VERSION, version: 0, personId, displayName: null, aliases: [],
-        firstMetAt: now, locale: null, timezone: null, clues: [], ...prior, ...input, personId });
+        firstMetAt: now, locale: null, timezone: null, clues: [], ...prior, ...input, personId,
+        ...(names === undefined ? {} : { names }) });
       if (!Array.isArray(identity.aliases) || !Array.isArray(identity.clues)) throw new SchemaError('aliases and clues must be arrays');
       assertRecordCapacity(identity, this.config.capacityLimits, 'identity');
       const json = { [personPath(personId, 'identity.json')]: identity };
@@ -516,12 +536,17 @@ export class MemoryRepository {
       if (meta.pending.includes(record.eventId) && !state.pendingEventIds.includes(record.eventId)) state.pendingEventIds.push(record.eventId);
       json[personPath(personId, 'state.json')] = this._bump(state);
       Object.assign(source, { personId, lastEventId: eventId, assignmentId: assignment.id });
+      if (oldPersonId && record.role === 'user') {
+        const path = personPath(oldPersonId, 'identity.json'), identity = await this.store.readJson(path);
+        const next = redactPersonNames(identity, meta);
+        if (next !== identity) json[path] = this._bump(next);
+      }
       meta.assignments = [...meta.assignments, assignment].slice(-256);
       await this._commit(meta, { json, jsonl }); return { assignment, record: copy(record) };
     });
   }
   listPeople() {
-    return this._queue(async () => { const meta = await this._meta(); return Promise.all(meta.personIds.map((id) => this.store.readJson(personPath(id, 'identity.json')))); });
+    return this._queue(async () => { const meta = await this._meta(); return Promise.all(meta.personIds.map(id => this._personIdentity(id, meta))); });
   }
   async _allMemory(meta, { chatPaths } = {}) {
     const rows = [];
@@ -553,6 +578,7 @@ export class MemoryRepository {
     if (!['person', 'global', 'all'].includes(scope)) throw new SchemaError('Unknown search scope');
     if (scope === 'person' && !target) return { items: [], needsTarget: true };
     if (target) safeId(target);
+    if (input.mode === 'prepared') return this._searchPreparedAssociations(scope === 'person' ? target : null, input);
     const meta = await this._meta(), all = await this._allMemory(meta), now = this.now(); this._retrieval.reconcile(all, meta);
     const scoped = all.filter(item => scope === 'all' || (scope === 'global' ? item.scope === 'global' : item.personId === target));
     const rows = scoped.filter(item => temporalReference(item, input, now).eligible), lexical = !input.query && input.seedIds.length ? [] : lexicalCandidates(rows, input.query);
@@ -571,6 +597,36 @@ export class MemoryRepository {
       candidates: result.candidateCount, returned: result.items.length, diversity: input.diversity, distinctSourceGroups: result.distinctSourceGroups };
     this._retrieval.recordSearch({ requestId: diagnostics.requestId, query: input.query, options: input, items: result.items, diagnostics });
     return { items: result.items, diagnostics };
+  }
+  async _associationDocuments(personId) {
+    return personId ? [{ recordType: 'memory', document: await this.store.readJson(personPath(personId, 'index.json')) }]
+      : [{ recordType: 'memory', document: await this.store.readJson('global/index.json') },
+        { recordType: 'deep', document: await this.store.readJson('global/deep.json') }];
+  }
+  async _searchPreparedAssociations(personId, input) {
+    let cache;
+    try { cache = await this.store.readBoundedJson(associationCachePath(personId), preparedAssociationBytes); }
+    catch (error) {
+      if (!(error instanceof SyntaxError) && !['CACHE_SIZE_INVALID', 'EBUSY', 'EPERM', 'EACCES'].includes(error.code)) throw error;
+      cache = {};
+    }
+    if (!cache || !cache.format) return readPreparedAssociations(cache, [], {}, personId, input, this.now());
+    return readPreparedAssociations(cache, await this._associationDocuments(personId), await this._meta(), personId, input, this.now());
+  }
+  prepareSleepAssociations(runId, personId) {
+    return this._queue(async () => {
+      if (personId != null) safeId(personId);
+      const runtime = await this._runtime(), sleep = runtime.sleep;
+      if (sleep.state !== 'sleeping' || !sleep.sleepDecisionId) return;
+      const belongs = Object.values(runtime.execution?.consolidationJobs ?? {}).some(job => job.sleepDecisionId === sleep.sleepDecisionId &&
+        job.children.some(child => child.runId === runId && child.personId === personId));
+      if (!belongs) return;
+      const meta = await this._meta();
+      if (!meta.completedRuns.includes(runId)) return;
+      const path = associationCachePath(personId), documents = await this._associationDocuments(personId);
+      const snapshot = buildPreparedAssociations(documents, meta, personId, runId, this.now());
+      await this.store.writeDerivedJson(path, snapshot, preparedAssociationBytes);
+    });
   }
   search(input, context = {}) { return this._queue(() => this._search(input, context)); }
   setSemanticPort(port) { return this._queue(() => this._retrieval.setPort(port)); }
@@ -759,7 +815,7 @@ export class MemoryRepository {
     return this._queue(async () => {
       if (state.schemaVersion !== SCHEMA_VERSION || !Array.isArray(state.memoryGaps) || !state.sleep || !state.schedule) throw new SchemaError('Invalid RuntimeState');
       const current = await this._runtime(); if (expectedVersion !== undefined && current.version !== expectedVersion) throw conflict('Runtime changed');
-      const next = this._bump({ ...copy(state), version: current.version });
+      const next = this._bump({ ...await this._redactRuntimeNameUpdates(copy(state)), version: current.version });
       await this.store.transaction({ runId: newId('runtime'), json: { 'global/state.json': next }, expectedVersions: { 'global/state.json': current.version } }); return next;
     });
   }
@@ -779,10 +835,14 @@ export class MemoryRepository {
         if (Object.hasOwn(next, key)) merged[key] = copy(next[key]);
         else delete merged[key];
       }
-      const stored = this._bump(merged); validateRuntime(stored);
+      const stored = this._bump(await this._redactRuntimeNameUpdates(merged)); validateRuntime(stored);
       await this.store.transaction({ runId: newId('runtime-patch'), json: { 'global/state.json': stored }, expectedVersions: { 'global/state.json': current.version } });
       return stored;
     });
+  }
+  async _redactRuntimeNameUpdates(state) {
+    return Object.values(state.execution?.pendingEffects ?? {}).some(effect => effect.input?.identityPlan?.nameUpdates)
+      ? redactPendingPersonNames(state, await this._meta()) : state;
   }
   getPersonState(id) { return this._queue(() => this._personState(id)); }
   savePersonState(id, state, { expectedVersion = state.version } = {}) {
@@ -803,7 +863,7 @@ export class MemoryRepository {
         personAssociation: personId ? 'associated' : 'unassociated', storeContent: 'not_assessed' },
       deepMemories: deep.items.filter(item => !meta.revokedIds.includes(item.id) && !item.srcRefs?.some(ref => meta.revokedSources.includes(sourceKey(ref)))), deepMemoryVersion: deep.version,
       ...(includeIndexes ? { memoryIndexes: { global: await this._document('global/index.json'), person: personId ? await this._document(personPath(personId, 'index.json')) : null } } : {}),
-      identity: personId ? await this.store.readJson(personPath(personId, 'identity.json')) : null,
+      identity: personId ? await this._personIdentity(personId, meta) : null,
       impression: personId ? await this.store.readJson(personPath(personId, 'impression.json'), emptyImpression) : emptyImpression,
       interpretations: personId ? (await this._document(personPath(personId, 'pending.json'))).items : [],
       codes: [...(await this._document('global/codes.json')).items, ...(personId ? (await this._document(personPath(personId, 'codes.json'))).items : [])],
@@ -842,6 +902,19 @@ export class MemoryRepository {
       return copy((await this._records(meta, { paths })).filter((record) => events.has(record.eventId) || sources.has(sourceKey(record))));
     });
   }
+  readHistoryProcess({ sessionId, sourceRefs } = {}) {
+    return this._queue(async () => {
+      if (typeof sessionId !== 'string' || !sessionId || !Array.isArray(sourceRefs) || sourceRefs.length > 32) {
+        throw new SchemaError('A bounded process source page is required');
+      }
+      sourceRefs.forEach(validateSrcRef);
+      if (sourceRefs.some(ref => ref.sourceSessionId !== sessionId)) throw new SchemaError('Process source is outside this session');
+      if (!sourceRefs.length) return [];
+      const meta = await this._meta(), keys = new Set(sourceRefs.map(sourceKey));
+      const rows = await this._hot(meta);
+      return copy(rows.filter(row => ['reasoning', 'tool_call', 'tool_result'].includes(row.kind) && keys.has(sourceKey(row.sourceRef))));
+    });
+  }
   clearPending(ids) {
     return this._queue(async () => {
       if (!Array.isArray(ids)) throw new SchemaError('pending ids must be an array');
@@ -850,9 +923,40 @@ export class MemoryRepository {
       await this._commit(meta, { json }); return { cleared: ids };
     });
   }
+  async _introspectPersonNames(input, context) {
+    const { nameQuery, targetPersonId } = input, meta = await this._meta();
+    if (nameQuery === undefined) {
+      const personId = targetPersonId ?? context.personId ?? null;
+      if (!personId) return { personId: null, needsTarget: true, displayName: null, aliases: [], names: [], referenceOnly: true };
+      const identity = await this._personIdentity(personId, meta);
+      if (!identity || !meta.personIds.includes(personId)) {
+        throw Object.assign(new Error('Person name lookup target is unknown'), { code: 'PERSON_NAME_TARGET_UNKNOWN' });
+      }
+      return { personId, displayName: identity.displayName ?? null, aliases: identity.aliases ?? [],
+        names: identity.names ?? [], referenceOnly: true };
+    }
+    if (typeof nameQuery !== 'string' || !nameQuery.trim() || !nameQuery.isWellFormed() || countChars(nameQuery) > PERSON_NAME_LIMITS.chars) {
+      throw new SchemaError('Person name query must be nonempty text within its character limit');
+    }
+    if (targetPersonId !== undefined) safeId(targetPersonId);
+    const normalize = name => name.trim().normalize('NFKC').toLowerCase(), query = normalize(nameQuery), candidates = [];
+    const ids = targetPersonId === undefined ? meta.personIds : meta.personIds.filter(id => id === targetPersonId);
+    for (const personId of ids) {
+      const identity = await this._personIdentity(personId, meta);
+      if (!identity) continue;
+      const matches = [{ kind: 'display_name', name: identity.displayName },
+        ...[...new Set(identity.aliases ?? [])].map(name => ({ kind: 'legacy_alias', name })), ...identity.names ?? []]
+        .filter(entry => typeof entry.name === 'string' && normalize(entry.name) === query);
+      if (matches.length) candidates.push({ personId, displayName: identity.displayName ?? null, matches });
+      if (candidates.length > PERSON_NAME_LIMITS.entries) break;
+    }
+    return { nameQuery, candidates: candidates.slice(0, PERSON_NAME_LIMITS.entries),
+      truncated: candidates.length > PERSON_NAME_LIMITS.entries, referenceOnly: true };
+  }
   introspect(input = {}, context = {}) {
     return this._queue(async () => {
       const target = input.targetPersonId ?? context.personId ?? null; const section = input.section ?? 'all';
+      if (section === 'names') return this._introspectPersonNames(input, context);
       if (section === 'state') return { ...await this._runtime(), personState: target ? await this._personState(target) : null, capacity: await this._capacity() };
       const data = await this._context({ personId: target });
       if (section === 'all') return data;
@@ -922,6 +1026,13 @@ export class MemoryRepository {
         if (JSON.stringify(remain) !== JSON.stringify(rows)) writes.jsonl[sp] = remain;
       }
       meta.revokedIds = [...new Set([...meta.revokedIds, ...affected])]; meta.revokedSources = [...new Set([...meta.revokedSources, ...refKeys])];
+      for (const id of meta.personIds) {
+        const path = personPath(id, 'identity.json'), identity = await this.store.readJson(path);
+        const next = redactPersonNames(identity, meta);
+        if (next !== identity) writes.json[path] = this._bump(next);
+      }
+      const runtime = await this._runtime(), cleanRuntime = redactPendingPersonNames(runtime, meta);
+      if (cleanRuntime !== runtime) writes.json['global/state.json'] = this._bump(cleanRuntime);
       const revokedEvents = new Set(Object.entries(meta.sources).filter(([key]) => refKeys.has(key)).map(([, info]) => info.eventId));
       meta.pending = meta.pending.filter((eventId) => !revokedEvents.has(eventId));
       for (const id of meta.personIds) { const state = await this._personState(id); const pending = state.pendingEventIds.filter((eventId) => !revokedEvents.has(eventId)); if (pending.length !== state.pendingEventIds.length) writes.json[personPath(id, 'state.json')] = this._bump({ ...state, pendingEventIds: pending }); }

@@ -1,4 +1,4 @@
-import { appendFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -9,9 +9,42 @@ const textOf = message => (message?.content ?? []).filter(block => block.type ==
 const argsOf = block => { try { return typeof block.arguments === 'string' ? JSON.parse(block.arguments) : block.arguments ?? {}; } catch { return {}; } };
 const serial = value => JSON.parse(JSON.stringify(value, (key, item) => key === 'signal' ? undefined : item));
 
+// Each repository read is serialized, but this group of reads is not one
+// transaction. A consolidation between deep and runtime must not look settled.
+export async function readReflectionObservation(coordinator) {
+  const before = await coordinator.readyState(), repository = coordinator.repository;
+  const memory = await repository.browseMemory({ scope: 'all', limit: 100 });
+  const deep = await repository.introspect({ section: 'deep' });
+  const persona = await repository.getPersona(), runs = await repository.listConsolidationRuns();
+  const runtime = await repository.getRuntime();
+  const observationVersions = { before: before?.version ?? null, after: runtime?.version ?? null };
+  return { memory, deep, persona, runtime, runs, observationVersions,
+    observationStable: Number.isSafeInteger(observationVersions.before) && observationVersions.before === observationVersions.after };
+}
+
+export function reflectionPhaseReady(value, name, { paused = false } = {}) {
+  if (value?.observationStable !== true) return false;
+  const ids = value.phaseRuns?.[name] ?? [], runs = value.runs?.filter(run => ids.includes(run.runId)) ?? [];
+  const agent = value.scopes?.find(item => item.sessionId === 'reflection_parent_fixture');
+  return Boolean(ids.length && runs.length === ids.length && runs.every(run => paused ? run.reviewState?.status === 'paused' : run.status === 'committed')
+    && !['busy', 'running'].includes(agent?.status) && !value.runtime?.activeRunId);
+}
+
 export async function apply(ctx, config) {
-  const { HostConnectionService } = await import(config.connectionModule);
-  new HostConnectionService(ctx, [], {});
+  let connection = ctx.get('connection', false);
+  if (!connection) {
+    const sdk = JSON.parse(readFileSync(new URL('../../dsh-sdk-app/package.json', config.connectionModule), 'utf8'));
+    if (sdk.dependencies?.['@deepseek-ai/dsh-client-connection']) {
+      ctx.inject(['connection'], child => runFixture(ctx, config, child.connection));
+      return;
+    }
+    const { HostConnectionService } = await import(config.connectionModule);
+    connection = ctx.get('connection', false) || new HostConnectionService(ctx, [], {});
+  }
+  return runFixture(ctx, config, connection);
+}
+
+async function runFixture(ctx, config, connection) {
   mkdirSync(config.artifacts, { recursive: true });
   const record = value => appendFileSync(join(config.artifacts, 'native-events.private.jsonl'), JSON.stringify({ at: Date.now(), ...serial(value) }) + '\n');
   let phase = 'idle', handle; const handles = [], phaseRuns = new Map(), contexts = new Map();
@@ -125,7 +158,7 @@ export async function apply(ctx, config) {
     },
   };
   ctx.llm.registerAdapter([provider], adapter); await manager.ready;
-  const owner = ctx.connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' }), foreign = ctx.connection.createPeer({ principal: { kind: 'other' }, interactions: 'none' }), carrier = ctx.connection.createSharedFetchHandler('/api');
+  const owner = connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' }), foreign = connection.createPeer({ principal: { kind: 'other' }, interactions: 'none' }), carrier = connection.createSharedFetchHandler('/api');
   ctx.effect(() => async () => { await owner.dispose(); await foreign.dispose(); });
   const controlToken = randomBytes(24).toString('base64url');
   const server = createServer(async (request, response) => {
@@ -149,8 +182,10 @@ export async function apply(ctx, config) {
       }
       if (request.url === '/state') {
         const c = manager.getCoordinator(); if (!c) return reply({ loaded: false, scopes: ctx.agents.list().map(agent => ({ sessionId: agent.id, status: agent.status, tools: ctx.tools.schemas(agent).map(item => item.name) })) });
-        await c.readyState(); return reply({ loaded: true, phase, phaseRuns: Object.fromEntries(phaseRuns), memory: await c.repository.browseMemory({ scope: 'all', limit: 100 }), deep: await c.repository.introspect({ section: 'deep' }),
-          persona: await c.repository.getPersona(), runtime: await c.repository.getRuntime(), runs: await c.repository.listConsolidationRuns(), errors: c.errors,
+        const observedPhaseRuns = Object.fromEntries([...phaseRuns].map(([name, ids]) => [name, [...ids]]));
+        const observation = await readReflectionObservation(c);
+        if (!observation.observationStable) record({ kind: 'unstable-state-observation', phase, versions: observation.observationVersions });
+        return reply({ loaded: true, phase, phaseRuns: observedPhaseRuns, ...observation, errors: c.errors,
           scopes: ctx.agents.list().map(agent => ({ sessionId: agent.id, status: agent.status, header: agent.session.header, tools: ctx.tools.schemas(agent).map(item => item.name),
             snapshot: c.agents.get(agent.id)?.latestSnapshot ?? null, attachedToPersona: c.agents.has(agent.id) })) });
       }

@@ -9,17 +9,24 @@ import { createPermissionService } from '../adapters/dsh/permissions.js';
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 async function fixture(t, { voiceMode = 'text' } = {}) {
   let disk = null, account = '100', current = { memoryRoot: path.join(tmpdir(), 'xiangxu-dispatch-fence-a'), ready: Promise.resolve(), agents: new Map() };
-  let capabilityGate = null, writeGate = null, probeGate = null, voiceGate = null;
+  let capabilityGate = null, writeGate = null, probeGate = null, voiceGate = null, readGate = null;
   const audioRoot = voiceMode === 'text' ? null : await fs.mkdtemp(path.join(tmpdir(), 'xiangxu-dispatch-voice-'));
   const audioPath = audioRoot ? path.join(audioRoot, 'owned-test.wav') : null;
   if (audioRoot) current.voice = { inspect: async () => ({ effective: { available: true, resolvedVoiceId: 'win-sapi:test', rate: 1, pitch: 1 } }) };
   const writes = [], bindings = [], gates = [];
-  const gate = kind => { const value = { began: deferred(), finish: deferred() }; gates.push(value); if (kind === 'capability') capabilityGate = value; else if (kind === 'write') writeGate = value; else if (kind === 'voice') voiceGate = value; else probeGate = value; return value; };
-  const capabilities = () => ({ platform: 'qq', accountId: account, connected: true, voiceMode, items: ['chat.text', ...(audioRoot ? ['chat.voice'] : [])].map(id => ({ id, supported: true, driverAvailable: true })) });
+  const gate = kind => { const value = { began: deferred(), finish: deferred() }; gates.push(value); if (kind === 'capability') capabilityGate = value; else if (kind === 'write') writeGate = value; else if (kind === 'voice') voiceGate = value; else if (kind === 'read') readGate = value; else probeGate = value; return value; };
+  const capabilities = () => ({ platform: 'qq', accountId: account, connected: true, voiceMode, items: ['chat.text', 'message.read', ...(audioRoot ? ['chat.voice'] : [])].map(id => ({ id, supported: true, driverAvailable: true })) });
   const permissions = createPermissionService({ storage: { read: async () => null, write: async () => {} }, getCoordinator: () => current,
     getCapabilities: async () => { const result = capabilities(); if (capabilityGate) { const own = capabilityGate; capabilityGate = null; own.began.resolve(); await own.finish.promise; } return result; } });
   const client = {
     capabilities: { voice: Boolean(audioRoot) },
+    inspectCapabilities: async () => Object.fromEntries(capabilities().items.map(item => [item.id, item])),
+    async execute(target, capability, payload, args) {
+      if (capability === 'chat.text') return this.sendText(target, payload.text, args);
+      assert.equal(capability, 'message.read');
+      if (readGate) { const own = readGate; readGate = null; own.began.resolve(); await own.finish.promise; }
+      return { status: 'completed', messageId: payload.messageId, text: 'fixture read result' };
+    },
     probe: async () => { if (probeGate) { const own = probeGate; probeGate = null; own.began.resolve(); await own.finish.promise; } return { connected: account === '100', accountId: account, status: account === '100' ? 'connected' : 'failed', capabilities: { text: true } }; },
     sendText: async (target, text, args) => { writes.push({ target, text, args, root: current?.memoryRoot ?? null }); return { status: 'delivered', deliveryId: args.deliveryId, messageId: 'sent-' + writes.length, receiptId: 'onebot:sent-' + writes.length }; },
     sendVoice: async (target, bytes, args) => { writes.push({ target, bytes: bytes.length, args }); return { status: 'delivered', deliveryId: args.deliveryId, messageId: 'voice-' + writes.length, receiptId: 'onebot:voice-' + writes.length }; },
@@ -45,6 +52,22 @@ async function fixture(t, { voiceMode = 'text' } = {}) {
   return { service, permissions, writes, args, send, gate, disk: () => disk, setAccount: value => { account = value; },
     unload: () => { current = null; }, replace: () => { current = { ...current }; }, switch: () => { current = { ...current, memoryRoot: path.join(tmpdir(), 'xiangxu-dispatch-fence-b') }; } };
 }
+
+for (const change of ['revoke', 'stop']) test('a channel read does not release a result after ' + change + ' during the driver request', async t => {
+  const f = await fixture(t);
+  await f.permissions.configure({ id: 'qq', allowed: ['message.read'] });
+  const args = { sessionId: f.args.sessionId, capability: 'message.read', payload: { messageId: '1' }, requestId: 'read-current' };
+  assert.equal((await f.service.execute(args)).text, 'fixture read result');
+  const gate = f.gate('read');
+  const pending = f.service.execute({ ...args, requestId: 'read-interrupted' }).then(value => value, error => ({ code: error.code }));
+  await gate.began.promise;
+  let stopping;
+  if (change === 'revoke') await f.permissions.configure({ id: 'qq', allowed: [] });
+  else stopping = f.service.stop({ id: 'qq' });
+  gate.finish.resolve();
+  assert.deepEqual(await pending, { code: change === 'revoke' ? 'CAPABILITY_PERMISSION_DENIED' : 'CHANNEL_DISABLED' });
+  await stopping;
+});
 
 for (const mode of ['output', 'execute']) {
   for (const change of ['unload', 'replace', 'switch']) test(mode + ' rejects a source ' + change + ' during real permission capability lookup', async t => {

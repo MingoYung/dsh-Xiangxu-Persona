@@ -30,8 +30,8 @@ export function normalizeDshEvent(session, event, options = {}) {
   const sourceSessionId = String(session.id);
   // Inbox messages have IDs before admission; keep the same key after user/message commits.
   const sourceEventId = String(messageId ?? event.seq);
-  const sourceAt = Number.isFinite(event.time) ? event.time : (options.now ?? Date.now());
   const observedAt = options.now ?? Date.now();
+  const sourceAt = Number.isSafeInteger(event.time) ? event.time : observedAt;
   const timezone = options.timezone ?? 'UTC';
   const base = {
     sourceSessionId, sourceEventId, sourceAt, observedAt, timezone,

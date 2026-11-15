@@ -9,6 +9,7 @@ import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import { reflectionPhaseReady } from './fixtures/reflection-fixture.mjs';
 
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const unsupported = message => Object.assign(new Error(message), { code: 'DSH_TEST_UNSUPPORTED' });
@@ -97,7 +98,6 @@ await writeFile(join(dir,'executed-fixture.mjs'),await readFile(join(source,'scr
 await writeFile(join(dir,'executed-runner.mjs'),await readFile(fileURLToPath(import.meta.url)));
 const overlay = join(dir, 'test-overlay.yml');
 await writeFile(overlay, JSON.stringify([
-  { id: 'tools', config: { mode: 'native' } },
   { id: 'persona-memory-coordinator', config: { provider: 'persona-reflection-fixture', model: 'fixture-v1', operatorControl: true } },
   { insert: [{ id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'persona-memory' } },
     { id: 'persona-reflection-fixture-probe', name: pathToFileURL(join(dir, 'executed-fixture.mjs')).href, config: { artifacts: dir, workspace, connectionModule: pathToFileURL(join(install, 'resources', 'app.asar', 'node_modules', '@deepseek-ai', 'dsh-client-connection', 'lib', 'index.js')).href } }] },
@@ -181,7 +181,8 @@ try {
   const bilibili = await owner('social.upsert', { platform: 'bilibili', accountId: 'fixture-bilibili-only', displayName: '隔离验收人工账号档案', notes: 'synthetic fixture; not a real authenticated account' });
   const douyin = await owner('social.upsert', { platform: 'douyin', accountId: 'fixture-douyin-only', displayName: '隔离验收人工账号档案' });
   const social = await owner('social.inspect');
-  check('manualSocialProfilesDoNotClaimAuthenticationOrExecutability', social.items.length === 2 && social.items.every(item => item.connection.verification === 'unverified' && !item.connection.connected && !item.connection.adapterAvailable && item.capabilities.every(cap => !cap.available)));
+  check('manualSocialProfilesDoNotClaimAuthenticationOrExecutability', social.items.length === 2 && social.items.every(item => item.connection.verification === 'unverified' && !item.connection.connected && item.capabilities.every(cap => !cap.available)));
+  check('manualSocialAdapterPresenceIsIndependentOfAuthentication', social.items.find(item => item.platform === 'bilibili')?.connection.adapterAvailable === true && social.items.find(item => item.platform === 'douyin')?.connection.adapterAvailable === false);
   check('manualSocialRegistrationDoesNotGrantExecution', social.executionGrantedByRegistration === false);
   check('ownerCannotForgeSocialVerificationOrCredentials', !(await ownerResult('social.upsert', { platform: 'qq', accountId: 'forged', verified: true })).ok && !(await ownerResult('social.upsert', { platform: 'qq', accountId: 'forged', token: 'fixture-must-not-be-stored' })).ok);
   check('socialDirectoryHasNoArbitraryExecuteRoute', !(await ownerResult('social.execute', { identityId: bilibili.item.identityId, action: 'publish' })).ok);
@@ -195,9 +196,8 @@ try {
   const firstText = 'REFLECT_CREATE PARENT_PRIVATE_ONLY 这是一条隔离人工经历样本：当时误会令我难过，后来得到了澄清；固定模型自行选择是否保存。\n' + '原始背景用于校验来源与完整上下文，不能代表真实人格质量。😀\n'.repeat(30) + 'SOURCE_BODY_FINISH';
   const phaseState = () => control('/state');
   const waitPhase = async (name, { paused = false } = {}) => until(async () => {
-    const value = await phaseState(), ids = value.phaseRuns?.[name] ?? [];
-    const runs = value.runs?.filter(run => ids.includes(run.runId)) ?? [], agent = value.scopes?.find(item => item.sessionId === 'reflection_parent_fixture');
-    return ids.length && runs.length === ids.length && runs.every(run => paused ? run.reviewState?.status === 'paused' : run.status === 'committed') && !['busy', 'running'].includes(agent?.status) && !value.runtime?.activeRunId ? value : null;
+    const value = await phaseState();
+    return reflectionPhaseReady(value, name, { paused }) ? value : null;
   }, 60000);
   const prompt = async (name, text, begin = false) => { await control(begin ? '/begin' : '/prompt', 'POST', { phase: name, text, ...(begin ? { sourceEventId: 'reflection-human-create' } : {}) }); };
   await prompt('create', firstText, true);

@@ -66,7 +66,14 @@ function compositeIdentity(item) {
  *  explicit memory identity inside tool envelopes (dsh-envelope-dependencies). */
 function memoryHeader(item, { allRefs = false } = {}) {
   const refs = sourceRefs(item);
-  const retrieval = item.retrieval ? { channels: item.retrieval.channels, matchedTermCount: item.retrieval.matchedTerms?.length ?? 0, explanationDetailsOmitted: true } : undefined;
+  const association = item.retrieval?.preparedAssociation;
+  const retrieval = item.retrieval ? {
+    channels: item.retrieval.channels, matchedTermCount: item.retrieval.matchedTerms?.length ?? 0, explanationDetailsOmitted: true,
+    ...(allRefs && association ? { preparedAssociation: {
+      subjectPersonId: association.subjectPersonId,
+      seed: { ...compositeIdentity(association.seed), srcRefs: sourceRefs(association.seed).all },
+    } } : {}),
+  } : undefined;
   if (allRefs) {
     // Detail channel identity: the COMPLETE source set travels with the row so a
     // full walk returns every reference of the record, not just the first.
@@ -146,10 +153,16 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
   if (toolName === 'memory_search' && Array.isArray(result?.items)) {
     const items = result.items;
     const material = items.map(item => { const { text, bodyFormat } = memoryBody(item); return { header: { ...memoryHeader(item), ...(bodyFormat ? { bodyFormat } : {}) }, text }; });
-    const shape = hash(material), at = readCursor(args.cursor, { tool: toolName, query, shape, length: items.length });
+    const prepared = result.diagnostics?.preparedAssociations;
+    const associations = items.map(item => item.retrieval?.preparedAssociation ?? null);
+    const shape = hash(prepared ? { material, prepared, associations } : material);
+    const at = readCursor(args.cursor, { tool: toolName, query, shape, length: items.length });
     if (at.index === items.length && at.offset) throw new ToolCursorError('Cursor offset is past the result');
     const out = [], base = { totalMatched: items.length, ...accounting,
-      ...(result.diagnostics ? { retrieval: { method: result.diagnostics.method, referenceOnly: true, automaticRecall: false, semantic: { enabled: result.diagnostics.semantic?.enabled, configured: result.diagnostics.semantic?.configured, indexed: result.diagnostics.semantic?.indexed, eligible: result.diagnostics.semantic?.eligible, coverageComplete: result.diagnostics.semantic?.coverageComplete, reason: result.diagnostics.semantic?.reason, degraded: result.diagnostics.semantic?.degraded } } } : {}),
+      ...(result.diagnostics ? { retrieval: { method: result.diagnostics.method, referenceOnly: true, automaticRecall: false,
+        ...(prepared ? { preparedAssociations: { status: prepared.status, builtAt: prepared.builtAt, partial: prepared.partial } }
+          : { semantic: { enabled: result.diagnostics.semantic?.enabled, configured: result.diagnostics.semantic?.configured, indexed: result.diagnostics.semantic?.indexed, eligible: result.diagnostics.semantic?.eligible, coverageComplete: result.diagnostics.semantic?.coverageComplete, reason: result.diagnostics.semantic?.reason, degraded: result.diagnostics.semantic?.degraded } }),
+      } } : {}),
       ...(result.needsTarget ? { needsTarget: true } : {}) };
     const page = (rows, i, o = 0) => ({ ...base, items: rows,
       nextCursor: i < material.length ? cursorFor(toolName, query, shape, i, o) : null });
@@ -158,6 +171,10 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
     // fragment. Used when the envelope itself cannot fit a list page — a real,
     // always-progressing read channel, not a "re-query and hope" hint.
     const detailShape = hash(shape + ':detail');
+    const detailCursorFor = index => cursorFor(toolName, query, detailShape, index);
+    const associationDetailHint = index => associations[index] ? {
+      preparedAssociationInDetail: true, detailCursor: detailCursorFor(index),
+    } : {};
     if (args.detailCursor !== undefined) {
       const detailAt = readCursor(args.detailCursor, { tool: toolName, query, shape: detailShape, length: items.length });
       const entry = material[detailAt.index];
@@ -182,14 +199,15 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
       const entry = material[index], points = Array.from(entry.text);
       if (offset > points.length) throw new ToolCursorError('Cursor offset is past the source text');
       const header = offset > 0 ? { ...compositeIdentity(items[index]), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), continuesItem: true } : entry.header;
-      const row = { ...header, text: points.slice(offset).join(''), fragment: { from: offset, to: points.length, total: points.length, complete: true } };
+      const hint = associationDetailHint(index);
+      const row = { ...header, ...hint, text: points.slice(offset).join(''), fragment: { from: offset, to: points.length, total: points.length, complete: true } };
       if (await fits(page([...out, row], index + 1))) { out.push(row); index++; offset = 0; continue; }
       if (out.length) break;
       // First row of this page does not fit whole: bisect its text.
       let low = offset + 1, high = points.length, best = null;
       while (low <= high) {
         const to = Math.floor((low + high) / 2);
-        const candidate = { ...header, text: points.slice(offset, to).join(''), fragment: { from: offset, to, total: points.length, complete: to === points.length } };
+        const candidate = { ...header, ...hint, text: points.slice(offset, to).join(''), fragment: { from: offset, to, total: points.length, complete: to === points.length } };
         const response = page([candidate], to === points.length ? index + 1 : index, to === points.length ? 0 : to);
         if (await fits(response)) { best = { row: candidate, to }; low = to + 1; } else high = to - 1;
       }
@@ -200,7 +218,7 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
         // complete row (identity envelope + text) with guaranteed progress,
         // while the list cursor advances past this item.
         const item = items[index];
-        const reference = { ...compositeIdentity(item), ...(item.role != null ? { role: item.role } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}), text: '', fragment: { from: offset, to: offset, total: points.length, complete: false }, textDeferred: 'budget', detailCursor: cursorFor(toolName, query, detailShape, index, 0) };
+        const reference = { ...compositeIdentity(item), ...(item.role != null ? { role: item.role } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}), ...hint, text: '', fragment: { from: offset, to: offset, total: points.length, complete: false }, textDeferred: 'budget', detailCursor: hint.detailCursor ?? detailCursorFor(index) };
         if (!(await fits(page([reference], index + 1, 0)))) throw budgetError();
         out.push(reference);
         index++; offset = 0;
@@ -215,7 +233,7 @@ export async function boundToolOutput(toolName, result, args = {}, { counter, bu
       for (let preview = index; preview < material.length; preview++) {
         const entry = material[preview], points = Array.from(entry.text);
         const item = items[preview];
-        const candidateHeader = { ...compositeIdentity(item), ...(item.role != null ? { role: item.role } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), preview: true };
+        const candidateHeader = { ...compositeIdentity(item), ...(item.role != null ? { role: item.role } : {}), ...(item.sourceAt != null ? { sourceAt: item.sourceAt } : {}), ...(entry.header.bodyFormat ? { bodyFormat: entry.header.bodyFormat } : {}), ...associationDetailHint(preview), preview: true };
         let low = 1, high = points.length, best = null;
         while (low <= high) {
           const to = Math.floor((low + high) / 2);

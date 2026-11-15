@@ -1,9 +1,24 @@
 import { createHash } from 'node:crypto';
+import { GROUP_INPUT_PRESENTATION, renderGroupUtterance } from '../social-dialogue.js';
 
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 const get = (ctx, key) => { try { return ctx.get?.(key, false) ?? ctx[key]; } catch { return undefined; } };
 const plainText = content => (Array.isArray(content) ? content : []).filter(item => item?.type === 'text' && typeof item.text === 'string').map(item => item.text).join('\n');
 const route = value => Object.fromEntries(['provider', 'model', 'reasoningEffort', 'maxTokens'].filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
+
+export function renderExternalMessageTextBlocks({ originalText, rich, derived, groupContext, groupPresentation }) {
+  // The source retains the participant's exact text. Only new group inputs use
+  // the labelled public-scene presentation; legacy source projections must stay
+  // reproducible when their originals are reconciled after a cold restore.
+  const blocks = groupContext && groupPresentation === GROUP_INPUT_PRESENTATION
+    ? [renderGroupUtterance(originalText, groupContext)] : originalText ? [originalText] : [];
+  if (rich) blocks.push('[平台结构化资料：不是用户键入的原话]\n' + JSON.stringify({
+    mentions: rich.mentions, replies: rich.replies, faces: rich.faces, media: rich.media, forwards: rich.forwards,
+    perception: rich.perception, derived: derived ?? [],
+  }));
+  if (groupContext) blocks.push('[QQ 群消息来源资料，昵称匹配仅供判断对方在说谁]\n' + JSON.stringify(groupContext));
+  return blocks;
+}
 
 /** One room/actual-sender channel, one shared personality repository. */
 export function createDshChannelPort({ ctx, getCoordinator, presetId = 'persona-memory', agentOptions } = {}) {
@@ -42,19 +57,24 @@ export function createDshChannelPort({ ctx, getCoordinator, presetId = 'persona-
     })().finally(() => resolving.delete(binding.sessionId)));
     return resolving.get(binding.sessionId);
   }
-  async function send(binding, { messageId, text, structured, sourceFacts = {} }) {
+  async function send(binding, { messageId, text, structured, groupContext, sourceFacts = {} }, assertCurrent) {
     const saved = await create(binding), agent = ctx.agents.get(saved.sessionId);
     if (!agent) fail('CHANNEL_AGENT_UNAVAILABLE', '聊天会话尚未就绪');
     const pending = [...(agent.inbox?.nextTurn ?? []), ...(agent.inbox?.nextStep ?? [])], history = agent.session?.deriveMessages?.() ?? [];
     const previous = [...pending, ...history].find(message => message.id === messageId);
     if (previous && (previous.source?.xiangxuStructured?.originalText ?? plainText(previous.content)) !== text) fail('CHANNEL_MESSAGE_CONFLICT', '同一个平台消息标识不能对应不同原文');
-    const structuredSource = structured?.rich ? { originalText:text,rich:structured.rich,derived:structured.derived??[] } : null;
-    const derivedText = structuredSource ? '[平台结构化资料：不是用户键入的原话]\n' + JSON.stringify({ mentions:structuredSource.rich.mentions,replies:structuredSource.rich.replies,faces:structuredSource.rich.faces,media:structuredSource.rich.media,forwards:structuredSource.rich.forwards,perception:structuredSource.rich.perception,derived:structuredSource.derived }) : '';
+    const structuredSource = structured?.rich || groupContext ? {
+      originalText: text,
+      ...(structured?.rich ? { rich: structured.rich, derived: structured.derived ?? [] } : {}),
+      ...(groupContext ? { groupContext, groupPresentation: GROUP_INPUT_PRESENTATION } : {}),
+    } : null;
+    const textBlocks = renderExternalMessageTextBlocks(structuredSource ?? { originalText: text });
+    assertCurrent?.();
     if (!previous) agent.followup({ id: messageId, role: 'user', source: { kind: 'user', xiangxuChannel: saved.facts,
       ...(structuredSource ? { xiangxuStructured:structuredSource } : {}),
       platformMessageId: sourceFacts.messageId ?? sourceFacts.sourceMessageId ?? null, platformSourceAt: Number.isSafeInteger(sourceFacts.sourceAt) ? sourceFacts.sourceAt : null,
       textComplete: sourceFacts.textComplete !== false, unsupportedSegments: Array.isArray(sourceFacts.unsupportedSegments) ? sourceFacts.unsupportedSegments.slice(0, 32) : [] },
-      content: [...(text ? [{type:'text',text}] : []),...(derivedText ? [{type:'text',text:derivedText}] : []),...(structured?.images??[]).map(attachment=>({type:'image',attachment}))] });
+      content: [...textBlocks.map(text => ({ type: 'text', text })), ...(structured?.images ?? []).map(attachment => ({ type: 'image', attachment }))] });
     const sessions = get(ctx, 'sessions'); if (typeof sessions?.flush !== 'function') fail('CHANNEL_DURABILITY_UNAVAILABLE', '宿主不能确认原生收件箱持久化');
     await sessions.flush(agent.session);
     return { status: 'accepted', messageId, duplicate: Boolean(previous), binding: saved };

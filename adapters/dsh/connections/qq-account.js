@@ -65,12 +65,41 @@ export function createQQAccountService({ getCoordinator, getRuntime, getBridge, 
     if (!facts.ready || !facts.capabilities[capability]?.supported || !facts.capabilities[capability]?.available) fail('QQ_ACCOUNT_UNAVAILABLE', 'QQ原生能力当前不可用'); return runtime;
   }
   async function guardRuntime(own, runtime) { await guardOwner(own); const current = await getRuntime(); await guardOwner(own); if (runtimeKey(current) !== runtimeKey(runtime)) fail('QQ_ACCOUNT_ACCOUNT_CHANGED', 'QQ账号或本次原生服务已变化'); }
-  async function permitted(own, runtime, capability) { await guardRuntime(own, runtime); let allowed; try { allowed = await authorize({ memoryRoot: own.memoryRoot, platform: 'qq', accountId: runtime.expectedAccountId, capability }); } catch { fail('QQ_ACCOUNT_PERMISSION', 'QQ账号能力未获授权'); } if (allowed === false) fail('QQ_ACCOUNT_PERMISSION', 'QQ账号能力未获授权'); await guardRuntime(own, runtime); }
+  async function permissionFence(own, accountId, capability) {
+    let grant;
+    try { grant = await authorize({ memoryRoot: own.memoryRoot, platform: 'qq', accountId, capability, dispatchFence: true }); }
+    catch { fail('QQ_ACCOUNT_PERMISSION', 'QQ账号能力未获授权'); }
+    if (grant === false) fail('QQ_ACCOUNT_PERMISSION', 'QQ账号能力未获授权');
+    return () => {
+      active(own.signal);
+      let checked;
+      try { checked = grant?.assertCurrent?.(); }
+      catch { fail('QQ_ACCOUNT_PERMISSION', 'QQ账号能力未获授权'); }
+      if (checked && typeof checked.then === 'function') {
+        Promise.resolve(checked).catch(() => {});
+        fail('QQ_ACCOUNT_PERMISSION', '派发前QQ账号权限未同步确认');
+      }
+      if (checked === false) fail('QQ_ACCOUNT_PERMISSION', 'QQ账号能力未获授权');
+    };
+  }
+  async function permitted(own, runtime, capability) {
+    await guardRuntime(own, runtime);
+    const assertCurrent = await permissionFence(own, runtime.expectedAccountId, capability);
+    await guardRuntime(own, runtime);
+    assertCurrent();
+    return assertCurrent;
+  }
   const bridgeKey = value => value ? hash([value.accountId,value.connectionId,value.enabled,value.connected,value.identityVerified]) : null;
   function usableBridge(value, accountId, operation) { return value?.enabled === true && value.connected === true && value.identityVerified === true && validId(value.accountId) && value.accountId === accountId && typeof value.connectionId === 'string' && /^[a-f0-9]{64}$/.test(value.connectionId) && value.operations?.[operation] === true && typeof value.executeAccount === 'function'; }
   async function guardBridge(own, bridge, operation) { await guardOwner(own); const current = typeof getBridge === 'function' ? await getBridge() : null; await guardOwner(own); if (!usableBridge(current,bridge.accountId,operation) || bridgeKey(current) !== bridgeKey(bridge)) fail('QQ_ACCOUNT_ACCOUNT_CHANGED','当前QQ桥、账号或能力已变化'); }
   async function bridgeFor(own, accountId, operation) { await guardOwner(own); const bridge = typeof getBridge === 'function' ? await getBridge() : null; await guardOwner(own); if (!usableBridge(bridge,accountId,operation)) fail('QQ_ACCOUNT_UNAVAILABLE','当前个人QQ账号操作尚未就绪'); return bridge; }
-  async function permittedBridge(own, bridge, operation) { await guardBridge(own,bridge,operation); let allowed; try { allowed = await authorize({memoryRoot:own.memoryRoot,platform:'qq',accountId:bridge.accountId,capability:QQ_ACCOUNT_ACTIONS[operation]}); } catch { fail('QQ_ACCOUNT_PERMISSION','QQ账号能力未获授权'); } if (allowed === false) fail('QQ_ACCOUNT_PERMISSION','QQ账号能力未获授权'); await guardBridge(own,bridge,operation); }
+  async function permittedBridge(own, bridge, operation) {
+    await guardBridge(own, bridge, operation);
+    const assertCurrent = await permissionFence(own, bridge.accountId, QQ_ACCOUNT_ACTIONS[operation]);
+    await guardBridge(own, bridge, operation);
+    assertCurrent();
+    return assertCurrent;
+  }
   const basePath = row => 'receipts/' + row.receiptId + '/000000.json';
   const revisionPath = (row, n) => 'receipts/' + row.receiptId + '/' + String(n).padStart(6, '0') + '.json';
   async function archive(own) {
@@ -120,8 +149,36 @@ export function createQQAccountService({ getCoordinator, getRuntime, getBridge, 
     if (operation === 'receipts') { const accountId = selectedAccount(input, a), limit = input.limit ?? L.pageSize; if (!Number.isInteger(limit) || limit < 1 || limit > L.pageMax) fail('QQ_ACCOUNT_ARGUMENT', '分页大小无效'); let offset = 0; if (input.pageCursor !== undefined && input.pageCursor !== null) { if (typeof input.pageCursor !== 'string' || !input.pageCursor || input.pageCursor.length > 1024) fail('QQ_ACCOUNT_CURSOR', '账号资料分页游标无效'); let cursor; try { cursor = JSON.parse(Buffer.from(input.pageCursor, 'base64url').toString('utf8')); } catch { fail('QQ_ACCOUNT_CURSOR', '账号资料分页游标无效'); } if (!object(cursor) || cursor.scope !== hash([own.instanceId, rootKey(own.memoryRoot), accountId]) || cursor.revision !== a.index.revision || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0 || cursor.offset > a.index.receipts.length) fail('QQ_ACCOUNT_CURSOR', '账号资料分页已变化，请回第一页'); offset = cursor.offset; } const all = a.index.receipts.filter(v => v.accountId === accountId).slice().reverse(), end = Math.min(all.length, offset + limit); return { items: all.slice(offset, end).map(summary), total: all.length, pageCursor: end < all.length ? Buffer.from(JSON.stringify({ scope: hash([own.instanceId, rootKey(own.memoryRoot), accountId]), revision: a.index.revision, offset: end })).toString('base64url') : null, limits: { ...L } }; }
     if (operation === 'receipt') { const accountId = selectedAccount(input, a), row = rowFor(a, input.receiptId, accountId), prepared = await preparedFor(a, row), events = []; for (let n = 1; n <= row.revisions; n++) events.push(await revisionFor(a, row, n)); await guardOwner(own); const value = JSON.stringify({ prepared, events, current: summary(row) }, null, 2), points = [...value], offset = input.offset ?? 0, maxChars = input.maxChars ?? L.readChars; if (!Number.isInteger(offset) || offset < 0 || offset > points.length || !Number.isInteger(maxChars) || maxChars < 1 || maxChars > L.readChars) fail('QQ_ACCOUNT_ARGUMENT', '完整收据读取范围无效'); const end = Math.min(points.length, offset + maxChars); return { receiptId: row.receiptId, summary: summary(row), text: points.slice(offset, end).join(''), offset, nextOffset: end < points.length ? end : null, complete: end === points.length, totalChars: points.length, sha256: hash(value), sourceKind: 'qq-account-operation', humanDialogue: false, bindingCreated: false }; }
     if (operation === 'friend.options') { const value = await options(a, input); await guardOwner(own); let runtime = null; try { runtime = await getRuntime(); } catch {} await guardOwner(own); const usable = Boolean(runtime?.enabled && runtime.expectedAccountId === value.row.accountId && runtime.bootId === value.row.bootId && clock() < value.row.expiresAt); return { ...copy(value.record.response), usable, reason: usable ? null : 'QQ_ACCOUNT_OPTIONS_NOT_CURRENT', immutableQuery: true, queryId: value.row.queryId }; }
-    if (operation === 'friend.query') { if (!validId(input.userId)) fail('QQ_ACCOUNT_ARGUMENT', '请使用真实目标QQ号'); const runtime = await runtimeFor(own, input.accountId, 'query'); await permitted(own, runtime, 'friend.query'); if (a.index.queries.length >= L.queries) fail('QQ_ACCOUNT_CAPACITY', '目标资料已达技术容量，原资料保留'); const response = await client.query(runtime, { userId: input.userId }, { signal: AbortSignal.any([lifetime.signal, ...(own.signal ? [own.signal] : [])]) }); await guardRuntime(own, runtime); const id = 'qqquery-' + hash([runtime.expectedAccountId, runtime.bootId, response.optionsRef]).slice(0, 32), exists = a.index.queries.find(v => v.queryId === id); if (!exists) { const next = copy(a.index); next.revision++; next.queries.push({ queryId: id, accountId: runtime.expectedAccountId, userId: input.userId, optionsRef: response.optionsRef, targetRef: response.targetRef, bootId: runtime.bootId, expiresAt: response.expiresAt, createdAt: clock() }); await commit(a, next, { ['queries/' + id + '.json']: { schemaVersion: SCHEMA, instanceId: own.instanceId, accountId: runtime.expectedAccountId, receivedAt: clock(), response } }); } return { ...response, queryId: id, referenceOnly: true, bindingCreated: false }; }
-    if (operation === 'friend.status') { const accountId = selectedAccount(input, a), row = rowFor(a, input.receiptId, accountId), prepared = await preparedFor(a, row); if (row.operation) fail('QQ_ACCOUNT_OPERATION','该账号操作没有好友状态查询接口，请读取完整收据'); const runtime = await runtimeFor(own, accountId, 'query'); await permitted(own, runtime, 'friend.query'); if (row.revisions >= L.revisionsPerReceipt) fail('QQ_ACCOUNT_CAPACITY', '操作历史已达容量'); const response = await client.status(runtime, { operationId: prepared.operationId }, { signal: AbortSignal.any([lifetime.signal, ...(own.signal ? [own.signal] : [])]) }); await guardRuntime(own, runtime); if (response.userId !== undefined && response.userId !== row.userId || response.optionsRef !== undefined && response.optionsRef !== prepared.request.optionsRef || response.targetRef !== undefined && response.targetRef !== prepared.request.targetRef) fail('QQ_ACCOUNT_RECEIPT_SCOPE', '原生状态不属于该操作目标'); const nextStatus = ['prepared', 'unknown', 'unsupported'].includes(response.state) ? 'unknown' : response.state; const updated = await append(a, row.receiptId, { event: 'status', status: nextStatus, at: clock(), response, ...(response.confirmedBy ? { confirmedBy: response.confirmedBy } : {}) }); return { ...summary(updated), native: response, refreshed: true, replayed: false }; }
+    if (operation === 'friend.query') {
+      if (!validId(input.userId)) fail('QQ_ACCOUNT_ARGUMENT', '请使用真实目标QQ号');
+      const runtime = await runtimeFor(own, input.accountId, 'query'), assertCurrent = await permitted(own, runtime, 'friend.query');
+      if (a.index.queries.length >= L.queries) fail('QQ_ACCOUNT_CAPACITY', '目标资料已达技术容量，原资料保留');
+      const response = await client.query(runtime, { userId: input.userId }, { signal: AbortSignal.any([lifetime.signal, ...(own.signal ? [own.signal] : [])]), assertCurrent });
+      await guardRuntime(own, runtime);
+      assertCurrent();
+      const id = 'qqquery-' + hash([runtime.expectedAccountId, runtime.bootId, response.optionsRef]).slice(0, 32);
+      if (!a.index.queries.some(v => v.queryId === id)) {
+        const next = copy(a.index); next.revision++;
+        next.queries.push({ queryId: id, accountId: runtime.expectedAccountId, userId: input.userId, optionsRef: response.optionsRef, targetRef: response.targetRef, bootId: runtime.bootId, expiresAt: response.expiresAt, createdAt: clock() });
+        await commit(a, next, { ['queries/' + id + '.json']: { schemaVersion: SCHEMA, instanceId: own.instanceId, accountId: runtime.expectedAccountId, receivedAt: clock(), response } });
+      }
+      assertCurrent();
+      return { ...response, queryId: id, referenceOnly: true, bindingCreated: false };
+    }
+    if (operation === 'friend.status') {
+      const accountId = selectedAccount(input, a), row = rowFor(a, input.receiptId, accountId), prepared = await preparedFor(a, row);
+      if (row.operation) fail('QQ_ACCOUNT_OPERATION', '该账号操作没有好友状态查询接口，请读取完整收据');
+      const runtime = await runtimeFor(own, accountId, 'query'), assertCurrent = await permitted(own, runtime, 'friend.query');
+      if (row.revisions >= L.revisionsPerReceipt) fail('QQ_ACCOUNT_CAPACITY', '操作历史已达容量');
+      const response = await client.status(runtime, { operationId: prepared.operationId }, { signal: AbortSignal.any([lifetime.signal, ...(own.signal ? [own.signal] : [])]), assertCurrent });
+      await guardRuntime(own, runtime);
+      assertCurrent();
+      if (response.userId !== undefined && response.userId !== row.userId || response.optionsRef !== undefined && response.optionsRef !== prepared.request.optionsRef || response.targetRef !== undefined && response.targetRef !== prepared.request.targetRef) fail('QQ_ACCOUNT_RECEIPT_SCOPE', '原生状态不属于该操作目标');
+      const nextStatus = ['prepared', 'unknown', 'unsupported'].includes(response.state) ? 'unknown' : response.state;
+      const updated = await append(a, row.receiptId, { event: 'status', status: nextStatus, at: clock(), response, ...(response.confirmedBy ? { confirmedBy: response.confirmedBy } : {}) });
+      assertCurrent();
+      return { ...summary(updated), native: response, refreshed: true, replayed: false };
+    }
     fail('QQ_ACCOUNT_OPERATION', '请选择好友查询、目标设置、操作状态或本地资料读取');
   }); }
   async function executeBridge(input, trusted, ticket) {
@@ -134,13 +191,22 @@ export function createQQAccountService({ getCoordinator, getRuntime, getBridge, 
     const signal = AbortSignal.any([lifetime.signal,...(own.signal?[own.signal]:[])]), material = await prepareQQAccountAction(normalized,{readAsset,memoryRoot:own.memoryRoot,signal,guard:()=>guardBridge(own,bridge,operation)}); await permittedBridge(own,bridge,operation);
     const at = clock(), source = provenance(trusted), row = {receiptId:id,operation,accountId,userId:null,status:'prepared',revisions:0,createdAt:at,updatedAt:at}, prepared = {schemaVersion:SCHEMA,receiptId:id,instanceId:own.instanceId,accountId,operation,operationId,request:material.archivedRequest,source,runtime:{protocol:'onebot11',connectionId:bridge.connectionId,provider:'napcat-onebot-account'},createdAt:at,status:'prepared',transportCalls:null,transportCallUpperBound:1};
     const next = copy(a.index); next.revision++; next.receipts.push(row); await commit(a,next,{[basePath(row)]:prepared});
-    try { await permittedBridge(own,bridge,operation); } catch (error) { await append(a,id,{event:'not_dispatched',status:'failed',at:clock(),error:safeError(error),transportCalls:0}); throw error; }
-    let response;
+    let assertPermission;
+    try { assertPermission = await permittedBridge(own, bridge, operation); } catch (error) { await append(a,id,{event:'not_dispatched',status:'failed',at:clock(),error:safeError(error),transportCalls:0}); throw error; }
+    let response, deniedAtDispatch = false;
+    const assertCurrent = () => {
+      try { assertPermission(); }
+      catch (error) { deniedAtDispatch = true; throw error; }
+    };
     try {
-      const result = await bridge.executeAccount(operation,material.payload,{operationId,signal});
+      assertCurrent();
+      const result = await bridge.executeAccount(operation,material.payload,{operationId,signal,assertCurrent});
       if (!object(result) || result.accountId !== accountId || result.operation !== operation || !['completed','failed','unknown','unsupported'].includes(result.status) || result.status === 'completed' && (result.confirmedBy !== 'onebot-api-success' || typeof result.receiptId !== 'string' || !result.receiptId || result.receiptId.length > 256 || operation === 'feed.publish' && (typeof result.tid !== 'string' || !/^[a-zA-Z0-9_-]{1,256}$/.test(result.tid)))) fail('QQ_ACCOUNT_BRIDGE_RESULT','账号操作没有可确认的真实回执');
       response = {status:result.status,accountId,operation,...(result.status === 'completed' ? {receiptId:result.receiptId,confirmedBy:result.confirmedBy,...(result.tid ? {tid:result.tid}: {})} : {code:safeError({code:result.code}).code})}; await guardBridge(own,bridge,operation);
-    } catch (error) { const changed = await append(a,id,{event:'request_unknown',status:'unknown',at:clock(),error:safeError(error),...(response?{response}:{}),transportCalls:null,transportCallUpperBound:1}); return {...summary(changed),error:safeError(error),outcomeUnknown:true,replayed:false}; }
+    } catch (error) {
+      if (deniedAtDispatch) { await append(a,id,{event:'not_dispatched',status:'failed',at:clock(),error:safeError(error),transportCalls:0}); throw error; }
+      const changed = await append(a,id,{event:'request_unknown',status:'unknown',at:clock(),error:safeError(error),...(response?{response}:{}),transportCalls:null,transportCallUpperBound:1}); return {...summary(changed),error:safeError(error),outcomeUnknown:true,replayed:false};
+    }
     const changed = await append(a,id,{event:'request_result',status:response.status,at:clock(),response,...(response.confirmedBy?{confirmedBy:response.confirmedBy}:{}),transportCalls:response.status === 'unknown' || response.status === 'unsupported' ? null : 1,transportCallUpperBound:1});
     return {...summary(changed),result:response,replayed:false,...(response.status === 'unknown'?{outcomeUnknown:true}:{})};
   }
@@ -158,9 +224,19 @@ export function createQQAccountService({ getCoordinator, getRuntime, getBridge, 
       const selected = await options(a, { ...input, accountId }), runtime = await runtimeFor(own, accountId, 'request'); if (selected.row.bootId !== runtime.bootId || clock() >= selected.row.expiresAt) fail('QQ_ACCOUNT_OPTIONS_EXPIRED', '目标设置已经过期或属于旧启动，请重新查询'); if (!selected.record.response.requirements.supported) fail('QQ_ACCOUNT_UNSUPPORTED', '当前好友设置尚无已实现的请求流程');
       await permitted(own, runtime, 'friend.request'); const source = provenance(trusted), request = { accountId, userId: selected.row.userId, targetRef: selected.row.targetRef, optionsRef: input.optionsRef, text: textValue }, at = clock(), row = { receiptId: id, accountId, userId: selected.row.userId, status: 'prepared', revisions: 0, createdAt: at, updatedAt: at }, prepared = { schemaVersion: SCHEMA, receiptId: id, instanceId: own.instanceId, accountId, operationId, request, source, runtime: { protocol: runtime.protocol, bootId: runtime.bootId, abiVersion: runtime.abiVersion }, createdAt: at, status: 'prepared', nativeCalls: null, nativeCallUpperBound: 1, query: selected.record.response };
       const next = copy(a.index); next.revision++; next.receipts.push(row); await commit(a, next, { [basePath(row)]: prepared });
-      try { await permitted(own, runtime, 'friend.request'); } catch (error) { await append(a, id, { event: 'not_dispatched', status: 'failed', at: clock(), error: safeError(error), nativeCalls: 0 }); throw error; }
-      let response; try { response = await client.request(runtime, { operationId, optionsRef: request.optionsRef, text: request.text }, { signal: AbortSignal.any([lifetime.signal, ...(own.signal ? [own.signal] : [])]) }); await guardRuntime(own, runtime); if (response.userId !== undefined && response.userId !== row.userId || response.optionsRef !== undefined && response.optionsRef !== request.optionsRef || response.targetRef !== undefined && response.targetRef !== request.targetRef) fail('QQ_ACCOUNT_RECEIPT_SCOPE', '原生回执目标不匹配'); }
-      catch (error) { const updated = await append(a, id, { event: 'request_unknown', status: 'unknown', at: clock(), error: safeError(error), ...(response ? { response } : {}), nativeCalls: null, nativeCallUpperBound: 1 }); return { ...summary(updated), error: safeError(error), replayed: false, outcomeUnknown: true }; }
+      let response, started = false;
+      try {
+        const assertPermission = await permitted(own, runtime, 'friend.request');
+        response = await client.request(runtime, { operationId, optionsRef: request.optionsRef, text: request.text }, {
+          signal: AbortSignal.any([lifetime.signal, ...(own.signal ? [own.signal] : [])]),
+          assertCurrent() { assertPermission(); started = true; },
+        });
+        await guardRuntime(own, runtime);
+        if (response.userId !== undefined && response.userId !== row.userId || response.optionsRef !== undefined && response.optionsRef !== request.optionsRef || response.targetRef !== undefined && response.targetRef !== request.targetRef) fail('QQ_ACCOUNT_RECEIPT_SCOPE', '原生回执目标不匹配');
+      } catch (error) {
+        if (!started) { await append(a, id, { event: 'not_dispatched', status: 'failed', at: clock(), error: safeError(error), nativeCalls: 0 }); throw error; }
+        const updated = await append(a, id, { event: 'request_unknown', status: 'unknown', at: clock(), error: safeError(error), ...(response ? { response } : {}), nativeCalls: null, nativeCallUpperBound: 1 }); return { ...summary(updated), error: safeError(error), replayed: false, outcomeUnknown: true };
+      }
       const status = response.state === 'prepared' ? 'unknown' : response.state, updated = await append(a, id, { event: 'request_result', status, at: clock(), response, ...(response.confirmedBy ? { confirmedBy: response.confirmedBy } : {}) }); return { ...summary(updated), native: response, replayed: false };
     }).finally(() => { mutations.delete(ticket); });
   }

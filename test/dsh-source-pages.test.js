@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDshCoordinator } from '../adapters/dsh/index.js';
+import { REFERENCE_UNDERSTANDING } from '../core/onboarding.js';
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'persona-dsh-source-page-')), agents = new Map();
@@ -20,7 +21,11 @@ async function fixture(t) {
   const coordinator = createDshCoordinator({ agents: { get: id => agents.get(id) }, llm: {} }, { memoryRoot: root, operatorControl: false });
   await coordinator.ready; await coordinator.attachAgent(a); await coordinator.attachAgent(b);
   const replies = [];
-  coordinator.runtime.model = { maxInputTokens: 6000, complete: async request => {
+  // This fixture uses the UTF-8 fallback counter. Preserve its original page
+  // headroom while accounting for the newly required fixed control framing.
+  const inputBudget = 6000 + Buffer.byteLength(JSON.stringify('\n' + REFERENCE_UNDERSTANDING), 'utf8') - 2;
+  coordinator.runtime.model = { maxInputTokens: inputBudget, complete: async request => {
+    assert.ok(Buffer.byteLength(JSON.stringify(request.messages), 'utf8') <= inputBudget, 'the actual serialized model request must fit the fixture limit');
     if (request.purpose === 'reply') { replies.push(request); return { text: 'The actual chosen cross-session reply.' }; }
     return { patch: [] };
   } };

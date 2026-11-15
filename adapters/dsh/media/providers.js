@@ -34,13 +34,18 @@ export async function probeProvider(fetchImpl,config,signal){
   if(config.type==='comfyui'){if(!object(result))fail('MEDIA_PROVIDER_RESPONSE','ComfyUI节点目录无效');const missing=[...new Set(Object.values(config.workflow).map(node=>node.class_type))].filter(name=>!Object.hasOwn(result,name));return{reachable:true,configurationValid:missing.length===0,missingNodeTypes:missing,verifiedGeneration:false};}
   return{reachable:true,configurationValid:typeof result?.id==='string',verifiedGeneration:false,model:typeof result?.id==='string'?result.id:null};
 }
-export async function submit(fetchImpl,config,job,reference,signal){
+export async function submit(fetchImpl,config,job,reference,signal,beforeDispatch){
+  const post=async(route,options)=>{
+    await beforeDispatch?.();
+    signal?.throwIfAborted();
+    return request(fetchImpl,config,route,{...options,method:'POST',signal});
+  };
   if(reference&&config.referenceMode!=='edit')fail('MEDIA_REFERENCE_UNSUPPORTED','当前服务未配置参考图能力，没有降级为纯文字生成');
   if(config.type==='openai-images'){
     let body,form=false,route='images/generations';
     if(reference){route='images/edits';if(config.editTransport==='multipart'){form=true;body=new FormData();body.append('model',config.model);body.append('prompt',job.prompt);body.append('n','1');if(job.size)body.append('size',job.size);body.append('image[]',new Blob([reference.bytes],{type:reference.mime}),reference.filename);}else body={model:config.model,prompt:job.prompt,n:1,images:[{image_url:'data:'+reference.mime+';base64,'+reference.bytes.toString('base64')}],...(job.size?{size:job.size}:{})};}
     else body={model:config.model,prompt:job.prompt,n:1,...(job.size?{size:job.size}:{})};
-    const response=await request(fetchImpl,config,route,{method:'POST',body,form,signal});
+    const response=await post(route,{body,form});
     if(!Array.isArray(response?.data)||response.data.length!==1)fail('MEDIA_PROVIDER_RESPONSE','图片服务没有返回一张可核实的结果');
     const item=response.data[0];let bytes;
     if(typeof item.b64_json==='string'){if(item.b64_json.length>Math.ceil(LIMITS.imageBytes*4/3)+4||!/^[A-Za-z0-9+/]*={0,2}$/.test(item.b64_json)||item.b64_json.length%4!==0)fail('MEDIA_PROVIDER_RESPONSE','图片Base64无效或超限');bytes=Buffer.from(item.b64_json,'base64');}
@@ -49,8 +54,8 @@ export async function submit(fetchImpl,config,job,reference,signal){
     mediaInfo(bytes,'image');return{status:'completed',outputs:[{bytes,name:'generated-image'}]};
   }
   const workflow=clone(config.workflow);workflow[config.promptNode].inputs[config.promptInput]=job.prompt;
-  if(reference){const form=new FormData();form.append('image',new Blob([reference.bytes],{type:reference.mime}),reference.filename);form.append('type','input');form.append('overwrite','false');const uploaded=await request(fetchImpl,config,'upload/image',{method:'POST',body:form,form:true,signal,max:65536});const name=serverFile(uploaded);workflow[config.referenceNode].inputs[config.referenceInput]=(name.subfolder?name.subfolder+'/':'')+name.filename;}
-  const result=await request(fetchImpl,config,'prompt',{method:'POST',body:{prompt:workflow,client_id:'xiangxu-'+job.jobId},signal,max:262144});
+  if(reference){const form=new FormData();form.append('image',new Blob([reference.bytes],{type:reference.mime}),reference.filename);form.append('type','input');form.append('overwrite','false');const uploaded=await post('upload/image',{body:form,form:true,max:65536});const name=serverFile(uploaded);workflow[config.referenceNode].inputs[config.referenceInput]=(name.subfolder?name.subfolder+'/':'')+name.filename;}
+  const result=await post('prompt',{body:{prompt:workflow,client_id:'xiangxu-'+job.jobId},max:262144});
   if(typeof result?.prompt_id!=='string'||!result.prompt_id||result.prompt_id.length>256||result.node_errors&&Object.keys(result.node_errors).length)fail('MEDIA_PROVIDER_RESPONSE','ComfyUI未确认有效任务编号');
   return{status:'submitted',remoteJobId:result.prompt_id};
 }

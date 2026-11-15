@@ -1,5 +1,7 @@
 # 人格与记忆字段契约：persona-memory/3
 
+群现场与 `xiangxu-social` 交付扩展见第27节，人物称呼与来源见第28节。两节区分宿主技术证据和人格的认识、参与和记忆选择。
+
 当前0.14.0统一时间线、分层与必要人格上下文见第26节；第6–8节现行控制／确认／预算契约和第16节任务资料契约同步维护。第20–25节自我档案、生命周期、检索、受管连接和账号工具按兼容范围继续有效。当前可靠性维护未新增真实模型或正式社交验收，历史证据不提升为本轮验收。
 
 > 0.14.0当前维护：新增只读[3D记忆关联图](../../memory-graph-3d.md)，按复合身份和实际来源／显式关系展示局部；默认派生文档，明确选原件才读对应分片。后端有界读取与显示预算独立于记忆容量，超限只影响本次视图。图不调用模型、不触发回忆或人格更新，布局不冒充神经元／情绪实测；原文、撤销、人格自主和既有QQ恢复保持。最终全量、实机和正式加载另验，不预填成功。
@@ -243,6 +245,7 @@ interface IdentityDocument {
   personId: PersonId;
   displayName: string | null;
   aliases: string[];
+  names?: PersonNameEntry[];
   firstMetAt: EpochMs;
   locale: string | null;
   timezone: string | null;
@@ -370,10 +373,11 @@ interface RetrievePlan {
   reason?: string;
 }
 interface IdentityPlan {
-  action: "new" | "associate" | "unknown";
+  action: "new" | "associate" | "unknown" | "names";
   personId?: PersonId;
   displayName?: string;
   sourceRefs?: SrcRef[];
+  nameUpdates?: PersonNameUpdate[];
   reason?: string;
 }
 interface ConsolidationPlan {
@@ -1092,6 +1096,8 @@ interface SemanticPort {
 
 memory_search与RetrievePlan共用mode、timeMode、asOf、seedIds、associationDepth、diversity。默认mode:auto、timeMode:all、associationDepth:1、diversity:none、limit:5；scope沿原person/global/all语义。query最多2000字符，可空；limit技术范围0–1000，0不调用向量。seedIds最多16个真实记录ID，深度0–2；空query且无seed不做语义查询或图扩展。lexical关闭向量接口，仍允许明确的既有关联扩展；hybrid/auto没有服务／索引或服务失败时如实降级。
 
+独立的 `memory_search` 工具可用 `mode:"prepared"` 读取睡眠整理时准备的一跳线索。此模式需要空 `query` 和非空 `seedIds`，范围为当前或指定人物，或显式 `global`。沿已准备的线索定位记录，仍核两端来源、已登记人物和所选时间范围。结果报告 `diagnostics.preparedAssociations.status`，可为 `ready`、`missing`、`stale` 或 `unavailable`。详细依据随同一结果的 `detailCursor` 分页，含共同标注的人物 ID 和种子记录来源。该模式只供主动工具调用。 [实现范围和容量](../../integrations-and-retrieval.md#睡眠整理准备的关联线索)
+
 current/asOf按已有validFrom≤at<validTo筛选，缺失边界保持未指定，不补编时间；asOf必须且只能随timeMode:asOf提供epoch毫秒，聊天原件还按sourceAt排除未来消息。past只选validTo已明确结束的资料，不等于所有历史经历；invalid区间不冒称有效。supersedesIds不会自动让旧观点失效。查询只覆盖尚存资料，不是历史数据库恢复，不复活明确遗忘。
 
 返回仍是items，既有score保留字面相关度含义；item.retrieval另含channels、rankScore、lexicalScore、semanticScore、matchedTerms、associationPaths、temporal、referenceOnly:true、automaticRecall:false。融合排序不是人格重要度；diversity:source只作为可选来源多样性排序，不设人群配额，不删条目。内部候选键含recordType/scope/personId/id，不能把同名裸ID串成他人经历。关联仅沿relatedMemoryIds/expandIds/supersedesIds/replacementIds等已存连接，不冒用来源依赖作语义关系；不完整时标partial。
@@ -1340,3 +1346,72 @@ MemoryRepository.getMemoryGraph(input)接受scope=global|person|unknown（默认
 渲染器本地打包，以Canvas2D画xyz透视，可旋转、平面、缩放、复位、键盘／列表选中和按需详情。无CDN/WebGL和持续动画；主题随DSH，隐藏／离页清理，切换实例立即停图清旧详情。坐标和类别颜色是布局，不是神经元或情绪实测；浏览不调用模型、触发回忆、学习或人格更新。
 
 操作、限制与当前验收边界见[3D记忆关联图](../../memory-graph-3d.md)。
+
+## 27. 群聊理解与交付契约（2026-11-07候选）
+
+本节的群现场与交付格式属于DSH适配层。`persona-memory/3`、八工具、`ReplyPlan`、睡眠和记忆判断继续沿用。新QQ群入站在 `source.xiangxuStructured.groupPresentation` 写 `xiangxu-group-scene/1`，`originalText`仍是实际完整原文；呈现为有真实发言来源的公开群现场。没有标记的旧事件继续用旧呈现核验来源，不迁移或改写旧日志。
+
+QQ群新最终文字通过一个 `xiangxu-social` 代码块交付，块内对象严格为：
+
+```ts
+interface GroupDialogueReply {
+  understanding: {
+    addressee: "self" | "other" | "group" | "uncertain";
+    reference: string | null;
+  };
+  participation: "answer" | "join" | "clarify" | "other";
+  messages: string[]; // 1至6项，每项为一条非空完整消息；原换行保留。
+}
+```
+
+`understanding` 由当前人格表达自己对原句对象的理解，`participation` 表达参与方式。所有 16 种组合均符合结构校验。QQ 群实际交付时，明确的 `self` 声明与 `uncertain` 加具体 `reference` 加 `answer` 的组合均须核对本轮来信证据。后者表示以尚未确认的被叫者身份作答。无依据时保存失败回执 `SOCIAL_SELF_ADDRESS_UNSUPPORTED`。作为在场者提供信息可选择 `join`，澄清、等待和其他参与方式仍由人格选择。该解释不自动更新自我名字、人物绑定或记忆事实，选择等待或睡眠不要求输出该块。 [交付证据范围](../../social-dialogue-contract.md)
+
+`SOCIAL_REPLY_FORMAT`为`xiangxu-social/1`。输入字节、可见文字总容量沿既有external-output技术限制；超过容量不截断发出。最终源文本哈希覆盖完整内部块，交付哈希只覆盖`messages`经已有可见文字投影后的正文；回执持久化哈希，不存正文或临时理解。正文中的直接嵌套QQ／social控制块拒绝，DSH卡片沿现有外部文字投影处理，普通代码示例不改。
+
+原生QQ群final使用 `outputContract:SOCIAL_REPLY_FORMAT` 进入外发。`understanding`与`participation`不发送到QQ、不合成为语音、不进入普通交流正文；内部源事件完整保留为过程资料。1项与多项都按实际消息回执确认。部分送达只确认已发前缀，未知部分不重发；冷恢复继续识别旧raw／`dsh-plain/1`／`xiangxu-qq-bubbles/1`回执。
+
+缺少或损坏格式返回 `failed`，错误码分别为 `SOCIAL_REPLY_FORMAT_REQUIRED`／`SOCIAL_REPLY_FORMAT_INVALID`，写入哈希失败回执；不是已经尝试发送后的unknown。下一轮的QQ群交付参考覆盖无fence的失败稿并带错误码，不自动重试，不把宿主有final等同于平台已说过。其他平台误用此内部格式返回通道契约错误，不发内部块。
+
+`conversation_identity_reference.inputSource.platformMessageId`呈现已接纳外部来信的真实平台消息ID，来源标记`accepted_platform_input`。这与可能有界省略的`environment_details.externalInput.platformMessageId`互相对应；不得用会话ID或内部投递ID替代。`persona_platform message.read`缺`messageId`时在出桥前返回`CHANNEL_MESSAGE_ID_REQUIRED`；合并转发缺独立`forwardId`返回`CHANNEL_FORWARD_ID_REQUIRED`。桥异步拒绝正常进入错误归类，不伪造已读或成功回执。
+
+同一 `inputSource` 的 `relativeToRequest` 使用平台源时间与本次请求快照。可计算时提供 `status: "computed"`、所配置时区的 `calendarDaysAgo`、实际经过的 `elapsedMs` 和中文事实摘要。跨午夜的日历归属与经过时长分开计算。源时间晚于请求时钟时标记 `source_after_request`，缺少可用时间时省略该关系。
+
+托管NapCat为已有安全字节解析器启用官方`enableLocalFile2Url`返回Base64，按账号持久保存原absent／false／true前像，普通close保留恢复意图，明确stop恢复原值并保留外部后改值。非托管兼容桥不自动修改配置。无安全字节、接口不支持与实际媒体总容量不足分列，16MiB上限不变，不开启任意本机文件或外网读取。
+
+完整生产消费链、上游依据和分层验证见[群聊契约](../../social-dialogue-contract.md)。工程固定provider验证不代表真实模型的指代语义已通过；候选正式加载和真实QQ验收另记，不用旧版本结果替代。
+
+### 27.1 本轮技术复核范围
+
+- QQ群聊对显式 `addressee:"self"`，以及对象不确定、填写具体称呼并选择 `answer` 的稿件，核验当前来信。当前原文为可识别的简单具名在场询问，且投递气泡以独立的肯定应声开头时，同样核验，避免用 `join` 等结构值绕过。证据须来自同一会话已经接纳的入站收据；适用的证据包括明确 @、引用实际平台送达的本账号消息，或满足群内唯一性与原文匹配的直接称呼。证据到实际文字或语音派发前仍须有效。缺证据时保留失败回执及待答来信。当前模型上下文单列有效的 `selfAddressEvidence`。普通群体询问、条件式接话和提供旁观线索仍可交付，工具主动发言沿用其既有权限与收据。超出简单问答形态的隐性冒领留待语义验收。
+- 入站复核当前人格实例、已连接账号和绑定。相同平台消息ID只重认同一原文与同一会话、发言者来源，来源冲突拒绝。外部读取和发送沿各自能力许可，派发前核对真实实例、连接、目标及许可，读取交回前再核对。外部副作用按实际回执结算。
+- QQ好友申请、头像、资料与空间写入区分可证实未派发的失败和已越过派发边界但没有可靠回执的未知结果。前者可记调用次数为0，后者保留原收据等待核对；同一操作编号不会重发。B站同一账号范围内，若等价操作尚未确认，按请求指纹或规范化的目标与正文指纹识别，并阻止换编号重发。
+- 可选动态与翻唱服务在请求、产物下载和交回结果处复核授权及适用来源。可选图片或视频服务的每个提交 POST 前复核来源撤销，包括参考图上传与随后正式提交。已准备的记忆关联线索重新核对端点和实际接收的来源，失效、撤销或不明来源不能继续提供为可用线索。
+- 恢复备份或接续中断恢复按目标实例处理。只有维护当前选中实例才关闭其自动加载，待本人显式加载。独立任务冷恢复以最后一轮的原件核对完成状态和报告；该轮没有输出时不借用较早报告，原档可按需查看。
+
+这些是技术层的边界。真实模型的群聊理解、真实QQ往返与各可选平台能力仍需按相同候选另行验收。
+
+## 28. 人物称呼与来源
+
+`IdentityDocument` 的 `names` 是兼容新增的可选字段。旧档案的 `displayName` 与字符串数组 `aliases` 继续读取，旧别名的来源保持未记录。
+
+```ts
+interface PersonNameEntry {
+  kind: "alias" | "nickname" | "former_name" | "platform_nickname";
+  name: string;
+  srcRefs: SrcRef[];
+  updatedAt: EpochMs;
+  observedOn?: { platform: "qq" | "wechat"; accountId: string; senderId: string };
+}
+interface PersonNameUpdate {
+  action: "upsert" | "remove";
+  kind: "alias" | "nickname" | "former_name";
+  name: string;
+  sourceRefs?: SrcRef[];
+}
+```
+
+每个人物最多32条，每条称呼最多120个Unicode字符和4个来源，每次更新最多8项。重复观察同一已保存的平台称呼时沿用原记录。QQ或微信的名称来自实际接纳、已归属给对应人物的真人来信，按稳定账号和发言者记录昵称的先后变化。`observedOn` 保存这次称呼来自哪个平台连接与发言者；同名仍可属于多个人。
+
+`persona_decide` 的 `identityPlan.action:"names"` 以 `personId` 选择已存在的人物并按 `nameUpdates` 修改称呼，保持常用名、当前路由与原件归属。新建或关联人物也可在明确选择时附带称呼更新。更新项的 `sourceRefs` 指称呼依据，独立于 `identityPlan.sourceRefs` 所选的原件归属。相续自己选择的称呼可以没有原件引用。已明确撤销的来源从现行称呼和待提交更新中清理，恢复备份仍遵守撤销。
+
+`persona_introspect` 的 `section:"names"` 按当前或显式目标人物查看资料。带 `nameQuery` 时，去首尾空白、按Unicode NFKC和小写转换后精确匹配，返回有界候选；可用 `targetPersonId` 限定查询范围。资料也可按预算进入可省略的关系详情。设置页“记忆 → 认识的人”用姓名、别名、昵称或人物编号搜索，按需打开实际来源。查找、显示或记录称呼只提供参考，关联人物、怎样称呼和是否回应由人格决定。

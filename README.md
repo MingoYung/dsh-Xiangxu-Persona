@@ -1,10 +1,10 @@
 # dsh-Xiangxu-Persona · 相续人格
 
-当前版本**0.14.0**新增只读的[3D记忆关联图](docs/memory-graph-3d.md)：从已经保存的记忆、来源、人物和明确关联查看局部关系，可旋转、缩放、切换平面或列表，并继续查完整来源。按需打开、有界读取、本地绘制，不调用模型，不修改记忆，不参与人格判断。
+**0.14.1** 适配 DSH NEXT 2.0.23-next 的原生任务委派，将只读 3D 关联图嵌入记忆页，并改进记忆预览、分页和原件定位。此版也补齐经过核实的历史来源回补、Windows 备份发布和隔离测试入口。QQ／微信真实收发和自然聊天另做实机验收。见[更新内容与验证范围](docs/market-submission.md#0141)。
 
 当前可靠性维护补齐来信呈现与真实回复的确认链、成长后的预算预检、可选相对时间表达和旧任务公开报告投影。醒来收到汇总、后来出现一条回复或相关任务完成，都不自动证明某条旧来信已经回答；事实供相续自主判断。预算不足保留资料与整理进度，建议需明确应用，不自动扩容或续跑。Windows宿主的PowerShell启动问题由[窄兼容入口](docs/windows-powershell-compat.md)处理，无需重装PowerShell 7或修改全局环境。操作见[使用说明](docs/user-guide.md)，字段以[权威契约](docs/plan/persona/persona-schema.md)为准；本批未新增真实模型或正式社交验收。
 
-当前可靠性补修完整回归1582/1582通过，实际DSH固定响应联验29/29检查通过，新增真实模型调用0；范围与限制见[补修记录](docs/reliability-fixes.md)。0.14.0记忆图发布轮的历史完整回归为1507/1507，实际设置页曾加载正式原件局部图；该轮证据仍见[0.14.0回执](docs/verification/0.14.0-memory-graph.json)，不作为本批正式部署或社交收发验收。
+此前可靠性补修的完整回归为1582/1582，实际DSH固定响应联验29/29，新增真实模型调用0。范围与限制见[补修记录](docs/reliability-fixes.md)。0.14.0记忆图发布轮的历史完整回归为1507/1507，实际设置页曾加载正式原件局部图。见[0.14.0回执](docs/verification/0.14.0-memory-graph.json)。
 
 0.13.6修复的QQ冷恢复循环等待继续保留：新来信触发旧会话恢复时，历史回放只核对已有平台回执并保留真实来源，不重发历史消息；实时新回复继续正常派发，见[QQ会话恢复补修](docs/0.13.6-qq-replay-recovery.md)。
 
@@ -20,7 +20,7 @@
 
 0.8.1历史补丁增强透明主题下的操作提示：主导航和内容分类的选中项有常驻下划线，功能入口有“打开 →”轮廓标记，状态单独显示；悬停与键盘焦点可见。颜色继续取自DSH主题，0.8系列操作流程及后台契约不变。 相关55项回归与三种主题检查已通过，范围见[本补丁回执](docs/verification/0.8.1-affordance.json)。
 
-相续人格是面向DSH的长期人格与记忆插件，版本 **0.14.0**，包名 `dsh-xiangxu-persona`。采用独立核心＋DSH适配层；在DSH设置里提供五个主入口和任务式子页，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
+相续人格是面向 DSH 的长期人格与记忆插件，包名 `dsh-xiangxu-persona`。采用独立核心与 DSH 适配层，在 DSH 设置中提供五个主入口和任务式子页，在对话里提供连续记忆、主观人格成长、主动聊天和睡眠唤醒。
 
 这是同一个跨关系成长的人格。它自己判断认出谁、注意谁、记什么、回不回复、何时主动、是否有必要整理、何时睡和怎样醒。软件保存来源与归属、执行选择、控制资源并恢复故障，没有每日主动额度、最短交流间隔、沉默惩罚、印象证据门槛、强制睡眠、话题硬拦截或承诺履约器。
 
@@ -162,6 +162,10 @@ node scripts/persona-cli.mjs recover
 
 ## 文档与验证
 
+2026-11-05 的候选[身份线索补修](docs/conversation-identity-grounding.md)区分自我资料、平台来源、话语对象与自主参与；群聊空匹配明确表示观察范围内未匹配。未增加必须回复／澄清或禁止插话的门，旧记忆保留，真实模型改善与正式加载另验。
+
+2026-11-05 的 [DSH 2.0.22-next 兼容补修](docs/dsh-2.0.22-compatibility.md)说明晚选择人格预设时首轮工具就绪、受管送达文件清除，以及新版 SDK 夹具适配。隔离原生固定模型证据、QQ 真实模型样本和正式验收分别登记，避免把前者当成人格自然行为已经通过。
+
 2026-11-02的[核心功能链验证](docs/core-function-validation.md)单列112项核心定向回归、18项观察器／预算回归、当前安装DSH的29项生命周期与37项带真实观察器的委派检查；全部使用固定模型响应，真实LLM调用为0。它修复测试观察器误挂worker预设的问题，并验证提交后的下一原生请求和冷恢复实际加载，不冒充当前版本真实模型的自然主动、睡醒、整理成长或委派验收。
 
 0.13.0的时间线与必要上下文历史验证见[时间线说明](docs/memory-timeline-and-context.md)。0.13.4完成140项登录恢复、201项界面、38项渠道／进程及5项管理宿主模块定向回归，构建、语法、文档与打包检查通过；普通desktop已加载补修，当前QQ仍需本人扫码，新聊天往返待验，见[本轮回执](docs/verification/0.13.4-qq-login-recovery.json)与[恢复说明](docs/qq-login-recovery.md)。0.13.3的完整1400/1400仍只属于[上一版验收](docs/verification/0.13.3-qq-profile-output.json)，不计作本版全量。QQ资料变更由用户自行测试，其他社交入口继续标未测试；0.12.0的[账号能力与当时待验收表](docs/account-capabilities.md#0120-current-acceptance)、0.11.0的[好友／聊天历史结果](docs/qq-one-click-setup.md#0110-final-acceptance)保留原范围。实际PR与审核状态见[收录记录](docs/market-submission.md)，不能由本地测试推断已获收录。
@@ -210,7 +214,7 @@ node scripts/dsh-delegation-integration.mjs
 | DSH_TEST_HOME | --home NEW_PATH | 必须尚不存在的新隔离目录；已有目录拒绝复用，每次显式指定时使用新路径 |
 | DSH_TEST_ARTIFACTS | --artifacts PATH | 验收产物根，脚本在其中新建独立run目录 |
 
-home和证据目录必须位于生产DSH home之外；Windows／DSH缺失明确返回unsupported、退出码2，不冒称通过。`--prepare-only`只准备隔离profile，不能当作完成验收；`--help`显示当前参数。此委派脚本始终为fixture-only，不接受`--real-only`。较早的`scripts/dsh-integration.mjs --real-only`属于另一条真实模型测试入口，会产生所配置供应商的正常调用费用。
+home和证据目录必须位于生产DSH home之外；Windows／DSH缺失明确返回unsupported、退出码2，不冒称通过。`--prepare-only`只准备隔离profile，不能当作完成验收；`--help`显示当前参数。此委派脚本始终为fixture-only，不接受`--real-only`。单独的宿主集成入口 `scripts/dsh-integration.mjs` 每次需明确选择 `--fixture-only`、`--base-only` 或 `--real-only`，并用 `--home` 或 `DSH_TEST_HOME` 指定新建的隔离路径。`--real-only` 可能产生所配置供应商的正常调用费用。
 
 ## 适配其他宿主
 

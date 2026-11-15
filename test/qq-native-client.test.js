@@ -6,6 +6,15 @@ const envelope = (own, body = {}) => ({ protocol: QQ_NATIVE_PROTOCOL, bootId: ow
 const caps = { query: { supported: true, available: true }, request: { supported: true, available: true }, respond: { supported: false, available: false } };
 const refs = { targetRef: 'qqtarget_' + 'a'.repeat(32), optionsRef: 'qqopts_' + 'b'.repeat(32) };
 
+test('native dispatch fence refuses a false or asynchronous assertion before the transport starts', async () => {
+  let calls = 0;
+  const client = createQQNativeClient({ fetchImpl: async () => { calls++; throw new Error('Unexpected transport'); } });
+  for (const assertCurrent of [() => false, async () => true]) {
+    await assert.rejects(client.request(runtime(), { operationId: 'fenced-request', optionsRef: refs.optionsRef }, { assertCurrent }), { code: 'QQ_NATIVE_FENCE' });
+  }
+  assert.equal(calls, 0);
+});
+
 test('native client uses authenticated loopback POST and validates inspect identity and capabilities', async () => {
   const own = runtime(), calls = [], client = createQQNativeClient({ fetchImpl: async (url, request) => { calls.push({ url, request }); return Response.json(envelope(own, { ready: true, abiVersion: QQ_NATIVE_ABI, capabilities: caps })); } });
   const result = await client.inspect(own); assert.equal(result.ready, true); assert.equal(calls.length, 1); assert.equal(calls[0].url, own.baseUrl + '/v1/inspect'); assert.equal(calls[0].request.method, 'POST'); assert.equal(calls[0].request.redirect, 'error'); assert.equal(calls[0].request.headers.authorization, 'Bearer ' + own.token); assert.equal(calls[0].request.headers['x-xiangxu-boot-id'], own.bootId); assert.deepEqual(JSON.parse(calls[0].request.body), {}); assert.equal(JSON.stringify(result).includes(own.token), false);

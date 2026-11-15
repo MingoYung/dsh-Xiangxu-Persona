@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createDshCoordinator,inspectPersonaPromptProjection} from '../adapters/dsh/index.js';
@@ -39,6 +39,25 @@ test('owned repeated full prompt snapshots request one native replacement series
   assert.deepEqual([...f.events.values()],before);assert.deepEqual(f.session.deriveMessages(),messages);
   assert.strictEqual(f.session.deriveMessages().find(m=>m.id==='assistant-tool-call'),call);assert.strictEqual(f.session.deriveMessages().find(m=>m.toolCallId==='call-1'),result);
   assert.deepEqual(f.session.deriveMessages().filter(m=>m.role!=='system').map(m=>m.id),['first-user','assistant-tool-call','result-1','answer']);
+});
+
+test('retained prompts from both older releases can refresh together with the current persona projection', async t => {
+  const f = await fixture(t);
+  const legacy = JSON.parse(await readFile(new URL('./fixtures/legacy-persona-protocols.json', import.meta.url), 'utf8'));
+  for (const { revision, protocol } of legacy) {
+    const message = f.system(revision, f.oldLive(1));
+    f.append('system/message', { ...message, content: [{ type: 'text', text: text(message).replace(f.current.protocolText, () => protocol) }] });
+    f.append('user/message', f.user('arrival-' + revision));
+    f.append('assistant/message', { id: 'reply-' + revision, role: 'assistant', source: { kind: 'model' },
+      content: [{ type: 'text', text: 'Earlier conversation reply' }] });
+  }
+  f.append('system/message', f.system('recent', f.oldLive(2)));
+  const before = f.session.deriveMessages();
+  const decision = inspectPersonaPromptProjection(f.session, f.current);
+  assert.equal(decision.startsRequestSeries, true);
+  assert.equal(decision.ownedSystemNodes, 3);
+  assert.equal(decision.reason, 'replace_owned_persona_projection');
+  assert.deepEqual(f.session.deriveMessages(), before);
 });
 
 test('a changed live snapshot requests native replacement while the unchanged authoritative snapshot does not',async t=>{

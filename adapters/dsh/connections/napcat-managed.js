@@ -11,6 +11,7 @@ const safeError=e=>({code:/^[A-Z0-9_]{1,80}$/.test(e?.code??'')?e.code:'NAPCAT_S
 const rootKey=p=>process.platform==='win32'?path.resolve(p).toLowerCase():path.resolve(p);
 async function choosePorts(){const servers=await Promise.all([0,1].map(()=>new Promise((resolve,reject)=>{const s=net.createServer();s.once('error',reject);s.listen(0,'127.0.0.1',()=>resolve(s));})));const ports=servers.map(s=>s.address().port);await Promise.all(servers.map(s=>new Promise(r=>s.close(r))));return{web:ports[0],api:ports[1]};}
 const NATIVE_PROTOCOL='xiangxu-qq-native/1';
+const validMediaRestore=value=>value===undefined||object(value)&&Object.entries(value).every(([account,entry])=>/^\d{1,16}$/.test(account)&&object(entry)&&typeof entry.present==='boolean'&&(entry.present?typeof entry.value==='boolean':entry.value===null));
 async function reserveNativePort(){const server=net.createServer(socket=>socket.destroy());await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});server.unref();const port=server.address().port;let released=false;return{port,async release(){if(released)return;released=true;await new Promise(resolve=>server.close(()=>resolve()));}};}
 /** Owner-only personal QQ setup. It never creates a model turn or sends a test QQ message. */
 export function createNapcatManagedService({installRoot,qqPath,fetchImpl=fetch,fsPort=fs,spawnPort=spawn,runtimePorts={},nativeRuntime=null,channels=runtimePorts.channels,getCoordinator=runtimePorts.getCoordinator,clock=Date.now,release=NAPCAT_RELEASE}={}){
@@ -24,7 +25,7 @@ export function createNapcatManagedService({installRoot,qqPath,fetchImpl=fetch,f
   async function read(file,max=2097152){await safe(file);try{const st=await fsPort.lstat(file);if(!st.isFile()||st.size>max)fail('NAPCAT_STATE_CAPACITY','组件状态文件大小无效');return await fsPort.readFile(file);}catch(e){if(e.code==='ENOENT')return null;throw e;}}
   async function atomic(file,bytes){await safe(file);await fsPort.mkdir(path.dirname(file),{recursive:true});await safe(file);const next=file+'.next';await safe(next);await fsPort.writeFile(next,bytes,{mode:0o600});await safe(file);await fsPort.rename(next,file);}
   const persist=()=>atomic(stateFile,JSON.stringify(saved,null,2)+'\n');
-  const ready=(async()=>{const bytes=await read(stateFile);if(bytes){const v=JSON.parse(bytes.toString('utf8'));if(v.schemaVersion!==saved.schemaVersion||v.version!==release.version||![v.webToken,v.apiToken].every(s=>typeof s==='string'&&/^[A-Za-z0-9_-]{40,100}$/.test(s))||v.ports!==null&&(!object(v.ports)||![v.ports.web,v.ports.api].every(n=>Number.isInteger(n)&&n>0&&n<=65535)||v.ports.web===v.ports.api))fail('NAPCAT_STATE_INVALID','托管QQ状态无效');saved=v;}
+  const ready=(async()=>{const bytes=await read(stateFile);if(bytes){const v=JSON.parse(bytes.toString('utf8'));if(v.schemaVersion!==saved.schemaVersion||v.version!==release.version||![v.webToken,v.apiToken].every(s=>typeof s==='string'&&/^[A-Za-z0-9_-]{40,100}$/.test(s))||v.ports!==null&&(!object(v.ports)||![v.ports.web,v.ports.api].every(n=>Number.isInteger(n)&&n>0&&n<=65535)||v.ports.web===v.ports.api)||!validMediaRestore(v.mediaBytesRestore))fail('NAPCAT_STATE_INVALID','托管QQ状态无效');saved=v;}
     const marker=await read(path.join(versionRoot,'install.json'));if(marker){const m=JSON.parse(marker.toString('utf8'));installed=m.version===release.version&&m.archiveSha256===release.sha256;}
   })();
   // This optional bootstrap owns only its private config and original plugin assets.
@@ -224,10 +225,31 @@ export function createNapcatManagedService({installRoot,qqPath,fetchImpl=fetch,f
     const f={id:randomUUID(),...c,phase:'installing',abort:new AbortController(),qrContent:null,loginAccount:null,reachable:false,apiReady:false,error:null,manualCloseRequired:false};flow=f;f.task=(async()=>{await previous?.task?.catch(()=>{});if(live(f))await(f.launchTask=launch(f,{reuse:Boolean(saved.ports)}));})().catch(e=>{if(live(f)){f.phase='failed';f.error=safeError(e);}});return status();});}
   async function poll(args={}){const f=await check(args);return pollInternal(f,{refreshQr:args.refreshQr===true});}
   function scopes(value){if(!Array.isArray(value)||value.length>256||value.some(s=>typeof s!=='string'||!s||s.length>256||/[\u0000-\u0020\u007f]/.test(s)))fail('NAPCAT_SCOPE_INVALID','请选择明确的私聊对象或群');return[...new Set(value)];}
+  // NapCat's get_image supplies base64 only with this supported option. Keep
+  // its original value per account before enabling it, including an absent key.
+  async function mediaByteConfig(f,original,{enable,guard}){
+    const account=f.loginAccount?.accountId??f.boundAccountId,config={...original};
+    if(!account||!/^\d{1,16}$/.test(account))return{config,restoredAccount:null};
+    const before=saved.mediaBytesRestore?.[account];
+    if(enable){
+      if(!before){
+        const present=Object.hasOwn(original,'enableLocalFile2Url');
+        if(present&&typeof original.enableLocalFile2Url!=='boolean')fail('NAPCAT_CONFIG_INVALID','桥媒体字节配置无效');
+        await guard();saved.mediaBytesRestore={...saved.mediaBytesRestore,[account]:{present,value:present?original.enableLocalFile2Url:null}};
+        await persist();
+      }
+      config.enableLocalFile2Url=true;
+      return{config,restoredAccount:null};
+    }
+    if(before&&original.enableLocalFile2Url===true){if(before.present)config.enableLocalFile2Url=before.value;else delete config.enableLocalFile2Url;}
+    return{config,restoredAccount:before?account:null};
+  }
+  async function finishMediaRestore(account){if(account){const next={...saved.mediaBytesRestore};delete next[account];saved.mediaBytesRestore=next;await persist();}}
+  async function ensureMediaBytes(f,guard){const original=await web('/OB11Config/GetConfig',{},f);if(!object(original))fail('NAPCAT_CONFIG_INVALID','桥媒体配置未确认');const next=await mediaByteConfig(f,original,{enable:true,guard});if(original.enableLocalFile2Url!==true){await guard();await web('/OB11Config/SetConfig',{config:JSON.stringify(next.config)},f);}}
   async function setTransport(f,{callbackUrl,secret,enable=true,guard=async()=>{}}={}){const original=await web('/OB11Config/GetConfig',{},f);if(!object(original)||!object(original.network))fail('NAPCAT_CONFIG_INVALID','桥网络配置未确认');const network={...original.network};for(const key of ['httpServers','httpClients'])if(!Array.isArray(network[key]))fail('NAPCAT_CONFIG_INVALID','桥网络配置未确认');
     network.httpServers=[...network.httpServers.filter(v=>v?.name!==OWN_SERVER),{name:OWN_SERVER,enable,host:'127.0.0.1',port:saved.ports.api,enableCors:false,enableWebsocket:false,messagePostFormat:'array',token:saved.apiToken,debug:false}];
     const previous=network.httpClients.find(v=>v?.name===OWN_CLIENT);network.httpClients=[...network.httpClients.filter(v=>v?.name!==OWN_CLIENT),...(callbackUrl?[{name:OWN_CLIENT,enable,url:callbackUrl,messagePostFormat:'array',reportSelfMessage:false,token:secret,debug:false}]:previous?[{...previous,enable:false}]:[])];
-    await guard();await web('/OB11Config/SetConfig',{config:JSON.stringify({...original,network})},f);
+    const media=await mediaByteConfig(f,original,{enable,guard});await guard();await web('/OB11Config/SetConfig',{config:JSON.stringify({...media.config,network})},f);await finishMediaRestore(media.restoredAccount);
   }
   async function connect(args={}){const f=await check(args),privateIds=scopes(args.allowedPrivateIds),groupIds=scopes(args.allowedGroupIds),voiceMode=args.voiceMode??'text';if(!['text','voice','both'].includes(voiceMode))fail('NAPCAT_VOICE_MODE','回复形式无效');await f.task;await check(args);await pollInternal(f);if(management.status!=='ready'){const error=f.error??{code:'NAPCAT_WEBUI_AUTH',message:'管理连接尚未确认'};throw Object.assign(new Error(error.message),error);}return queue(async()=>{await check(args);if(!f.loginAccount||!live(f))fail('NAPCAT_LOGIN_REQUIRED','请先本人扫码登录QQ');if(!channels?.configure||!channels?.rotateIngress||!channels?.start)fail('NAPCAT_CHANNEL_PORT','聊天接入服务尚未就绪');await check(args);f.connecting=true;f.phase='configuring';const guard=()=>check(args);try{
       const prior=await channels.status();await guard();if(prior.connections?.find(v=>v.id==='qq')?.enabled)await channels.stop({id:'qq'});
@@ -268,12 +290,17 @@ export function createNapcatManagedService({installRoot,qqPath,fetchImpl=fetch,f
       });
     })();try{return await f.recoveryTask;}finally{f.recovering=false;f.recoveryTask=null;}
   }
-  async function stop(args={}){await ready;return queue(()=>{if(args.flowId&&flow?.id!==args.flowId)fail('NAPCAT_FLOW_STALE','连接任务已变化');return halt(flow);});}
+  async function stop(args={}){await ready;return queue(()=>{if(closed)fail('NAPCAT_CLOSED','连接服务已关闭');if(args.flowId&&flow?.id!==args.flowId)fail('NAPCAT_FLOW_STALE','连接任务已变化');return halt(flow);});}
   async function accountChanged(f){nativeState=null;f.phase='failed';f.apiReady=false;f.qrContent=null;await queue(async()=>{const args={instanceId:f.instanceId,flowId:f.id};await check(args);const state=await channels.status(),selected=state.connections?.find(v=>v.id==='qq');await check(args);if(selected?.enabled&&selected.config?.mode==='bridge'&&selected.config.apiUrl==='http://127.0.0.1:'+saved.ports.api)try{await channels.stop({id:'qq'});}catch{}await check(args);await setTransport(f,{enable:false,guard:()=>check(args)});});fail('NAPCAT_ACCOUNT_CHANGED','QQ登录账号已变化，请重新确认接入账号和聊天范围');}
-  async function restore(f){if(f.restoreTask)return f.restoreTask;f.restoreTask=queue(async()=>{const args={instanceId:f.instanceId,flowId:f.id};await check(args);if(f.loginAccount?.accountId!==f.resumeIntent.accountId)fail('NAPCAT_RESUME_ACCOUNT_CHANGED','登录账号已变化，请重新选择接入范围');f.connecting=true;f.phase='configuring';try{const state=await channels.status(),selected=state.connections?.find(v=>v.id==='qq');if(!selected?.enabled||selected.config?.mode!=='bridge'||selected.config.accountId!==f.resumeIntent.accountId||selected.config.apiUrl!=='http://127.0.0.1:'+saved.ports.api)fail('NAPCAT_RESUME_CONFIGURATION_CHANGED','QQ接入配置已变化，请重新确认接入范围');await check(args);await channels.resume();await check(args);const checked=await channels.probe({id:'qq'}),profile=checked.connections?.find(v=>v.id==='qq');if(!profile?.connected||profile.config?.accountId!==f.loginAccount.accountId)fail('NAPCAT_API_UNCONFIRMED','恢复后的桥账号或API尚未确认');await check(args);f.boundAccountId=f.loginAccount.accountId;f.apiReady=true;f.phase='connected';f.resumeIntent=null;}finally{f.connecting=false;}});try{return await f.restoreTask;}finally{f.restoreTask=null;}}
+  async function restore(f){if(f.restoreTask)return f.restoreTask;f.restoreTask=queue(async()=>{const args={instanceId:f.instanceId,flowId:f.id};await check(args);if(f.loginAccount?.accountId!==f.resumeIntent.accountId)fail('NAPCAT_RESUME_ACCOUNT_CHANGED','登录账号已变化，请重新选择接入范围');f.connecting=true;f.phase='configuring';try{const state=await channels.status(),selected=state.connections?.find(v=>v.id==='qq');if(!selected?.enabled||selected.config?.mode!=='bridge'||selected.config.accountId!==f.resumeIntent.accountId||selected.config.apiUrl!=='http://127.0.0.1:'+saved.ports.api)fail('NAPCAT_RESUME_CONFIGURATION_CHANGED','QQ接入配置已变化，请重新确认接入范围');await check(args);await ensureMediaBytes(f,()=>check(args));await check(args);await channels.resume();await check(args);const checked=await channels.probe({id:'qq'}),profile=checked.connections?.find(v=>v.id==='qq');if(!profile?.connected||profile.config?.accountId!==f.loginAccount.accountId)fail('NAPCAT_API_UNCONFIRMED','恢复后的桥账号或API尚未确认');await check(args);f.boundAccountId=f.loginAccount.accountId;f.apiReady=true;f.phase='connected';f.resumeIntent=null;}finally{f.connecting=false;}});try{return await f.restoreTask;}finally{f.restoreTask=null;}}
   async function resume(){await ready;return queue(async()=>{if(!saved.desired||closed)return status();const c=await owner();if(closed||c.instanceId!==saved.desired.instanceId||rootKey(c.memoryRoot)!==rootKey(saved.desired.memoryRoot))return status();if(live(flow)&&flow.instanceId===c.instanceId&&rootKey(flow.memoryRoot)===rootKey(c.memoryRoot))return status();const statusBefore=await channels?.status?.(),profile=statusBefore?.connections?.find(v=>v.id==='qq');if(!profile?.enabled||profile.config?.mode!=='bridge'||profile.config.accountId!==saved.desired.accountId)return status();const latest=await owner();if(closed||c.instanceId!==latest.instanceId||rootKey(c.memoryRoot)!==rootKey(latest.memoryRoot))return status();const previous=flow;if(previous)previous.abort.abort();
     const f={id:randomUUID(),...c,resumeIntent:clone(saved.desired),phase:'installing',abort:new AbortController(),qrContent:null,loginAccount:null,reachable:false,apiReady:false,error:null,manualCloseRequired:false};flow=f;f.task=(async()=>{await previous?.task?.catch(()=>{});if(!live(f))return;await(f.launchTask=launch(f,{download:false,reuse:true}));for(let n=0;n<180&&live(f);n++){await pollInternal(f);if(['connected','failed','waiting_login'].includes(f.phase)||['NAPCAT_WEBUI_AUTH','NAPCAT_WEBUI_AUTH_EXPIRED','NAPCAT_WEBUI_RATE_LIMITED'].includes(f.error?.code))return;await(runtimePorts.delay??(ms=>new Promise(r=>setTimeout(r,ms))))(500);}if(live(f)){f.phase='failed';f.error=safeError({code:'NAPCAT_RESUME_TIMEOUT'});}})().catch(e=>{if(live(f)){f.phase='failed';f.error=safeError(e);}});return status();});}
   function isBusy(instanceId){return Boolean((flow?.connecting||flow?.recovering)&&(!instanceId||flow.instanceId===instanceId));}
-  async function close(){await ready;if(closed)return;closed=true;flow?.abort.abort();await controlTail;try{if(flow)await halt(flow,{clearDesired:false,disableTransport:false,stopChannels:false});}catch{}}
-  return{ready,inspect,start,poll,connect,stop,recover,resume,isBusy,getNativeRuntime,close};
+  let closeTask;
+  function beginClose(){closed=true;flow?.abort.abort();}
+  function close(){
+    beginClose();
+    return closeTask??=(async()=>{await ready;await controlTail;try{if(flow)await halt(flow,{clearDesired:false,disableTransport:false,stopChannels:false});}catch{}})();
+  }
+  return{ready,inspect,start,poll,connect,stop,recover,resume,isBusy,getNativeRuntime,beginClose,close};
 }

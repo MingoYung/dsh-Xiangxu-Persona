@@ -39,6 +39,18 @@
 
 入站好友申请与主动添加是两项不同工具能力。NapCat固定版已有set_friend_add_request处理真实入站申请，插件的申请事件／回应链仍未接线。主动申请在公开OneBot注册表仍缺action，本轮通过原创原生适配器补friend.query与friend.request源码接线；正式宿主加载后的工具实测另验，不能用已成功的一次操作者诊断代替。权限、查询引用、原始档案和真实结果分层见[QQ账号操作](qq-account-operations.md)。
 
+## QQ 回复形式与群聊来源
+
+接通 QQ 以后，相续会在每轮自行选择措辞、篇幅和发送形式。普通回复仍发为一条，正文里的换行原样保留。相续也可以在本轮直接写好几条各自完整的消息，由渠道按顺序发出。这个选择无需额外设置，也无需调用另一个模型来拆分。原有文字或语音选项继续生效。
+
+分开发送时，每条都有独立回执。如果有一条失败或结果未知，后续暂不发送。已经确认的内容可进入交流记忆，未确认内容保留为技术记录，整个回复保持未确认，待答也保留。重启只核已有回执。
+
+群消息的真实发言者、明确的 @ 和可核实的引用与原文分开。正文中的名字只匹配同群曾有来信的成员，提供可能的指代对象。相续自己判断对方在问谁，以及是否回应。
+
+2026-11-05候选补修另明确[观察范围与身份资料衔接](conversation-identity-grounding.md)：已接收发言者不是完整群名单，空匹配不能确认称呼归属；每轮以同一快照连接自己的账号、当前发言者和已呈现的自我资料。旧助手回复不自动认证身份，新昵称仍可自主接受。是否插话、询问、开玩笑或沉默没有新增程序限制。零模型装配／投递与真实模型效果分别验收。
+
+逐轮表达选择参考 [MaiBot 回复接口](https://github.com/Mai-with-u/MaiBot/blob/c6429547af711555e3d4d1b8d04b413572cb616c/src/maisaka/builtin_tool/reply.py#L114-L170)，一条或多条的发送设计参考 [QQ Agent 的发送接口](https://github.com/lyyde599/qq-agent/blob/main/src/tools.js#L88-L118)。
+
 ## QQ官方发送策略
 
 腾讯官方文档顶部说明主动推送自2025-04-21起不再提供，同页下方仍留旧额度。当前官方driver以取消主动推送为准，返回deliveryPolicy.proactive:false和passiveReplyRequired:true；没有有效被动回复上下文时返回QQ_PUSH_UNAVAILABLE，不伪造发送回执。私聊被动窗口60分钟，群聊5分钟；实际API仍可能受账号条件拒绝。该限制只适用于官方QQ，不套用到OneBot桥；人格仍可以自主决定想主动联系，执行器只报告当前平台实际能否完成。依据：[腾讯官方发送文档](https://github.com/tencent-connect/bot-docs/blob/main/docs/develop/api-v2/server-inter/message/send-receive/send.md)，核对2026-10-26。

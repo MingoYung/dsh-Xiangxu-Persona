@@ -110,10 +110,25 @@ export function createBilibiliService({ registryPath, storage, fetchImpl = fetch
     if (!state.enabled) fail('BILI_DISABLED'); if (!state.credential) fail('BILI_NOT_AUTHORIZED'); if (context.accountId !== state.credential.accountId) fail('BILI_ACCOUNT_CHANGED');
     if (context.signal?.aborted || lifetime.signal.aborted) fail('BILI_ABORTED');
     if (typeof authorize !== 'function') fail('BILI_PERMISSION_DENIED');
-    let permitted; try { permitted = await authorize({ memoryRoot: context.memoryRoot, platform: 'bilibili', accountId: context.accountId, capability: BILIBILI_OPERATIONS[operation], operation }); } catch { fail('BILI_PERMISSION_DENIED'); }
+    let permitted; try { permitted = await authorize({ memoryRoot: context.memoryRoot, platform: 'bilibili', accountId: context.accountId, capability: BILIBILI_OPERATIONS[operation], operation, dispatchFence: true }); } catch { fail('BILI_PERMISSION_DENIED'); }
     if (permitted === false) fail('BILI_PERMISSION_DENIED');
+    return permitted;
   }
-  function read(args = {}, context) { const requested = copy(args), scoped = contextSnapshot(context); if (!READS.includes(requested.operation)) fail('BILI_OPERATION_UNSUPPORTED', 'Bilibili action:read accepts search/recommend/video/subtitles/comments/frames. Use action:execute for comment/reply/share/message; the request was not rerouted or sent.'); return queue(async () => { await allowed(requested.operation, scoped); return client.read(requested, state.credential, scoped.signal); }); }
+  function assertGrant(grant, context) {
+    if (context.signal?.aborted || lifetime.signal.aborted) fail('BILI_ABORTED');
+    try { grant?.assertCurrent?.(); } catch { fail('BILI_PERMISSION_DENIED'); }
+  }
+  function read(args = {}, context) {
+    const requested = copy(args), scoped = contextSnapshot(context);
+    if (!READS.includes(requested.operation)) fail('BILI_OPERATION_UNSUPPORTED', 'Bilibili action:read accepts search/recommend/video/subtitles/comments/frames. Use action:execute for comment/reply/share/message; the request was not rerouted or sent.');
+    return queue(async () => {
+      const grant = await allowed(requested.operation, scoped);
+      assertGrant(grant, scoped);
+      const result = await client.read(requested, state.credential, scoped.signal);
+      assertGrant(grant, scoped);
+      return result;
+    });
+  }
   function execute(args = {}, context) {
     const requested = copy(args), scoped = contextSnapshot(context); if (!WRITES.includes(requested.operation)) fail('BILI_OPERATION_UNSUPPORTED', 'Bilibili action:execute accepts comment/reply/share/message. Use action:read for search/recommend/video/subtitles/comments/frames; the request was not rerouted or sent.'); id(scoped.deliveryId);
     return queue(async () => {
@@ -121,15 +136,30 @@ export function createBilibiliService({ registryPath, storage, fetchImpl = fetch
       const scopeHash = hash([process.platform === 'win32' ? scoped.memoryRoot.toLowerCase() : scoped.memoryRoot, scoped.accountId]), key = hash([scopeHash, scoped.deliveryId]), payloadHash = hash(canonical(requested)), found = state.receipts.find(receipt => receipt.key === key);
       const resultFor = receipt => { const { key: ignored, payloadHash: ignoredPayload, scopeHash: ignoredScope, contentHash: ignoredContent, resolutionReason: ignoredReason, ...result } = receipt; return { platform: 'bilibili', accountId: scoped.accountId, ...result, deliveryId: scoped.deliveryId, receiptRef: receipt.key, status: receipt.status === 'prepared' ? 'unknown' : receipt.status }; };
       if (found) { if (found.payloadHash !== payloadHash) fail('BILI_OUTPUT_CONFLICT'); return { ...resultFor(found), duplicate: true, automaticRetry: false }; }
-      const unresolved = state.receipts.find(receipt => receipt.scopeHash === scopeHash && receipt.payloadHash === payloadHash && ['prepared', 'unknown'].includes(receipt.status));
-      if (unresolved) return { ...resultFor(unresolved), status: 'unknown', duplicate: true, automaticRetry: false, priorDeliveryId: unresolved.deliveryId ?? null, blockedBy: 'unresolved_equivalent_action', code: 'BILI_PRIOR_DELIVERY_UNKNOWN' };
+      const unresolved = match => state.receipts.find(receipt => receipt.scopeHash === scopeHash && ['prepared', 'unknown'].includes(receipt.status) && match(receipt));
+      const blockedBy = receipt => ({ ...resultFor(receipt), status: 'unknown', duplicate: true, automaticRetry: false,
+        priorDeliveryId: receipt.deliveryId ?? null, blockedBy: 'unresolved_equivalent_action', code: 'BILI_PRIOR_DELIVERY_UNKNOWN' });
+      const samePayload = unresolved(receipt => receipt.payloadHash === payloadHash);
+      if (samePayload) return blockedBy(samePayload);
       if (state.receipts.length >= LIMITS.receipts) fail('BILI_RECEIPT_CAPACITY');
-      const prepared = await client.prepare(requested, state.credential, scoped.signal); await allowed(requested.operation, scoped);
+      const prepared = await client.prepare(requested, state.credential, scoped.signal);
+      assertGrant(await allowed(requested.operation, scoped), scoped);
+      const targetKey = hash(canonical(prepared.public));
+      const sameDelivery = unresolved(receipt => receipt.operation === requested.operation && receipt.target &&
+        receipt.contentHash === prepared.contentHash && hash(canonical(receipt.target)) === targetKey);
+      if (sameDelivery) return blockedBy(sameDelivery);
       const entry = { key, scopeHash, payloadHash, deliveryId: scoped.deliveryId, accountId: scoped.accountId, target: prepared.public, contentHash: prepared.contentHash, operation: requested.operation, status: 'prepared', createdAt: clock(), updatedAt: clock() };
       await save({ ...state, receipts: [...state.receipts, entry] });
-      let result;
-      try { await allowed(requested.operation, scoped); result = await client.send(prepared, state.credential, scoped.signal); }
-      catch (error) { const safe = report(error); result = { status: ['BILI_PERMISSION_DENIED', 'BILI_ACCOUNT_CHANGED', 'BILI_DISABLED', 'BILI_NOT_AUTHORIZED', 'BILI_AUTH_REJECTED'].includes(safe.code) ? 'failed' : 'unknown', code: safe.code }; }
+      let result, dispatched = false;
+      try {
+        const grant = await allowed(requested.operation, scoped);
+        assertGrant(grant, scoped);
+        dispatched = true;
+        result = await client.send(prepared, state.credential, scoped.signal);
+      } catch (error) {
+        const safe = report(error);
+        result = { status: !dispatched || safe.code === 'BILI_AUTH_REJECTED' ? 'failed' : 'unknown', code: safe.code };
+      }
       const receipt = { ...entry, ...result, updatedAt: clock() };
       try { await save({ ...state, receipts: state.receipts.map(value => value.key === key ? receipt : value) }); }
       catch (error) { report(error); return { ...resultFor({ ...entry, status: 'unknown', code: 'BILI_RECEIPT_SAVE_UNKNOWN' }), automaticRetry: false }; }

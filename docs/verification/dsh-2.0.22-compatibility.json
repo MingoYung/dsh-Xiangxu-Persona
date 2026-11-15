@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-05",
+  "status": "passed-isolated-compatibility",
+  "baseCandidate": "8a08043fe36e96dd95d3a7316bb6b0a2c9cb90dd",
+  "fixtureAdaptation": "8e2d05a",
+  "host": {
+    "version": "2.0.22-next",
+    "sdkVersion": "0.2.2-rc.1",
+    "asarSha256": "c525939eb23116128a22bf23a78b692abe7995f65ec5baf7b509ca1290262000"
+  },
+  "sourceDigests": {
+    "adapters/dsh/companion-scope.js": "b70f00fe53d64e28e3a8220a9744de6acdacba5db655fd9d6fc481df97fc86a7",
+    "adapters/dsh/instance-lifecycle.js": "08605ebc4b9c8d0b680e4f92fe5184dcd91451106c3d9a97f97e16df9d8742aa",
+    "scripts/fixtures/reflection-fixture.mjs": "f925660c5be6520386de90c0203933c3e78fbf3ef4291435d839004050a6ca48",
+    "scripts/dsh-reflection-integration.mjs": "131b20a15f0bd98ed20614fc01c1e49262ae40ac69c76ee29a8a59f295f73e11"
+  },
+  "realModelCalls": 0,
+  "productionProfileChanged": false,
+  "actualQqAccountUsed": false,
+  "personalityRulesChanged": false,
+  "localEvidenceRoot": "C:/Users/Administrator/Documents/Codex/2026-10-25/c-users-administrator-dsh-reports/work/dsh-compat-20261105-round2",
+  "tests": {
+    "fullUnit": {
+      "passed": 1651,
+      "total": 1651,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "evidence": "unit-final.log"
+    },
+    "reflectionObservationAddedAfterFullSuite": {
+      "passed": 4,
+      "total": 4,
+      "evidence": "reflection-observation-tests.log"
+    },
+    "qqDriverOffline": {
+      "passed": 13,
+      "total": 13,
+      "evidence": "driver-fix/offline-tests.tap"
+    },
+    "nativeGeneric": {
+      "passed": 29,
+      "total": 29,
+      "evidence": "final-native-generic-qq/generic/result.json"
+    },
+    "nativeMockQq": {
+      "passed": 7,
+      "total": 7,
+      "fixedDispatches": 4,
+      "evidence": "final-native-generic-qq/qq-host-1793864929175/qq-host-result.json"
+    },
+    "nativeRuns": [
+      {
+        "name": "onboarding",
+        "status": "passed",
+        "checks": 40,
+        "passed": 40,
+        "sourceDigestsMatch": true,
+        "exitCode": 0,
+        "evidence": "native/onboarding-final/run-1793864813212-9c0ee94e/result.json"
+      },
+      {
+        "name": "delegation",
+        "status": "passed",
+        "checks": 37,
+        "passed": 37,
+        "sourceDigestsMatch": true,
+        "exitCode": 0,
+        "evidence": "native/delegation-final/run-1793864813229-d707dbc5/result.json"
+      },
+      {
+        "name": "reflection",
+        "status": "passed",
+        "checks": 59,
+        "passed": 59,
+        "sourceDigestsMatch": true,
+        "exitCode": 0,
+        "evidence": "native/reflection-stable-observation/run-1793865226148-7f40a106/result.json"
+      }
+    ]
+  },
+  "retainedFailures": [
+    {
+      "evidence": "native/onboarding/run-1793864294107-57e59a98/result.json",
+      "cause": "managed native delivery file absent from exact clear allowlist; fixed"
+    },
+    {
+      "evidence": "native/reflection-final/run-1793864813228-952f9833/result.json",
+      "cause": "fixture combined documents across consolidation commit; durable prune had committed; stable observation fixed"
+    }
+  ],
+  "remaining": [
+    "AB-6 real-model quoted-message scenario unscored",
+    "formal load, current scoped monitor and phone QQ acceptance pending"
+  ],
+  "evidenceLimits": [
+    "Counts overlap and are not a sum of independent requirements",
+    "Fixed provider decisions do not demonstrate spontaneous personality behavior",
+    "Historical paid A/B results remain attributed to their original candidate, not to this new adaptation"
+  ]
+}

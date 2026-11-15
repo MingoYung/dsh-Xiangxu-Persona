@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto';
+import { normalizedGroupName } from './social-dialogue.js';
 
 /** Versioned presentation of a native DSH reply on a plain-text chat channel.
  * Source events are untouched; callers must use this same projection for their
  * delivery, acknowledgement and recovered delivery text.
  */
 export const EXTERNAL_OUTPUT_FORMAT = 'dsh-plain/1';
+export const QQ_REPLY_FORMAT = 'xiangxu-qq-bubbles/1';
+export const SOCIAL_REPLY_FORMAT = 'xiangxu-social/1';
+export const QQ_REPLY_MAX_BUBBLES = 6;
 export const EXTERNAL_OUTPUT_LIMITS = Object.freeze({ inputBytes: 65536, cards: 40, nodes: 200, depth: 8, structureNodes: 4096, structureDepth: 32, outputChars: 16000 });
 const L = EXTERNAL_OUTPUT_LIMITS;
 const digest = text => createHash('sha256').update(text).digest('hex');
@@ -128,6 +132,101 @@ const closes = (line, fence) => {
   return found && found[1][0] === fence[0] && found[1].length >= fence.length;
 };
 
+// Match only top-level fences, so a code example inside another fence stays literal.
+function hasReplyFence(source, language) {
+  if (typeof source !== 'string' || !source.toLowerCase().includes(language)) return false;
+  let ordinary = null;
+  for (const line of source.split(/\r\n|\r|\n/)) {
+    if (ordinary) {
+      if (closes(line, ordinary)) ordinary = null;
+      continue;
+    }
+    const found = opening(line);
+    if (!found) continue;
+    if (new RegExp('^' + language + '(?=$|[\\s`.,;:>])', 'i').test(found[2].trim())) return true;
+    ordinary = found[1];
+  }
+  return false;
+}
+
+export const hasQqReplyFence = source => hasReplyFence(source, 'xiangxu-qq');
+export const hasSocialReplyFence = source => hasReplyFence(source, 'xiangxu-social');
+
+/** Optional final reply format. Each string is one message, in the order chosen. */
+export function projectQqReply(source) {
+  if (typeof source !== 'string') throw new TypeError('External reply must be text');
+  if (Buffer.byteLength(source) > L.inputBytes) throw capacityError();
+  if (!hasQqReplyFence(source)) return null;
+  const invalid = () => Object.assign(new Error('QQ reply format is invalid'), { code: 'QQ_REPLY_FORMAT_INVALID' });
+  const block = /^```xiangxu-qq[ \t]*\r?\n([\s\S]+)\r?\n```$/i.exec(source.trim());
+  if (!block) throw invalid();
+  let parts;
+  try { parts = JSON.parse(block[1]); } catch { throw invalid(); }
+  if (!Array.isArray(parts) || parts.length < 2 || parts.length > QQ_REPLY_MAX_BUBBLES) throw invalid();
+  const projected = parts.map(part => {
+    if (typeof part !== 'string' || !part.trim() || !part.isWellFormed() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(part) || hasQqReplyFence(part)) throw invalid();
+    return projectExternalOutput(part);
+  });
+  const bubbles = projected.map(part => part.text);
+  if (bubbles.some(part => !part.trim())) throw invalid();
+  const text = bubbles.join('\n');
+  if (Array.from(text).length > L.outputChars) throw capacityError();
+  return { bubbles, text, formatVersion: QQ_REPLY_FORMAT, sourceTextHash: digest(source), deliveryTextHash: digest(text) };
+}
+
+// A bare opening acknowledgment can answer a summons. A following explicit
+// third-person sighting in the same clause sequence attributes it to someone else.
+function opensWithPresenceAnswer(value) {
+  const normalized = value.normalize('NFKC').trim();
+  const opening = /^(?:我[ \t]*)?(?:在[的呢呀啊哟喔哦啦]{0,2}[ \t]*){1,6}(?=$|[,。.!;…—\-\r\n])/u.exec(normalized);
+  return Boolean(opening && !/^,[ \t]*(?:我)?(?:刚刚?|刚才)?(?:看到|看见|见到)(?:他|她|TA)(?:上线|进群|发言|发消息)(?=$|[了,。.!; ])/iu.test(normalized.slice(opening[0].length)));
+}
+
+/** The interpretation and chosen participation stay in the retained source.
+ * Only messages are projected for delivery, acknowledgements and ordinary memory.
+ * Live delivery checks actions that speak as a particular addressee.
+ * Historical receipt decoding does not reapply current admission checks.
+ */
+export function projectSocialReply(source, addressEvidence = undefined) {
+  if (typeof source !== 'string') throw new TypeError('External reply must be text');
+  if (Buffer.byteLength(source) > L.inputBytes) throw capacityError();
+  if (!hasSocialReplyFence(source)) return null;
+  const invalid = () => Object.assign(new Error('Social reply format is invalid'), { code: 'SOCIAL_REPLY_FORMAT_INVALID' });
+  const block = /^```xiangxu-social[ \t]*\r?\n([\s\S]+)\r?\n```$/i.exec(source.trim());
+  if (!block) throw invalid();
+  let value;
+  try { value = JSON.parse(block[1]); } catch { throw invalid(); }
+  const onlyKeys = (item, keys) => object(item) && Object.keys(item).length === keys.length && keys.every(key => Object.hasOwn(item, key));
+  const validString = item => typeof item === 'string' && item.isWellFormed() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(item);
+  if (!onlyKeys(value, ['understanding', 'participation', 'messages']) ||
+    !onlyKeys(value.understanding, ['addressee', 'reference']) ||
+    !['self', 'other', 'group', 'uncertain'].includes(value.understanding.addressee) ||
+    !(value.understanding.reference === null || validString(value.understanding.reference)) ||
+    !['answer', 'join', 'clarify', 'other'].includes(value.participation) ||
+    !Array.isArray(value.messages) || value.messages.length < 1 || value.messages.length > QQ_REPLY_MAX_BUBBLES) throw invalid();
+  const { addressee, reference } = value.understanding, name = normalizedGroupName(reference);
+  const declaredSelfAddress = addressEvidence !== undefined && (addressee === 'self' ||
+    addressee === 'uncertain' && typeof reference === 'string' && reference.trim() !== '' && value.participation === 'answer');
+  const projected = value.messages.map(part => {
+    if (!validString(part) || !part.trim() || hasQqReplyFence(part) || hasSocialReplyFence(part)) throw invalid();
+    return projectExternalOutput(part);
+  });
+  const bubbles = projected.map(part => part.text);
+  if (bubbles.some(part => !part.trim())) throw invalid();
+  const text = bubbles.join('\n');
+  if (Array.from(text).length > L.outputChars) throw capacityError();
+  const presence = addressEvidence?.presenceQuestion;
+  const barePresenceAnswer = Boolean(presence && (presence.nameCue || presence.target === name) && bubbles.some(opensWithPresenceAnswer));
+  const requiresCurrentGroupEvidence = declaredSelfAddress || barePresenceAnswer;
+  const supportsName = target => Boolean(target && addressEvidence?.names?.includes(target));
+  if (addressEvidence?.direct !== true && ((declaredSelfAddress && !supportsName(name)) || (barePresenceAnswer && !supportsName(presence.target)))) {
+    throw Object.assign(new Error('这份群聊稿以被叫者身份应答，但缺少本轮可核验的指向依据。原稿暂扣。'),
+      { code: 'SOCIAL_SELF_ADDRESS_UNSUPPORTED' });
+  }
+  return { bubbles, text, formatVersion: SOCIAL_REPLY_FORMAT, sourceTextHash: digest(source), deliveryTextHash: digest(text),
+    ...(requiresCurrentGroupEvidence ? { requiresCurrentGroupEvidence: true } : {}) };
+}
+
 /** No evaluation, URL access, model calls or source mutation. Ordinary Markdown
  * fences, including JSON/code examples, remain byte-for-byte unchanged.
  */
@@ -170,10 +269,29 @@ export function resolveExternalOutput(source, receipt) {
       || receipt.deliveryTextHash !== undefined && !matches(receipt.deliveryTextHash, rawHash)) return null;
     return { text:source, converted:false, complete:true, cards:0, issues:[], sourceTextHash:rawHash, deliveryTextHash:rawHash };
   }
-  if (receipt.formatVersion !== EXTERNAL_OUTPUT_FORMAT || !matches(receipt.sourceTextHash, rawHash)) return null;
+  if (![EXTERNAL_OUTPUT_FORMAT, QQ_REPLY_FORMAT, SOCIAL_REPLY_FORMAT].includes(receipt.formatVersion) || !matches(receipt.sourceTextHash, rawHash)) return null;
   let result;
-  try { result = projectExternalOutput(source); } catch { return null; }
-  if (!matches(receipt.textHash, result.deliveryTextHash)
+  try { result = receipt.formatVersion === SOCIAL_REPLY_FORMAT ? projectSocialReply(source) : receipt.formatVersion === QQ_REPLY_FORMAT ? projectQqReply(source) : projectExternalOutput(source); } catch { return null; }
+  if (!result || !matches(receipt.textHash, result.deliveryTextHash)
     || receipt.deliveryTextHash !== undefined && !matches(receipt.deliveryTextHash, result.deliveryTextHash)) return null;
+  if (receipt.bubbles !== undefined && (!result.bubbles || !Array.isArray(receipt.bubbles) || receipt.bubbles.length !== result.bubbles.length ||
+    receipt.bubbles.some((bubble, index) => !object(bubble) || bubble.index !== undefined && bubble.index !== index || !matches(bubble.textHash, digest(result.bubbles[index])) ||
+      receipt.status === 'delivered' && bubble.status !== 'delivered'))) return null;
   return result;
+}
+
+/** Recover only the ordered prefix that has actually reached QQ. */
+export function resolvePartialQqReply(source, receipt) {
+  if (receipt?.status !== 'partial' || ![QQ_REPLY_FORMAT, SOCIAL_REPLY_FORMAT].includes(receipt.formatVersion) || !Array.isArray(receipt.bubbles)) return null;
+  const actual = resolveExternalOutput(source, receipt);
+  if (!actual) return null;
+  let deliveredCount = 0;
+  for (const [index, bubble] of receipt.bubbles.entries()) {
+    if (bubble.status === 'delivered') {
+      if (deliveredCount !== index) return null;
+      deliveredCount++;
+    }
+  }
+  return deliveredCount > 0 && deliveredCount < actual.bubbles.length
+    ? actual.bubbles.slice(0, deliveredCount).join('\n') : null;
 }

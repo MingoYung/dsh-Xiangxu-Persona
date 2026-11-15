@@ -134,3 +134,35 @@ test('registered memory_search detail continuation reads the frozen snapshot wit
   assert.equal(afterForget.code, 'TOOL_CURSOR_EXPIRED');
   assert.equal(searches, 2, 'expiry is served from the cache state, not by re-searching');
 });
+
+test('registered prepared search follows a complete row detail link and records the actual seed dependencies', async t => {
+  const f = await fixture(t);
+  await f.enter('request', '查询与旧记录有关的资料。', 1);
+  const seed = { schemaVersion: 'persona-memory/3', id: 'prepared-seed', personId: 'person_detail', scope: 'person', recordType: 'memory',
+    srcRefs: [{ sourceSessionId: 'separate-seed-session', sourceEventId: 'seed-evidence-a', available: true },
+      { sourceSessionId: 'separate-seed-session', sourceEventId: 'seed-evidence-b', available: true }] };
+  const item = { schemaVersion: 'persona-memory/3', id: 'prepared-match', personId: 'person_detail', scope: 'person', recordType: 'memory',
+    text: '一条简短的联想参考。', srcRefs: [], retrieval: { channels: ['prepared_association'], preparedAssociation: { subjectPersonId: 'actual-subject', seed } } };
+  let searches = 0;
+  // Isolate the adapter: supply the core's prepared result contract at its port.
+  f.runtime.search = async () => { searches++; return { items: [item], diagnostics: { method: 'prepared_association',
+    preparedAssociations: { status: 'ready', builtAt: 1000, partial: false }, referenceOnly: true, automaticRecall: false } }; };
+  const args = { query: '', mode: 'prepared', seedIds: [seed.id] };
+  const tool = f.tools.get('memory_search');
+  const list = await tool.execute(args, { agent: f.agent, callId: 'prepared-list' });
+  assert.equal(list.items[0].fragment.complete, true);
+  assert.equal(list.items[0].preparedAssociationInDetail, true);
+  assert.ok(list.items[0].detailCursor);
+  assert.ok(!JSON.stringify(list).includes(seed.id), 'list leaves the exact basis in detail');
+  await f.observe('tool/result', { turn: 1, message: { id: 'prepared-output', role: 'tool', source: { kind: 'tool', name: 'memory_search' },
+    content: [{ type: 'text', text: JSON.stringify(list) }] } });
+  const recorded = (await f.repository.store.readLines('people/person_detail/hot.jsonl')).find(record => record.kind === 'tool_result');
+  assert.equal(recorded.dependencyScanComplete, true);
+  assert.ok(recorded.dependencyRecordIds.includes(seed.id));
+  for (const { sourceSessionId, sourceEventId } of seed.srcRefs) assert.ok(recorded.dependencyRefs.some(ref =>
+    ref.sourceSessionId === sourceSessionId && ref.sourceEventId === sourceEventId));
+  const detail = await tool.execute({ ...args, detailCursor: list.items[0].detailCursor }, { agent: f.agent, callId: 'prepared-detail' });
+  assert.equal(detail.detail.fragment.complete, true);
+  assert.deepEqual(JSON.parse(detail.detail.text).retrieval.preparedAssociation, item.retrieval.preparedAssociation);
+  assert.equal(searches, 1);
+});

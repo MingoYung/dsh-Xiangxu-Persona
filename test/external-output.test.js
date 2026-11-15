@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { EXTERNAL_OUTPUT_FORMAT, EXTERNAL_OUTPUT_LIMITS, projectExternalOutput, resolveExternalOutput } from '../adapters/dsh/external-output.js';
+import { EXTERNAL_OUTPUT_FORMAT, EXTERNAL_OUTPUT_LIMITS, projectExternalOutput, projectQqReply, resolveExternalOutput, resolvePartialQqReply } from '../adapters/dsh/external-output.js';
 
 const fence = value => '```dsh-ui\n' + JSON.stringify(value) + '\n```';
 const card = items => ({ title:'资料卡草案', items });
@@ -125,4 +125,27 @@ test('display degradation is also versioned and reproducible, with the raw sourc
   const receipt={formatVersion:EXTERNAL_OUTPUT_FORMAT,sourceTextHash:p.sourceTextHash,textHash:p.deliveryTextHash};
   const recovered=resolveExternalOutput(source,receipt);
   assert.equal(recovered.text,p.text);assert.equal(recovered.complete,false);assert.deepEqual(recovered.issues,['invalid_json']);assert.equal(source,original);
+});
+
+test('QQ final selects each visible bubble explicitly and can reconstruct a confirmed prefix', () => {
+  const original = '```xiangxu-qq\n' + JSON.stringify(['到家了。', '刚才那件事\n想起来还是挺好笑。', '明天再聊']) + '\n```';
+  const plan = projectQqReply(original);
+  assert.deepEqual(plan.bubbles, ['到家了。', '刚才那件事\n想起来还是挺好笑。', '明天再聊']);
+  const receipt = { formatVersion:plan.formatVersion, sourceTextHash:plan.sourceTextHash, textHash:plan.deliveryTextHash, status:'partial',
+    bubbles:plan.bubbles.map((text, index) => ({ index, textHash:createHash('sha256').update(text).digest('hex'), status:['delivered', 'unknown', 'not_sent'][index] })) };
+  assert.deepEqual(resolveExternalOutput(original, receipt), plan);
+  assert.equal(resolvePartialQqReply(original, receipt), '到家了。');
+  assert.equal(resolvePartialQqReply(original + ' ', receipt), null);
+  const tampered = structuredClone(receipt);
+  tampered.bubbles[2].status = 'delivered';
+  assert.equal(resolvePartialQqReply(original, tampered), null);
+  assert.equal(projectQqReply('第一行\n\n第二行'), null);
+  assert.equal(projectQqReply('````md\n' + original + '\n````'), null);
+});
+
+test('invalid or mixed QQ control syntax fails closed before a bubble can be sent', () => {
+  for (const value of ['```xiangxu-qq\n["先发",', '前言\n```xiangxu-qq\n["前", "后"]\n```',
+    '```xiangxu-qq\n["只有一条"]\n```', '```xiangxu-qq\n["   ", "后"]\n```',
+    '```xiangxu-qq\n' + JSON.stringify(['```xiangxu-qq\n[]\n```', '后']) + '\n```',
+    '```xiangxu-qq json\n["先发", "后"]\n```']) assert.throws(() => projectQqReply(value), { code:'QQ_REPLY_FORMAT_INVALID' });
 });

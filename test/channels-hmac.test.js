@@ -6,7 +6,9 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createChannelService} from '../adapters/dsh/channels/service.js';
 async function fixture(t){
- let disk=null,service;const received=[],settings={getCoordinator:()=>({memoryRoot:join(tmpdir(),'qq-hmac-persona'),ready:Promise.resolve(),agents:new Map()}),storage:{read:async()=>structuredClone(disk),write:async v=>{disk=structuredClone(v)}},channelPort:{create:async b=>b,send:async(b,m)=>{received.push(m);return{status:'accepted'}},close:async()=>{}},clientFactory:()=>({probe:async()=>({connected:true,capabilities:{text:true,group:true}})}),port:0};
+ let disk=null,service;
+ const coordinator={memoryRoot:join(tmpdir(),'qq-hmac-persona'),ready:Promise.resolve(),agents:new Map()};
+ const received=[],settings={getCoordinator:()=>coordinator,storage:{read:async()=>structuredClone(disk),write:async v=>{disk=structuredClone(v)}},channelPort:{create:async b=>b,send:async(b,m)=>{received.push(m);return{status:'accepted'}},close:async()=>{}},clientFactory:()=>({probe:async()=>({connected:true,capabilities:{text:true,group:true}})}),port:0};
  service=createChannelService(settings);await service.ready;t.after(()=>service.close());await service.configure({id:'qq',config:{accountId:'100',apiUrl:'http://127.0.0.1:12345',allowedPrivateIds:['11'],allowedGroupIds:['200']}});
  const event=(id=1,group=false)=>({post_type:'message',message_type:group?'group':'private',self_id:100,user_id:11,sender:{user_id:11,nickname:'test'},...(group?{group_id:200}:{}),message_id:id,time:1000,message:[{type:'text',data:{text:'原话 🙂'}}]});
  async function signStart(){const v=await service.rotateIngress({id:'qq',authMode:'onebot-hmac'});await service.start({id:'qq'});return v.ingressToken;}

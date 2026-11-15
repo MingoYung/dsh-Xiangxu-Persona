@@ -48,11 +48,13 @@ export async function recentMemorySection(material, context, { counter, budget, 
   const provided = new Set([...(context.pending ?? []), ...(context.incoming ? [context.incoming] : [])]
     .filter(record => record.sourceSessionId && record.sourceEventId)
     .map(record => json([record.sourceSessionId, record.sourceEventId])));
-  const candidates = items.filter(record => !provided.has(json([record.sourceSessionId, record.sourceEventId])));
+  const unprovided = items.filter(record => !provided.has(json([record.sourceSessionId, record.sourceEventId])));
+  const candidates = context.recentMemoryOnDemand ? [] : unprovided;
   const selected = [], fragments = [];
   const envelope = () => ({ total: Math.max(source.total ?? items.length, items.length), shown: selected.length,
     omitted: Math.max(0, (source.total ?? items.length) - selected.length),
-    pendingInputReferences: items.length - candidates.length, preferredDays: source.preferredDays ?? null,
+    pendingInputReferences: items.length - unprovided.length, preferredDays: source.preferredDays ?? null,
+    ...(context.recentMemoryOnDemand ? { read: 'on_demand' } : {}),
     asOf: source.asOf ?? null, originalsRemainQueryable: true, items: [...selected].reverse() });
   const render = () => sectionText('recent_memory', envelope());
   const fits = async () => await counter.count(render()) <= budget && await canFit(render());

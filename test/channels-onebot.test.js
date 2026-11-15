@@ -76,6 +76,8 @@ async function simulator(t, protocol, custom) {
 test('OneBot11 real loopback HTTP probe and private/group sends use official routes, array text and Bearer-only auth', async t => {
   const sim = await simulator(t, 'onebot11'), client = createOneBotClient({ ...qq, apiUrl: sim.apiUrl, accessToken: 'isolated-test-token' }, { clock: () => 999000 });
   const probe = await client.probe(); assert.equal(probe.connected, true); assert.equal(probe.capabilities.voice, true); assert.equal(probe.livePlatformVerified, false);
+  assert.deepEqual(probe.connectedAccountDisplayName, { value: 'fixture bot', source: 'onebot_get_login_info', observedAt: probe.checkedAt });
+  assert.deepEqual(sim.calls.map(call => call.action), ['get_login_info', 'get_status', 'can_send_record']);
   const privateResult = await client.sendText({ conversation: { type: 'private', id: '20001' } }, '字面[CQ:at,qq=all]🙂', { deliveryId: 'qq-private-1' });
   const groupResult = await client.sendText({ type: 'group', id: '30001' }, '群回复', { deliveryId: 'qq-group-1' });
   assert.equal(privateResult.status, 'delivered'); assert.equal(groupResult.status, 'delivered'); assert.equal(privateResult.messageId, '8001');
@@ -86,9 +88,33 @@ test('OneBot11 real loopback HTTP probe and private/group sends use official rou
 test('OneBot12 real loopback HTTP sends actions at root with explicit self, room kinds and acknowledged message IDs', async t => {
   const sim = await simulator(t, 'onebot12'), client = createOneBotClient({ ...wechat, apiUrl: sim.apiUrl });
   const probe = await client.probe(); assert.equal(probe.connected, true); assert.equal(probe.capabilities.voice, false); assert.equal(probe.livePlatformVerified, false); assert(probe.bridgeCapabilityRequired.includes('must-be-verified'));
+  assert.equal(probe.connectedAccountDisplayName, undefined);
   const direct = await client.sendText({ platform: 'wechat', accountId: 'wxid-bot', conversation: { type: 'private', id: 'wxid-person' } }, '微信私聊回复', { deliveryId: 'wx-private-1' });
   const group = await client.sendText({ conversation: { type: 'group', id: 'room-1@chatroom' } }, '桥接群回复', { deliveryId: 'wx-group-1' }); assert.equal(direct.status, 'delivered'); assert.equal(group.status, 'delivered'); assert.equal(group.deliveredAt, 1234125);
   assert(sim.calls.every(call => call.url === '/')); const sends = sim.calls.filter(call => call.action === 'send_message'); assert.equal(sends[0].params.detail_type, 'private'); assert.equal(sends[0].params.user_id, 'wxid-person'); assert.equal(sends[1].params.group_id, 'room-1@chatroom'); assert.deepEqual(sends[1].body.self, { platform: 'wechat', user_id: 'wxid-bot' }); assert.equal(sends[1].body.echo, 'wx-group-1');
+});
+
+test('OneBot11 omits invalid nicknames and does not present the nickname of an offline or wrong account', async () => {
+  let userId = 10001, nickname = '连接昵称', online = true;
+  const client = createOneBotClient({ ...qq, apiUrl: 'http://127.0.0.1:12345' }, {
+    fetchImpl: async url => Response.json({ status: 'ok', retcode: 0, data: url.endsWith('/get_login_info')
+      ? { user_id: userId, nickname } : url.endsWith('/get_status') ? { good: true, online } : { yes: false } }),
+  });
+  for (nickname of [null, ' ', '甲\n乙', '🙂'.repeat(81)]) {
+    const result = await client.probe();
+    assert.equal(result.connected, true);
+    assert.equal(result.connectedAccountDisplayName, undefined);
+  }
+  nickname = '连接昵称';
+  online = false;
+  const offline = await client.probe();
+  assert.equal(offline.connected, false);
+  assert.equal(offline.connectedAccountDisplayName, undefined);
+  online = true;
+  userId = 10002;
+  const wrong = await client.probe();
+  assert.equal(wrong.code, 'ONEBOT_ACCOUNT_MISMATCH');
+  assert.equal(wrong.connectedAccountDisplayName, undefined);
 });
 
 test('OneBot sends are idempotent by retained delivery ID and reject different content/target reuse', async t => {

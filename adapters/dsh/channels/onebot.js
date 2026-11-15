@@ -148,9 +148,14 @@ export function createOneBotClient(profile, { fetchImpl = fetch, clock = Date.no
     const online = v11 ? status.data?.online : bot?.online;
     if (v11) { const voice = await action('can_send_record'); canVoice = voice.status === 'ok' && voice.data?.yes === true; }
     const connected = status.status === 'ok' && status.data?.good === true && online === true;
+    const checkedAt = clock(), nickname = info.data?.nickname;
+    const connectedAccountDisplayName = connected && v11 && typeof nickname === 'string' && nickname.trim() &&
+      [...nickname].length <= 80 && !/[\u0000-\u001f\u007f]/u.test(nickname) && Number.isSafeInteger(checkedAt) && checkedAt >= 0
+      ? { value: nickname, source: 'onebot_get_login_info', observedAt: checkedAt } : null;
     return { ...selected, connected, status: connected ? 'connected' : online === false || status.data?.good === false ? 'offline' : 'unknown',
       capabilities: { text: true, voice: canVoice }, messageTypes: ['private', 'group'], driverRequired: true, livePlatformVerified: false,
-      ...(selected.platform === 'wechat' ? { bridgeCapabilityRequired: 'wechat-private-and-group-support-must-be-verified-on-the-configured-driver' } : {}), checkedAt: clock() };
+      ...(connectedAccountDisplayName ? { connectedAccountDisplayName } : {}),
+      ...(selected.platform === 'wechat' ? { bridgeCapabilityRequired: 'wechat-private-and-group-support-must-be-verified-on-the-configured-driver' } : {}), checkedAt };
   }
   function receiptId(value) { if (typeof value !== 'string' || !value || value.length > 160 || /[\u0000-\u0020\u007f]/.test(value)) fail('ONEBOT_DELIVERY_ID', '发送需要稳定且有界的deliveryId'); return value; }
   function makeRoom() {

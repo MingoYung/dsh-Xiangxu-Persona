@@ -62,7 +62,9 @@ async function frontend(overrides = {}) {
       stack.at(-1).append(node); if (!['input', 'img', 'br', 'hr', 'meta', 'link', 'source', 'area', 'base', 'embed', 'param', 'wbr'].includes(tag) && !token.endsWith('/>')) stack.push(node);
     } else if (token.trim()) stack.at(-1).append(new Element('#text', decode(token)));
   }
-  const document = { body, createElement: tag => new Element(tag), createTextNode: text => new Element('#text', text), getElementById: id => ids.get(id), querySelectorAll: selector => body.querySelectorAll(selector), querySelector: selector => body.querySelector(selector) };
+  const documentEvents = new EventTarget();
+  const document = { body, addEventListener: documentEvents.addEventListener.bind(documentEvents), removeEventListener: documentEvents.removeEventListener.bind(documentEvents),
+    createElement: tag => new Element(tag), createTextNode: text => new Element('#text', text), getElementById: id => ids.get(id), querySelectorAll: selector => body.querySelectorAll(selector), querySelector: selector => body.querySelector(selector) };
   const channels = ['qq', 'wechat'].map(id => ({ id, configured: false, enabled: false, connected: false, config: { allowedPrivateIds: [], allowedGroupIds: [] }, capabilities: {} }));
   const mediaView = { identity: { version: 0, description: '', primaryAssetId: null, locked: false }, limits: { imageBytes: 8388608, descriptionChars: 2048, assetBytes: 268435456 }, providers: [{ kind: 'image', enabled: false, type: 'openai-images', hasApiKey: true, capabilities: {} }, { kind: 'video', enabled: false, type: 'comfyui', capabilities: {} }], usage: { assetBytes: 0 }, jobs: [] };
   const response = async (action, args) => {
@@ -336,7 +338,7 @@ test('a pending permission write stays on its captured instance and does not ref
 
 test('memory rows keep UUIDs out of the reading surface while their detail action uses the real record identity', async () => {
   const record = { id: 'record-sensitive-uuid', recordType: 'chat', scope: 'global', role: 'user', text: '真正的对话内容' };
-  const ui = await frontend({ 'memory.list': () => ({ items: [record], total: 1 }), 'memory.detail': () => record }); await ui.evaluate("navigate('memory')");
+  const ui = await frontend({ 'memory.list': () => ({ items: [record], total: 1 }), 'memory.detail': () => record }); await ui.evaluate("navigate('memory','all')");
   const page = ui.ids.get('page-content'); assert.equal(page.textContent.includes(record.id), false);
   await ui.button(page, '查看详情 →').emit('click'); assert.equal(ui.calls.find(call => call.action === 'memory.detail').args.id, record.id);
   const identifier = ui.walk(ui.ids.get('detail-content')).find(node => node.tagName === 'dd' && node.textContent === record.id); assert.ok(identifier); assert.equal(ui.visible(identifier), false);

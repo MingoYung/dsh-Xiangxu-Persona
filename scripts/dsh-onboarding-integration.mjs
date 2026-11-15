@@ -97,7 +97,6 @@ await writeFile(join(dir,'executed-fixture.mjs'),await readFile(join(source,'scr
 await writeFile(join(dir,'executed-runner.mjs'),await readFile(fileURLToPath(import.meta.url)));
 const overlay = join(dir, 'test-overlay.yml');
 await writeFile(overlay, JSON.stringify([
-  { id: 'tools', config: { mode: 'native' } },
   { id: 'persona-memory-coordinator', config: { provider: 'persona-onboarding-fixture', model: 'fixture-v1', operatorControl: true } },
   { insert: [{ id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'persona-memory' } },
     { id: 'persona-onboarding-fixture-probe', name: pathToFileURL(join(dir, 'executed-fixture.mjs')).href, config: { artifacts: dir, workspace, connectionModule: pathToFileURL(join(install, 'resources', 'app.asar', 'node_modules', '@deepseek-ai', 'dsh-client-connection', 'lib', 'index.js')).href } }] },

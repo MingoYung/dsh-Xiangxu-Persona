@@ -2,7 +2,7 @@ import { SCHEMA_VERSION, defaultConfig, mergeConfig, validateConfig, validateDec
 import { detached, freeze, createTokenCounter, buildSnapshot, controlMessages, replyMessages, consolidationMessages, consolidationContextPage, conversationPage } from './prompts.js';
 import { createHash } from 'node:crypto';
 import { reviewAssistantMessages, reviewAssistantReport, visibleContextRecordIds } from './review-assistant.js';
-import { countStringValues, serializedBytes } from './capacity.js';
+import { assertRecordCapacity, countStringValues, serializedBytes } from './capacity.js';
 import { resolveDecisionTimes } from './decision-time.js';
 import { measureContinuityRequirements } from './request-snapshot.js';
 
@@ -157,6 +157,7 @@ export class PersonaRuntime {
   }
   async decide(input, context = {}) {
     this._requireOpen(); validateDecision(input);
+    if (input.identityPlan?.nameUpdates) assertRecordCapacity(input.identityPlan.nameUpdates, this.config.capacityLimits, 'personNameUpdates');
     if (input.sleepPlan?.action === 'sleep' && input.sleepPlan.wakeCondition === 'consolidation_complete' &&
       (input.consolidationPlan?.action === 'defer' || input.consolidationPlan?.targetPersonIds?.length === 0)) {
       throw Object.assign(new Error('consolidation_complete has no selected work; choose a run or another wake condition'), { code: 'CONSOLIDATION_NOT_SELECTED' });
@@ -179,6 +180,16 @@ export class PersonaRuntime {
         srcRefs: detached(context.srcRefs ?? previous.srcRefs ?? []) };
       if (input.identityPlan?.action === 'new') merged.identityPlan = { ...input.identityPlan, personId: input.identityPlan.personId ?? newId('person') };
       validateDecision(merged);
+      const identityEffect = merged.identityPlan;
+      if (identityEffect?.nameUpdates) {
+        if (identityEffect.action === 'names') {
+          if (previous.identityPlan !== undefined) merged.identityPlan = previous.identityPlan;
+          else delete merged.identityPlan;
+        } else {
+          const { nameUpdates, ...recognition } = identityEffect;
+          merged.identityPlan = recognition;
+        }
+      }
       state.currentDecision = merged;
       state.execution = { ...state.execution, lastContext: compactContext(this._context(context)) };
       if (own(input, 'nextCheckAt')) state.schedule.nextCheckAt = input.nextCheckAt;
@@ -194,7 +205,7 @@ export class PersonaRuntime {
           wakeAt: plan.wakeAt ?? null, wakeCondition: plan.wakeCondition ?? null, wakeRunId: null, wakeJobId: null };
         else if (plan?.action === 'wake') state.sleep = { state: 'awake', sleepDecisionId: null, wakeAt: null, wakeCondition: null, wakeRunId: null, wakeJobId: null };
       }
-      const effect = { operationId, decision: merged, input: { ...detached(input), ...(input.identityPlan ? { identityPlan: merged.identityPlan } : {}) },
+      const effect = { operationId, decision: merged, input: { ...detached(input), ...(input.identityPlan ? { identityPlan: identityEffect } : {}) },
         context: { ...compactContext(this._context(context)), executeReply: context.executeReply, controlId: context.controlId,
           srcRefs: detached(context.srcRefs ?? []), decisionId: merged.decisionId, ...identityScope,
           ...(Array.isArray(context.pendingEventIds) ? { pendingEventIds: detached(context.pendingEventIds) }
@@ -225,7 +236,7 @@ export class PersonaRuntime {
       };
       if (input.identityPlan) {
         if (!own(ctx, 'identityRefs')) {
-          Object.assign(ctx, this._resolveIdentityScope(entry.decision.identityPlan, ctx));
+          Object.assign(ctx, this._resolveIdentityScope(input.identityPlan, ctx));
           await this._lock(async () => { const state = await this._refresh(), pending = state.execution?.pendingEffects?.[id];
             if (pending) { Object.assign(pending.context, { identityRefs: detached(ctx.identityRefs),
               identitySourceSessionIds: detached(ctx.identitySourceSessionIds), identityAffectsCurrent: ctx.identityAffectsCurrent }); await this._save(state); }
@@ -233,11 +244,13 @@ export class PersonaRuntime {
         }
         if (!done.has('identity')) {
           try {
-            await this._validateIdentitySources(entry.decision.identityPlan, ctx);
-            const identity = await this._applyIdentity(entry.decision.identityPlan, ctx);
-            await this.host.onIdentity?.(detached(identity), ctx); await mark('identity', identity);
+            await this._validateIdentitySources(input.identityPlan, ctx);
+            const { names, ...identity } = await this._applyIdentity(input.identityPlan, ctx);
+            if (input.identityPlan.action !== 'names') await this.host.onIdentity?.(detached(identity), ctx);
+            await mark('identity', identity);
           } catch (error) {
-            if (error.sourceReferenceInvalid || ['SOURCE_UNKNOWN', 'SOURCE_REVOKED', 'SOURCE_UNAVAILABLE', 'REVOKED_SOURCE'].includes(error.code)) {
+            if (error.sourceReferenceInvalid || ['SOURCE_UNKNOWN', 'SOURCE_REVOKED', 'SOURCE_UNAVAILABLE', 'REVOKED_SOURCE', 'PERSON_NAME_TARGET_UNKNOWN'].includes(error.code) ||
+              (input.identityPlan.nameUpdates && error.code === 'CAPACITY_EXCEEDED')) {
               await this._failDecisionEffects(entry, error);
             }
             throw error;
@@ -272,6 +285,7 @@ export class PersonaRuntime {
   }
   _resolveIdentityScope(plan, context) {
     if (!plan) return {};
+    if (plan.action === 'names') return { identityRefs: [], identitySourceSessionIds: [], identityAffectsCurrent: false };
     const visible = context.srcRefs ?? [], current = visible.filter(ref => ref.sourceSessionId === context.sessionId);
     const identityRefs = detached(plan.sourceRefs ?? (context.sessionId ? current : visible));
     const identitySourceSessionIds = identityRefs.length ? [...new Set(identityRefs.map(ref => ref.sourceSessionId))]
@@ -281,8 +295,11 @@ export class PersonaRuntime {
   async _validateIdentitySources(plan, context) {
     if (!plan || typeof this.repository.validateSourceRefs !== 'function') return;
     const refs = context.identityRefs ?? this._resolveIdentityScope(plan, context).identityRefs;
-    try { await this.repository.validateSourceRefs(refs, { requireOriginal: plan.action !== 'unknown' }); }
-    catch (error) { if (error.code === 'SCHEMA_INVALID') error.sourceReferenceInvalid = true; throw error; }
+    try {
+      if (plan.action !== 'names') await this.repository.validateSourceRefs(refs, { requireOriginal: plan.action !== 'unknown' });
+      const nameRefs = plan.nameUpdates?.flatMap(update => update.sourceRefs ?? []) ?? [];
+      if (nameRefs.length) await this.repository.validateSourceRefs(nameRefs);
+    } catch (error) { if (error.code === 'SCHEMA_INVALID') error.sourceReferenceInvalid = true; throw error; }
   }
   async _failDecisionEffects(entry, error) {
     await this._lock(async () => {
@@ -297,8 +314,11 @@ export class PersonaRuntime {
     });
   }
   async _applyIdentity(plan, context) {
-    const person = plan.action === 'unknown' ? { personId: null } : plan.action === 'new' ? await this.repository.upsertPerson({ personId: plan.personId, displayName: plan.displayName ?? null })
-      : await this.repository.upsertPerson({ personId: plan.personId, ...(plan.displayName ? { displayName: plan.displayName } : {}) });
+    const { action, personId, displayName, nameUpdates } = plan;
+    if (action === 'names') return this.repository.recordPersonNames({ personId, nameUpdates });
+    const person = action === 'unknown' ? { personId: null } : await this.repository.upsertPerson({
+      personId, ...(action === 'new' ? { displayName: displayName ?? null } : displayName ? { displayName } : {}),
+    }, { nameUpdates });
     for (const ref of person.personId ? context.identityRefs ?? [] : []) await this.repository.assign({ ...ref, personId: person.personId,
       reason: plan.reason ?? '', environmentVersion: context.environment?.version ?? 0 });
     await this._lock(async () => {
@@ -313,7 +333,7 @@ export class PersonaRuntime {
   async search(input, context = {}) { return this.repository.search(input, { personId: this._person(context) }); }
   async forget(input, context = {}) { return this.repository.forget(input, { personId: this._person(context) }); }
   async introspect(input = {}, context = {}) { return this.repository.introspect(input, { personId: this._person(context) }); }
-  async compose(context = {}, { contextTokenLimit, persist = true, configOverride = this.config, measureOnly = false } = {}) {
+  async compose(context = {}, { contextTokenLimit, persist = true, configOverride = this.config, measureOnly = false, now = this.now() } = {}) {
     this._requireOpen(); const state = detached(await this.repository.getRuntime()), ctx = { ...this._context(context) };
     const material = await this.repository.getContext({ personId: ctx.personId });
     if (!material || !material.persona || typeof material.persona !== 'object' || !material.persona.anchor) {
@@ -336,19 +356,19 @@ export class PersonaRuntime {
       retrieval: suppliedMemories ? 'provided' : plan?.action === 'search' ? (ctx.memories.length ? 'found' : 'no_matches') : 'not_requested',
       returnedItems: ctx.memories.length };
     if (contextTokenLimit !== undefined && (!Number.isSafeInteger(contextTokenLimit) || contextTokenLimit < 1)) throw new RangeError('Internal context token limit must be a positive integer');
-    if (measureOnly) return measureContinuityRequirements({ context: ctx, material, state, config: configOverride, now: this.now(), counter: this.tokenCounter });
+    if (measureOnly) return measureContinuityRequirements({ context: ctx, material, state, config: configOverride, now, counter: this.tokenCounter });
     const totalTokens = Math.min(configOverride.contextBudget.totalTokens, contextTokenLimit ?? Infinity);
     const config = totalTokens === configOverride.contextBudget.totalTokens ? configOverride
       : { ...configOverride, contextBudget: { ...configOverride.contextBudget, totalTokens } };
-    let snapshot = await buildSnapshot({ context: ctx, material, state, config, now: this.now(), counter: this.tokenCounter });
+    let snapshot = await buildSnapshot({ context: ctx, material, state, config, now, counter: this.tokenCounter });
     if (totalTokens !== configOverride.contextBudget.totalTokens) snapshot = freeze({ ...snapshot,
       budgetAdjustments: [...snapshot.budgetAdjustments, { segment: 'total', configured: configOverride.contextBudget.totalTokens, applied: totalTokens, reason: 'preserve_request_framing_and_pending_source' }] });
     if (persist) await this.repository.saveSnapshot(detached(snapshot)); return snapshot;
   }
   async _prepareConversationRequest(context, { purpose, offsets = {}, preparedPage, transformPage, configOverride = this.config, persist = true } = {}) {
-    const inputBudget = this._inputBudget(configOverride);
+    const inputBudget = this._inputBudget(configOverride), now = this.now();
     const attempt = async contextTokenLimit => {
-      const snapshot = await this.compose(context, { contextTokenLimit, persist: false, configOverride });
+      const snapshot = await this.compose(context, { contextTokenLimit, persist: false, configOverride, now });
       let page = preparedPage ? detached(preparedPage) : await conversationPage(snapshot, context, { purpose,
         counter: this.tokenCounter, maxTokens: inputBudget, offsets });
       if (transformPage) page = transformPage(page);
@@ -842,7 +862,15 @@ export class PersonaRuntime {
         job.error = { code: error.code ?? 'CONSOLIDATION_FAILED', message: error.message }; break; }
     }
     if (job.children.every(child => child.status === 'committed')) { job.status = 'completed'; job.completedAt = this.now(); delete job.error; }
+    await this._prepareSleepAssociations(job);
     await this._saveJob(job); await this._wakeForCompletedJob(job); return job;
+  }
+  async _prepareSleepAssociations(job) {
+    if (job.status !== 'completed' || !job.sleepDecisionId) return;
+    for (const child of job.children) {
+      try { await this.repository.prepareSleepAssociations?.(child.runId, child.personId); }
+      catch (error) { try { this._report(error); } catch {} }
+    }
   }
   async _wakeForCompletedJob(job) {
     const state = await this.repository.getRuntime();
@@ -865,6 +893,7 @@ export class PersonaRuntime {
       if (job.status === 'completed') { job.completedAt = this.now(); delete job.error; }
       else job.error = detached(child.error ?? job.children.find(entry => entry.error)?.error ?? job.error
         ?? { code: 'CONSOLIDATION_PAUSED', message: 'Selected input remains unconsumed' });
+      await this._prepareSleepAssociations(job);
       await this._saveJob(job); await this._wakeForCompletedJob(job);
     }
     if (!jobs.some(job => job.children.some(child => child.runId === runId)) && result.committed) {

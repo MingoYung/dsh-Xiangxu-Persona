@@ -4,10 +4,11 @@ import path from 'node:path';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { atomicReplaceWithRetry } from '../../../core/store.js';
 import { createOneBotClient, decodeOneBotEvent } from './onebot.js';
+import { qqGroupContext } from './qq-group-context.js';
 import { CAPABILITY_IDS, capabilities as capabilityMap, normalizedEvent } from '../connections/common.js';
 import { QQ_DELIVERY_POLICY } from '../connections/qq.js';
 import { createBridgeClient } from '../connections/bridge.js';
-import { EXTERNAL_OUTPUT_FORMAT, projectExternalOutput, resolveExternalOutput } from '../external-output.js';
+import { EXTERNAL_OUTPUT_FORMAT, QQ_REPLY_FORMAT, SOCIAL_REPLY_FORMAT, QQ_REPLY_MAX_BUBBLES, hasSocialReplyFence, projectSocialReply, projectExternalOutput, projectQqReply, resolveExternalOutput } from '../external-output.js';
 
 export const CHANNEL_LIMITS = Object.freeze({ registryBytes: 1048576, bindings: 128, receipts: 2048, unresolved: 256, terminalReceipts: 1024, scopeIds: 256, bodyBytes: 65536, queued: 32, excluded: 8 });
 const SCHEMA = 'xiangxu-channels/1', IDS = ['qq', 'wechat'];
@@ -18,8 +19,12 @@ const failure = (code, message) => Object.assign(new Error(message), { code });
 const fail = (code, message) => { throw failure(code, message); };
 const bounded = (value, name, max = 256, empty = false) => { if (typeof value !== 'string' || !empty && !value || Array.from(value).length > max || /[\u0000-\u001f\u007f]/u.test(value)) fail('CHANNEL_BAD_REQUEST', name + '格式无效'); return value; };
 const normalizedRoot = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
+const sameSourceRoute = (left, right) => left?.platform === right.platform && left.accountId === right.accountId &&
+  left.conversation.type === right.conversation.type && left.conversation.id === right.conversation.id && left.sender.id === right.sender.id;
 const terminal = receipt => !['prepared', 'unknown'].includes(receipt.status);
 const cleanError = error => ({ code: /^[A-Z0-9_]{1,80}$/.test(error?.code ?? '') ? error.code : 'CHANNEL_OPERATION_FAILED', message: '渠道操作未完成，请检查本地桥、连接设置和诊断。' });
+const isSha256 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const interruptedBubbles = (bubbles, code) => bubbles.map(bubble => bubble.status === 'prepared' ? { ...bubble, status: 'unknown', code } : bubble);
 const DEFAULT_CONFIG = { mode: 'bridge', apiUrl: '', accountId: '', accessToken: '', allowedPrivateIds: [], allowedGroupIds: [], voiceMode: 'text', allowRemote: false, resolveIncomingMedia: true, transcribeIncomingAudio: false };
 function retainedRoute(value) {
   if (!object(value) || Object.keys(value).some(key => !['provider', 'model', 'reasoningEffort', 'maxTokens'].includes(key))) fail('CHANNEL_ROUTE_INVALID', '宿主模型路由无效');
@@ -69,7 +74,20 @@ function validateRegistry(value) {
   const receiptIds = new Set();
   for (const receipt of value.receipts) {
     if (!object(receipt) || !/^[0-9a-f]{64}$/.test(receipt.id) || receiptIds.has(receipt.id) || !sessions.has(receipt.sessionId) || !['inbound', 'outbound'].includes(receipt.kind) || !['prepared', 'unknown', 'accepted', 'delivered', 'failed'].includes(receipt.status) || !/^[0-9a-f]{64}$/.test(receipt.textHash) || !Number.isSafeInteger(receipt.at) || receipt.at < 0 || receipt.text !== undefined || receipt.payload !== undefined) fail('CHANNEL_REGISTRY_INVALID', '渠道回执无效');
-    if (receipt.formatVersion === undefined ? receipt.sourceTextHash !== undefined : receipt.kind !== 'outbound' || receipt.formatVersion !== EXTERNAL_OUTPUT_FORMAT || !/^[0-9a-f]{64}$/.test(receipt.sourceTextHash)) fail('CHANNEL_REGISTRY_INVALID', '渠道文字投影回执无效');
+    if (receipt.formatVersion === undefined ? receipt.sourceTextHash !== undefined : receipt.kind !== 'outbound' || ![EXTERNAL_OUTPUT_FORMAT, QQ_REPLY_FORMAT, SOCIAL_REPLY_FORMAT].includes(receipt.formatVersion) || !isSha256(receipt.sourceTextHash)) fail('CHANNEL_REGISTRY_INVALID', '渠道文字投影回执无效');
+    if (receipt.bubbles !== undefined) {
+      if (![QQ_REPLY_FORMAT, SOCIAL_REPLY_FORMAT].includes(receipt.formatVersion) || !Array.isArray(receipt.bubbles) || receipt.bubbles.length < (receipt.formatVersion === SOCIAL_REPLY_FORMAT ? 1 : 2) || receipt.bubbles.length > QQ_REPLY_MAX_BUBBLES) fail('CHANNEL_REGISTRY_INVALID', 'QQ 分条回执无效');
+      let deliveryStopped = false;
+      for (const bubble of receipt.bubbles) {
+        if (!object(bubble) || !isSha256(bubble.textHash) || !/^im-bubble-[a-f0-9]{48}$/.test(bubble.deliveryId) || !['not_sent', 'prepared', 'delivered', 'failed', 'unknown'].includes(bubble.status)
+          || Object.keys(bubble).some(key => !['textHash', 'deliveryId', 'status', 'code', 'platformMessageId', 'platformReceiptId', 'messageIdKind', 'deliveredAt', 'confirmedBy'].includes(key))
+          || deliveryStopped && bubble.status !== 'not_sent'
+          || bubble.status === 'delivered' && (typeof bubble.platformMessageId !== 'string' || !bubble.platformMessageId || typeof bubble.platformReceiptId !== 'string' || !bubble.platformReceiptId)
+          || bubble.status === 'prepared' && receipt.status !== 'prepared') fail('CHANNEL_REGISTRY_INVALID', 'QQ 分条回执无效');
+        if (bubble.status !== 'delivered') deliveryStopped = true;
+      }
+      if (receipt.status === 'delivered' && deliveryStopped) fail('CHANNEL_REGISTRY_INVALID', 'QQ 分条回执未确认全部送达');
+    }
     receiptIds.add(receipt.id);
   }
   if (value.receipts.filter(receipt => !terminal(receipt)).length > CHANNEL_LIMITS.unresolved) fail('CHANNEL_RECEIPT_CAPACITY', '未确认渠道回执已达到技术容量');
@@ -118,13 +136,17 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   const ready = (async () => {
     const stored = await persistence.read(); registry = stored ? validateRegistry(clone(stored)) : { schemaVersion: SCHEMA, port, profiles: IDS.map(profileDefaults), generations: [], bindings: [], receipts: [] };
     const interrupted = registry.receipts.some(receipt => receipt.status === 'prepared');
-    if (interrupted) { registry.receipts = registry.receipts.map(receipt => receipt.status === 'prepared' ? { ...receipt, status: 'unknown', code: 'CHANNEL_INTERRUPTED_UNKNOWN' } : receipt); await persistence.write(registry); }
+    if (interrupted) {
+      const code = 'CHANNEL_INTERRUPTED_UNKNOWN';
+      registry.receipts = registry.receipts.map(receipt => receipt.status === 'prepared' ? { ...receipt, status: 'unknown', code, ...(receipt.bubbles ? { bubbles: interruptedBubbles(receipt.bubbles, code) } : {}) } : receipt);
+      await persistence.write(registry);
+    }
   })();
   function profile(id) { if (!IDS.includes(id)) fail('CHANNEL_NOT_FOUND', '未找到这个聊天渠道'); return registry.profiles.find(value => value.id === id); }
   async function save(next) { validateRegistry(next); await persistence.write(next); registry = next; }
   function compact(next) {
     let entries = next.receipts;
-    while (entries.filter(terminal).length > CHANNEL_LIMITS.terminalReceipts || entries.length >= CHANNEL_LIMITS.receipts || Buffer.byteLength(JSON.stringify(next)) > CHANNEL_LIMITS.registryBytes - 8192) {
+    while (entries.filter(terminal).length > CHANNEL_LIMITS.terminalReceipts || entries.length >= CHANNEL_LIMITS.receipts || Buffer.byteLength(JSON.stringify(next, null, 2)) > CHANNEL_LIMITS.registryBytes - 8192) {
       const removable = entries.filter(value => terminal(value) && !value.capability).sort((a, b) => a.at - b.at)[0];
       if (!removable) fail('CHANNEL_RECEIPT_CAPACITY', '渠道元数据已满；未确认回执没有被删除');
       if (removable.kind === 'inbound') {
@@ -260,8 +282,20 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   async function ingest(id, payload, normalized = false) {
     const selected = profile(id); if (suspended || selected.config.mode !== 'official' && !listener) fail('CHANNEL_SUSPENDED', '渠道当前未接收事件'); if (!selected.enabled) fail('CHANNEL_DISABLED', '这个渠道尚未启用');
     if (normalized !== (selected.config.mode === 'official')) fail('CHANNEL_TRANSPORT_MISMATCH', '渠道传输方式不匹配');
-    const coordinator = await current(); if (!sameRoot(coordinator.memoryRoot, boundRoot)) fail('CHANNEL_INSTANCE_CHANGED', '人格实例已经切换，请重新启用渠道');
-    if (!client(selected).verified && !(await runProbe(selected))?.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '本地桥尚未确认当前账号在线，事件未接收');
+    const coordinator = await current(), root = coordinator.memoryRoot;
+    if (!sameRoot(root, boundRoot)) fail('CHANNEL_INSTANCE_CHANGED', '人格实例已经切换，请重新启用渠道');
+    const sourceClient = client(selected);
+    if (!sourceClient.verified && !(await runProbe(selected))?.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '本地桥尚未确认当前账号在线，事件未接收');
+    function assertIntakeCurrent() {
+      const live = getCoordinator(), currentProfile = profile(id);
+      if (live && typeof live.then === 'function') { Promise.resolve(live).catch(() => {}); fail('CHANNEL_INSTANCE_CHANGED', '接收前无法同步确认人格实例'); }
+      if (live !== coordinator || live.initializationError || !sameRoot(live.memoryRoot, root) || !sameRoot(root, boundRoot)) fail('CHANNEL_INSTANCE_CHANGED', '人格实例已经切换，事件未继续派发');
+      // Instance suspension drains previously admitted ingress before closing the
+      // old attachment gate. It already suppresses outbound dispatches.
+      if (closed || closing || suspended || stopIntents.has(id) || !currentProfile.enabled || currentProfile.config.mode !== 'official' && !listener) fail('CHANNEL_SUSPENDED', '渠道正在停止，事件未继续派发');
+      if (client(currentProfile) !== sourceClient || !sourceClient.verified) fail('CHANNEL_ACCOUNT_MISMATCH', '当前连接已经切换，事件未继续派发');
+    }
+    assertIntakeCurrent();
     const event = normalized ? normalizedEvent(payload) : decodeOneBotEvent(asClientProfile(selected), payload); if (!event) return { status: 'ignored', accepted: false };
     if (event.platform !== selected.platform || event.accountId !== selected.config.accountId) fail('CHANNEL_ACCOUNT_MISMATCH', '事件不属于当前连接账号');
     if (!allowed(selected, event)) {
@@ -270,16 +304,20 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       return { status: 'outside_scope', accepted: false };
     }
     if (!event.message.text && !event.rich?.hasStructuredContent) return { status: 'unsupported', accepted: false, unsupportedSegments: event.unsupportedSegments ?? [] };
-    const root = coordinator.memoryRoot, generation = registry.generations.find(value => sameRoot(value.memoryRoot, root))?.value ?? 0;
+    const generation = registry.generations.find(value => sameRoot(value.memoryRoot, root))?.value ?? 0;
     const facts = { platform: event.platform, accountId: event.accountId, conversation: event.conversation, sender: event.sender }, stable = hash([normalizedRoot(root), generation, facts.platform, facts.accountId, facts.conversation.type, facts.conversation.id, facts.sender.id, ...(selected.generation ? [selected.generation] : [])]);
     let binding = registry.bindings.find(value => value.sessionId === 'xiangxu-social-' + stable.slice(0, 32));
-    const guardIntake = async () => { const live = await current(); if (!sameRoot(live.memoryRoot, root) || !sameRoot(root, boundRoot) || suspended || closed || !profile(id).enabled) fail('CHANNEL_INSTANCE_CHANGED', '人格实例或当前渠道已经切换，事件未继续派发'); };
-    const sourceId = 'im-' + hash([event.platform, event.accountId, event.message.id, ...(normalized ? ['official'] : [])]), receiptId = hash([normalizedRoot(root), 'inbound', sourceId]), textHash = event.rich?.hasStructuredContent ? hash({ text:event.message.text,rich:event.rich }) : hash(event.message.text);
+    const inboundSourceId = messageId => 'im-' + hash([event.platform, event.accountId, messageId, ...(normalized ? ['official'] : [])]);
+    const sourceId = inboundSourceId(event.message.id), receiptId = hash([normalizedRoot(root), 'inbound', sourceId]), textHash = event.rich?.hasStructuredContent ? hash({ text:event.message.text,rich:event.rich }) : hash(event.message.text);
     const previous = registry.receipts.find(value => value.id === receiptId);
-    if (previous) { if (previous.textHash !== textHash) fail('CHANNEL_MESSAGE_CONFLICT', '同一平台消息ID不能替换原文'); return { status: previous.status === 'prepared' ? 'unknown' : previous.status, accepted: previous.status === 'accepted', duplicate: true, messageId: previous.messageId }; }
+    if (previous) {
+      const retained = registry.bindings.find(value => value.sessionId === previous.sessionId);
+      if (previous.textHash !== textHash || !sameSourceRoute(retained?.facts, facts)) fail('CHANNEL_MESSAGE_CONFLICT', '同一平台消息ID不能替换原文或发言来源');
+      return { status: previous.status === 'prepared' ? 'unknown' : previous.status, accepted: previous.status === 'accepted', duplicate: true, messageId: previous.messageId };
+    }
     if (!binding && registry.bindings.length >= CHANNEL_LIMITS.bindings) fail('CHANNEL_BINDING_CAPACITY', '渠道会话登记已达到128条技术上限');
     if (binding) {
-      if (binding.facts.platform !== facts.platform || binding.facts.accountId !== facts.accountId || binding.facts.conversation.type !== facts.conversation.type || binding.facts.conversation.id !== facts.conversation.id || binding.facts.sender.id !== facts.sender.id) fail('CHANNEL_BINDING_MISMATCH', '通道稳定来源与本次实际发言者不符');
+      if (!sameSourceRoute(binding.facts, facts)) fail('CHANNEL_BINDING_MISMATCH', '通道稳定来源与本次实际发言者不符');
       // Display clues may change; stable routing and all prior message originals remain untouched.
       binding = { ...binding, facts: clone(facts) };
     }
@@ -293,19 +331,25 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     }
     if (!next.bindings.some(value => value.sessionId === binding.sessionId)) next.bindings.push({ ...binding, inboundFloorAt: previousFloor });
     else next.bindings = next.bindings.map(value => value.sessionId === binding.sessionId ? { ...value, facts: clone(binding.facts) } : value);
-    next.receipts.push(receipt); await guardIntake(); await save(next);
+    next.receipts.push(receipt); assertIntakeCurrent(); await save(next);
     try {
-      await guardIntake();
+      assertIntakeCurrent();
       const native = await channelPort.create(clone(binding));
-      await guardIntake();
+      assertIntakeCurrent();
       if (native?.agentOptions) {
         binding = { ...binding, agentOptions: retainedRoute(native.agentOptions) };
         await save({ ...registry, bindings: registry.bindings.map(value => value.sessionId === binding.sessionId ? { ...value, agentOptions: binding.agentOptions } : value) });
       }
-      await guardIntake();
-      const incoming = event.rich?.hasStructuredContent ? await incomingMediaPort?.prepare(event,{client:client(selected).value,binding,config:selected.config}) : null;
-      await guardIntake();
-      await channelPort.send(clone(binding), { messageId: sourceId, text: event.message.text, ...(incoming ? { structured: incoming } : event.rich?.hasStructuredContent ? { structured: { rich:event.rich,derived:[],images:[] } } : {}), sourceFacts: { ...clone(facts), messageId: event.message.id, sourceMessageId: event.message.id, sourceAt: event.message.createdAt, textComplete: event.textComplete, ...(event.unsupportedSegments ? { unsupportedSegments: event.unsupportedSegments } : {}) } });
+      assertIntakeCurrent();
+      const incoming = event.rich?.hasStructuredContent ? await incomingMediaPort?.prepare(event,{client:sourceClient.value,binding,config:selected.config}) : null;
+      assertIntakeCurrent();
+      const groupContext = facts.platform === 'qq' && facts.conversation.type === 'group' ? qqGroupContext({
+        event, receipts: registry.receipts, inboundSourceId, bridgeProbe: normalized ? undefined : probes.get(id),
+        roomBindings: registry.bindings.filter(value => !value.retired && value.profileId === id &&
+          (value.generation ?? 0) === generation && sameRoot(value.memoryRoot, root) && value.facts.platform === facts.platform &&
+          value.facts.accountId === facts.accountId && value.facts.conversation.type === 'group' && value.facts.conversation.id === facts.conversation.id),
+      }) : null;
+      await channelPort.send(clone(binding), { messageId: sourceId, text: event.message.text, ...(groupContext ? { groupContext } : {}), ...(incoming ? { structured: incoming } : event.rich?.hasStructuredContent ? { structured: { rich:event.rich,derived:[],images:[] } } : {}), sourceFacts: { ...clone(facts), messageId: event.message.id, sourceMessageId: event.message.id, sourceAt: event.message.createdAt, textComplete: event.textComplete, ...(event.unsupportedSegments ? { unsupportedSegments: event.unsupportedSegments } : {}) } }, assertIntakeCurrent);
     } catch (error) {
       const safe = report(error);
       try { await save({ ...registry, receipts: registry.receipts.map(value => value.id === receiptId ? { ...value, status: 'unknown', code: safe.code } : value) }); } catch (persistError) { report(persistError); }
@@ -321,10 +365,22 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   }
   function resultFor(receipt, duplicate = false) {
     if (receipt.operationResult) return { ...clone(receipt.operationResult), duplicate };
-    if (receipt.status !== 'delivered') return { status: receipt.status === 'prepared' ? 'unknown' : receipt.status, duplicate, code: receipt.code ?? null, deliveryId: receipt.deliveryId ?? null };
+    const bubbles = receipt.bubbles && interruptedBubbles(receipt.bubbles, 'CHANNEL_DELIVERY_UNKNOWN').map((bubble, index) => ({
+      index, deliveryId: bubble.deliveryId, textHash: bubble.textHash, status: bubble.status,
+      ...(bubble.status === 'delivered' ? { messageId: bubble.platformMessageId, receiptId: bubble.platformReceiptId, deliveredAt: bubble.deliveredAt } : {}),
+      ...(bubble.code ? { code: bubble.code } : {}),
+    }));
+    const source = {
+      sourceSessionId: receipt.sessionId, sourceEventId: receipt.sourceEventId, sourceSeq: receipt.seq, seq: receipt.seq, sourceKind: 'model',
+      textHash: receipt.textHash, ...(receipt.formatVersion ? { formatVersion: receipt.formatVersion, sourceTextHash: receipt.sourceTextHash } : {}),
+    };
+    if (receipt.status !== 'delivered') {
+      const partial = bubbles?.some(bubble => bubble.status === 'delivered');
+      return { status: partial ? 'partial' : receipt.status === 'prepared' ? 'unknown' : receipt.status, duplicate, deliveryId: receipt.deliveryId ?? null,
+        code: receipt.code ?? (partial ? 'CHANNEL_PARTIAL_DELIVERY' : null), ...(bubbles ? { ...source, bubbles } : {}) };
+    }
     return { status: 'delivered', duplicate, deliveryId: receipt.deliveryId, receiptId: receipt.platformReceiptId, messageId: receipt.platformMessageId, ...(receipt.messageIdKind ? { messageIdKind: receipt.messageIdKind } : {}), deliveredAt: receipt.deliveredAt,
-      sourceSessionId: receipt.sessionId, sourceEventId: receipt.sourceEventId, sourceSeq: receipt.seq, seq: receipt.seq, textHash: receipt.textHash, sourceKind: 'model', confirmedBy: receipt.confirmedBy,
-      ...(receipt.formatVersion ? { formatVersion: receipt.formatVersion, sourceTextHash: receipt.sourceTextHash } : {}),
+      ...source, confirmedBy: receipt.confirmedBy, ...(bubbles ? { bubbles } : {}),
       ...(receipt.voiceUnavailable ? { voiceUnavailable: true } : {}), ...(receipt.voiceDelivery ? { voiceDelivery: clone(receipt.voiceDelivery) } : {}) };
   }
   const confirmedDelivery = value => value?.status === 'delivered' && typeof value.messageId === 'string' && typeof value.receiptId === 'string';
@@ -345,7 +401,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       if (checked === false || checked && typeof checked.then === 'function') { if (checked?.then) Promise.resolve(checked).catch(() => {}); fail('CAPABILITY_PERMISSION_DENIED', '派发前权限尚未同步确认'); }
     }
   }
-  async function voiceDelivery(entry, binding, text, deliveryId) {
+  async function voiceDelivery(entry, binding, text, deliveryId, verifyAddress) {
     const permission = await authorize(binding, 'chat.voice');
     if (!speechPort?.synthesize || !entry.value.sendVoice || entry.value.capabilities?.voice !== true) return { status: 'failed', code: 'CHANNEL_VOICE_UNAVAILABLE' };
     const coordinator = await current(), preferences = await coordinator.voice?.inspect?.('channel-voice');
@@ -366,6 +422,7 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       await runProbe(profile(binding.profileId));
       if (!entry.verified || entry.value.capabilities?.voice !== true) return { status: 'failed', code: 'CHANNEL_VOICE_ACCOUNT_UNCONFIRMED' };
       assertDispatch(binding, profile(binding.profileId), entry, coordinator, permission);
+      verifyAddress?.();
       deliveredResult = await entry.value.sendVoice(binding.facts, bytes, { deliveryId });
       return deliveredResult;
     } finally {
@@ -373,17 +430,102 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       catch (error) { const safe = report(error); if (deliveredResult) deliveredResult.cacheCleanupFailed = safe.code; }
     }
   }
+  async function persistOutputReceipt(binding, receipt) {
+    const next = clone(registry);
+    next.receipts = next.receipts.map(value => value.id === receipt.id ? receipt : value);
+    const storedBinding = next.bindings.find(value => value.sessionId === binding.sessionId);
+    storedBinding.outboundWatermark = Math.max(storedBinding.outboundWatermark, receipt.seq);
+    await save(next);
+  }
+  async function sendQqBubbles(binding, selected, entry, sourceCoordinator, permission, receipt, texts, verifyAddress) {
+    for (const [index, text] of texts.entries()) {
+      const bubble = receipt.bubbles[index];
+      await persistOutputReceipt(binding, { ...receipt, bubbles: receipt.bubbles.with(index, { ...bubble, status: 'prepared' }) });
+      let outcome;
+      let started = false;
+      try {
+        await runProbe(selected);
+        assertDispatch(binding, selected, entry, sourceCoordinator, permission);
+        verifyAddress();
+        started = true;
+        outcome = await entry.value.sendText(binding.facts, text, { deliveryId: bubble.deliveryId });
+        if (confirmedDelivery(outcome) && receipt.bubbles.some(prior => prior.status === 'delivered' && prior.platformMessageId === outcome.messageId)) {
+          outcome = { status: 'unknown', code: 'CHANNEL_DUPLICATE_MESSAGE_ID' };
+        }
+      } catch (error) {
+        outcome = { status: started ? 'unknown' : 'failed', code: report(error).code };
+      }
+      const confirmed = confirmedDelivery(outcome);
+      const status = confirmed ? 'delivered' : outcome?.status === 'failed' ? 'failed' : 'unknown';
+      const finished = { ...bubble, status, ...(confirmed ? ackFields(outcome) : { code: outcome?.code ?? 'CHANNEL_DELIVERY_UNKNOWN' }) };
+      receipt = { ...receipt, bubbles: receipt.bubbles.with(index, finished) };
+      if (!confirmed) {
+        receipt = { ...receipt, status, code: finished.code };
+      } else if (index === texts.length - 1) {
+        receipt = { ...receipt, status: 'delivered', ...ackFields(outcome) };
+        if (selected.config.voiceMode === 'both') receipt.voiceDelivery = { status: 'unknown', code: 'CHANNEL_VOICE_NOT_CONFIRMED' };
+      }
+      await persistOutputReceipt(binding, receipt);
+      if (!confirmed || index === texts.length - 1) return outcome;
+    }
+  }
+  function outputResult(receipt, projection, duplicate = false) {
+    const result = resultFor(receipt, duplicate);
+    if (result.status === 'delivered') return { ...result, text: projection.text };
+    if (result.status === 'partial') {
+      const confirmed = receipt.bubbles.flatMap((bubble, index) => bubble.status === 'delivered' ? [projection.bubbles[index]] : []);
+      return { ...result, text: confirmed.join('\n') };
+    }
+    return result;
+  }
   async function output(args = {}) { return queue(async () => {
     await ready; bounded(args.sessionId, '会话'); bounded(args.sourceEventId, '来源事件');
     if (typeof args.text !== 'string' || !args.text || Array.from(args.text).length > 16000 || !Number.isSafeInteger(args.seq) || args.seq < 0) fail('CHANNEL_OUTPUT_CAPACITY', '外发原文或事件序号无效，没有截断或发送');
     const binding = registry.bindings.find(value => value.sessionId === args.sessionId); if (!binding) return { status: 'unknown', code: 'CHANNEL_BINDING_NOT_FOUND' };
     const id = hash([normalizedRoot(binding.memoryRoot), 'outbound', args.sessionId, args.sourceEventId]), previous = registry.receipts.find(value => value.id === id);
-    if (previous) { const actual = resolveExternalOutput(args.text, previous); if (!actual) fail('CHANNEL_OUTPUT_CONFLICT', '同一来源事件不能替换外发原文'); return { ...resultFor(previous, true), ...(previous.status === 'delivered' ? { text: actual.text } : {}) }; }
+    if (previous) {
+      const actual = resolveExternalOutput(args.text, previous);
+      if (!actual) fail('CHANNEL_OUTPUT_CONFLICT', '同一来源事件不能替换外发原文');
+      return outputResult(previous, actual, true);
+    }
     if (args.seq <= binding.outboundWatermark) return { status: 'unknown', code: 'CHANNEL_RECEIPT_EXPIRED', duplicate: true };
-    const projection = projectExternalOutput(args.text), text = projection.text;
+    if (args.outputContract !== undefined && (args.outputContract !== SOCIAL_REPLY_FORMAT || binding.profileId !== 'qq' || binding.facts.conversation.type !== 'group')) fail('CHANNEL_OUTPUT_CONTRACT_INVALID', '外发格式契约与实际通道不一致');
+    if (binding.profileId !== 'qq' && hasSocialReplyFence(args.text)) fail('CHANNEL_OUTPUT_CONTRACT_INVALID', '群聊内部交付格式不能作为其他渠道的普通文字发送');
+    let projection;
+    try {
+      const evidence = args.groupAddressEvidence;
+      const admitted = evidence && args.groupAddressCurrent?.() !== false && registry.receipts.some(receipt => receipt.kind === 'inbound' && receipt.status === 'accepted' &&
+        receipt.sessionId === args.sessionId && receipt.messageId === evidence.sourceEventId);
+      // A draft can still be checked against its source shape after that source ceases to grant address proof.
+      const address = admitted ? evidence : evidence?.presenceQuestion ? { presenceQuestion: evidence.presenceQuestion } : null;
+      const social = binding.profileId === 'qq'
+        ? projectSocialReply(args.text, binding.facts.conversation.type === 'group' ? address : undefined) : null;
+      if (args.outputContract === SOCIAL_REPLY_FORMAT && !social) fail('SOCIAL_REPLY_FORMAT_REQUIRED', '群聊最终回复需要 xiangxu-social 格式：同一次判断分别表达 understanding、participation 和 messages；未发送内部原文，来信仍保留。');
+      projection = social ?? (binding.profileId === 'qq' ? projectQqReply(args.text) : null) ?? projectExternalOutput(args.text);
+    } catch (error) {
+      if (args.outputContract !== SOCIAL_REPLY_FORMAT && !hasSocialReplyFence(args.text)) throw error;
+      // A rejected draft is not an unknown network send. Retain a hash-only,
+      // failed receipt so the next native turn can see why this exact final was
+      // NOT delivered; neither a restart nor duplicate observation resends it.
+      const receipt = { id, kind: 'outbound', sessionId: args.sessionId, sourceEventId: args.sourceEventId, seq: args.seq,
+        textHash: hash(args.text), status: 'failed', code: error.code ?? 'SOCIAL_REPLY_FORMAT_INVALID', at: clock(),
+        ...(typeof args.deliveryId === 'string' && args.deliveryId.length <= 160 && args.deliveryId ? { deliveryId: args.deliveryId } : {}) };
+      const next = compact(clone(registry)); next.receipts.push(receipt);
+      next.bindings.find(value => value.sessionId === binding.sessionId).outboundWatermark = args.seq;
+      await save(next);
+      return resultFor(receipt);
+    }
+    const text = projection.text;
+    const verifyAddress = () => {
+      if (projection.requiresCurrentGroupEvidence && args.groupAddressCurrent?.() === false) fail('SOCIAL_SELF_ADDRESS_UNSUPPORTED', '发出前群聊指向依据已经失效');
+    };
     if (!text || Array.from(text).length > 16000) fail('CHANNEL_OUTPUT_CAPACITY', '平台显示文字超过外发容量，没有截断或发送');
-    const selected = profile(binding.profileId), deliveryId = args.deliveryId || 'im-out-' + id.slice(0, 48), receipt = { id, kind: 'outbound', sessionId: args.sessionId, sourceEventId: args.sourceEventId, seq: args.seq, textHash: projection.deliveryTextHash, sourceTextHash: projection.sourceTextHash, formatVersion: projection.formatVersion, deliveryId, status: 'prepared', at: clock() };
+    const selected = profile(binding.profileId), deliveryId = args.deliveryId || 'im-out-' + id.slice(0, 48);
+    let receipt = { id, kind: 'outbound', sessionId: args.sessionId, sourceEventId: args.sourceEventId, seq: args.seq, textHash: projection.deliveryTextHash, sourceTextHash: projection.sourceTextHash, formatVersion: projection.formatVersion, deliveryId, status: 'prepared', at: clock() };
     bounded(deliveryId, '交付编号', 160);
+    if (projection.bubbles && selected.config.voiceMode !== 'voice') receipt.bubbles = projection.bubbles.map((bubble, index) => ({
+      deliveryId: 'im-bubble-' + hash([deliveryId, index]).slice(0, 48), textHash: hash(bubble), status: 'not_sent',
+    }));
     const next = compact(clone(registry)); next.receipts.push(receipt); await save(next);
     let outcome, audioOutcome = null;
     if (binding.retired || suspended || !selected.enabled || !sameRoot(binding.memoryRoot, activeRoot()) || !allowed(selected, binding.facts)) outcome = { status: 'unknown', code: binding.retired ? 'CHANNEL_BINDING_RETIRED' : 'CHANNEL_DISABLED' };
@@ -391,42 +533,53 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
       try {
         const sourceCoordinator = await current(), entry = client(selected); await runProbe(selected);
         if (!entry.verified) outcome = { status: 'unknown', code: 'CHANNEL_BRIDGE_UNAVAILABLE' };
-        else if (selected.config.voiceMode === 'voice') outcome = audioOutcome = await voiceDelivery(entry, binding, text, deliveryId + '-voice');
+        else if (selected.config.voiceMode === 'voice') outcome = audioOutcome = await voiceDelivery(entry, binding, text, deliveryId + '-voice', verifyAddress);
         else {
           const permission = await authorize(binding, 'chat.text');
-          await runProbe(selected);
-          assertDispatch(binding, selected, entry, sourceCoordinator, permission);
-          outcome = await entry.value.sendText(binding.facts, text, { deliveryId });
+          if (receipt.bubbles) {
+            outcome = await sendQqBubbles(binding, selected, entry, sourceCoordinator, permission, receipt, projection.bubbles, verifyAddress);
+            receipt = registry.receipts.find(value => value.id === id);
+            if (selected.config.voiceMode === 'text') return outputResult(receipt, projection);
+          } else {
+            await runProbe(selected);
+            assertDispatch(binding, selected, entry, sourceCoordinator, permission);
+            verifyAddress();
+            outcome = await entry.value.sendText(binding.facts, text, { deliveryId });
+          }
           if (selected.config.voiceMode === 'both' && confirmedDelivery(outcome)) {
-            const checkpoint = clone(registry), partial = { ...receipt, status: 'delivered', ...ackFields(outcome), voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_NOT_CONFIRMED' } };
-            checkpoint.receipts = checkpoint.receipts.map(value => value.id === id ? partial : value);
-            checkpoint.bindings.find(value => value.sessionId === binding.sessionId).outboundWatermark = Math.max(binding.outboundWatermark, args.seq);
             // Persist the already-known text receipt before beginning another
             // delivery. A process failure cannot erase that acknowledged fact.
-            await save(checkpoint);
-            try { audioOutcome = await voiceDelivery(entry, binding, text, deliveryId + '-voice'); }
+            if (!receipt.bubbles) await persistOutputReceipt(binding, { ...receipt, status: 'delivered', ...ackFields(outcome), voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_NOT_CONFIRMED' } });
+            try { audioOutcome = await voiceDelivery(entry, binding, text, deliveryId + '-voice', verifyAddress); }
             catch (error) { report(error); audioOutcome = { status: 'unknown', code: 'CHANNEL_VOICE_OUTCOME_UNKNOWN' }; }
           }
         }
-      } catch (error) { const safe = report(error); outcome = { status: 'unknown', code: safe.code }; }
+      } catch (error) {
+        const safe = report(error);
+        if (receipt.bubbles) receipt = registry.receipts.find(value => value.id === id);
+        outcome = { status: safe.code === 'SOCIAL_SELF_ADDRESS_UNSUPPORTED' ? 'failed' : 'unknown', code: safe.code };
+      }
     }
     const confirmed = confirmedDelivery(outcome);
     const audioSummary = audioOutcome ? { status: confirmedDelivery(audioOutcome) ? 'delivered' : audioOutcome.status === 'failed' ? 'failed' : 'unknown', ...(confirmedDelivery(audioOutcome) ? ackFields(audioOutcome) : { code: audioOutcome.code ?? 'CHANNEL_VOICE_NOT_CONFIRMED' }), ...(audioOutcome.cacheCleanupFailed ? { cacheCleanupFailed: audioOutcome.cacheCleanupFailed } : {}) } : null;
-    const finished = { ...receipt, status: confirmed ? 'delivered' : outcome?.status === 'failed' ? 'failed' : 'unknown', ...(confirmed ? ackFields(outcome) : { code: outcome?.code ?? 'CHANNEL_DELIVERY_UNKNOWN' }), ...(selected.config.voiceMode !== 'text' && !confirmedDelivery(audioOutcome) ? { voiceUnavailable: true } : {}), ...(audioSummary ? { voiceDelivery: audioSummary } : {}) };
-    const final = clone(registry); final.receipts = final.receipts.map(value => value.id === id ? finished : value);
-    const storedBinding = final.bindings.find(value => value.sessionId === binding.sessionId); storedBinding.outboundWatermark = Math.max(storedBinding.outboundWatermark, args.seq);
-    try { await save(final); } catch (error) {
+    const code = outcome?.code ?? 'CHANNEL_DELIVERY_UNKNOWN';
+    const finished = { ...receipt, status: confirmed ? 'delivered' : outcome?.status === 'failed' ? 'failed' : 'unknown', ...(confirmed ? ackFields(outcome) : { code }),
+      ...(receipt.bubbles ? { bubbles: interruptedBubbles(receipt.bubbles, code) } : {}), ...(selected.config.voiceMode !== 'text' && !confirmedDelivery(audioOutcome) ? { voiceUnavailable: true } : {}), ...(audioSummary ? { voiceDelivery: audioSummary } : {}) };
+    try { await persistOutputReceipt(binding, finished); } catch (error) {
       report(error);
       const retained = registry.receipts.find(value => value.id === id);
-      if (retained?.status === 'delivered') return { ...resultFor(retained), text, voiceUnavailable: true, voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_RECEIPT_PERSIST_UNKNOWN' } };
+      if (retained?.status === 'delivered') return { ...outputResult(retained, projection), ...(selected.config.voiceMode !== 'text' ? { voiceUnavailable: true, voiceDelivery: { status: 'unknown', code: 'CHANNEL_VOICE_RECEIPT_PERSIST_UNKNOWN' } } : {}) };
+      if (retained?.bubbles?.some(bubble => bubble.status === 'delivered')) return outputResult(retained, projection);
       return { status: 'unknown', code: 'CHANNEL_RECEIPT_PERSIST_UNKNOWN', deliveryId };
     }
-    return { ...resultFor(finished), ...(finished.status === 'delivered' ? { text } : {}), ...(finished.voiceUnavailable ? { voiceUnavailable: true } : {}) };
+    return { ...outputResult(finished, projection), ...(finished.voiceUnavailable ? { voiceUnavailable: true } : {}) };
   }); }
-  async function reconcile(record = {}) { await ready; const sessionId = record.target?.sessionId ?? record.sessionId;
-    const found = registry.receipts.find(value => value.kind === 'outbound' && value.sessionId === sessionId && (record.sourceEventId ? value.sourceEventId === record.sourceEventId : record.deliveryId && value.deliveryId === record.deliveryId));
+  function findOutboundReceipt(record = {}) {
+    const sessionId = record.target?.sessionId ?? record.sessionId;
+    const found = registry?.receipts.find(value => value.kind === 'outbound' && value.sessionId === sessionId && (record.sourceEventId ? value.sourceEventId === record.sourceEventId : record.deliveryId && value.deliveryId === record.deliveryId));
     return found ? resultFor(found, true) : { status: 'unknown', code: 'CHANNEL_RECEIPT_UNAVAILABLE' };
   }
+  async function reconcile(record = {}) { await ready; return findOutboundReceipt(record); }
   async function receive({ id, event } = {}) { return queue(async () => { await ready; return ingest(id, event, true); }); }
   async function getAccountBridge() {
     await ready;
@@ -470,6 +623,8 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
   async function execute({ sessionId, capability, payload = {}, requestId } = {}) { return queue(async () => {
     await ready; bounded(sessionId, '会话'); bounded(requestId, '操作编号', 160);
     if (!CAPABILITY_IDS.includes(capability) || !object(payload) || Object.keys(payload).some(key => !['text', 'bytes', 'mime', 'filename', 'messageId', 'stickerId', 'quoteMessageId', 'mentionUserId', 'mentionAll', 'forwardId'].includes(key))) fail('CHANNEL_CAPABILITY_REQUEST', '平台操作参数无效');
+    if (capability === 'message.read' && (typeof payload.messageId !== 'string' || !payload.messageId.trim())) fail('CHANNEL_MESSAGE_ID_REQUIRED', 'message.read 必须提供 messageId：复制当前来信 externalInput.platformMessageId、引用消息的 messageId 或已确认回执的 messageId；sessionId/channelId 不能代替平台消息ID。');
+    if (capability === 'message.forward.read' && (typeof payload.forwardId !== 'string' || !payload.forwardId.trim())) fail('CHANNEL_FORWARD_ID_REQUIRED', 'message.forward.read 必须提供 forwardId：复制真实合并转发资源的 forwardId；普通消息ID、sessionId/channelId 不能代替转发资源ID。');
     const metadata = {}; for (const [key, value] of Object.entries(payload)) { if (key === 'bytes') { if (!(value instanceof Uint8Array) || !value.byteLength || value.byteLength > 16777216) fail('CHANNEL_MEDIA_CAPACITY', '媒体字节超过技术容量'); metadata.bytesSha256 = hash(value); metadata.bytesLength = value.byteLength; } else if (key === 'mentionAll') { if (typeof value !== 'boolean') fail('CHANNEL_CAPABILITY_REQUEST','提及全体标记必须为开关'); metadata[key]=value; } else { bounded(value, key, key === 'text' ? 16000 : 512, key === 'text'); metadata[key] = value; } }
     const binding = registry.bindings.find(value => value.sessionId === sessionId); if (!binding) fail('CHANNEL_BINDING_NOT_FOUND', '没有对应的平台会话');
     const id = hash([normalizedRoot(binding.memoryRoot), 'capability', sessionId, requestId]), textHash = hash({ capability, metadata }), previous = registry.receipts.find(value => value.id === id);
@@ -479,7 +634,14 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     const sourceCoordinator = await current(), checked = await runProbe(selected); if (!checked.connected) fail('CHANNEL_BRIDGE_UNAVAILABLE', '平台连接尚未确认');
     const entry = client(selected), available = await capabilities({ id: selected.id }); if (!available.items.find(item => item.id === capability)?.supported) fail('CAPABILITY_UNSUPPORTED', '当前连接器没有实现这个能力');
     const permission = await authorize(binding, capability);
-    if (['contacts.read', 'groups.read', 'message.read', 'message.forward.read'].includes(capability)) { await runProbe(selected); assertDispatch(binding, selected, entry, sourceCoordinator, permission); const read = await entry.value.execute(binding.facts, capability, payload, { deliveryId: 'im-read-' + id.slice(0, 48) }); if (Buffer.byteLength(JSON.stringify(read)) > 32768) fail('CHANNEL_READ_CAPACITY', '读取结果超过单次技术容量'); return read; }
+    if (['contacts.read', 'groups.read', 'message.read', 'message.forward.read'].includes(capability)) {
+      await runProbe(selected);
+      assertDispatch(binding, selected, entry, sourceCoordinator, permission);
+      const read = await entry.value.execute(binding.facts, capability, payload, { deliveryId: 'im-read-' + id.slice(0, 48) });
+      assertDispatch(binding, selected, entry, sourceCoordinator, permission);
+      if (Buffer.byteLength(JSON.stringify(read)) > 32768) fail('CHANNEL_READ_CAPACITY', '读取结果超过单次技术容量');
+      return read;
+    }
     const deliveryId = 'im-cap-' + id.slice(0, 48), receipt = { id, kind: 'outbound', sessionId, sourceEventId: 'capability:' + requestId, textHash, deliveryId, capability, status: 'prepared', at: clock() };
     const next = compact(clone(registry)); next.receipts.push(receipt); await save(next);
     let outcome;
@@ -511,5 +673,5 @@ export function createChannelService({ getCoordinator, channelPort, registryPath
     return { invalidated: true, profiles: [...affected], stopped: affectsActive };
   }); }
   async function close() { if (closed) return; closing = true; await tail; closed = true; suspended = true; await connectionPort?.stop(); await closeListener(); await channelPort.close(); }
-  return { ready, status, configure, start, stop, probe, rotateIngress, suspend, resume, invalidateForRoot, close, output, reconcile, handles, receive, capabilities, execute, getAccountBridge };
+  return { ready, status, configure, start, stop, probe, rotateIngress, suspend, resume, invalidateForRoot, close, output, reconcile, findOutboundReceipt, handles, receive, capabilities, execute, getAccountBridge };
 }

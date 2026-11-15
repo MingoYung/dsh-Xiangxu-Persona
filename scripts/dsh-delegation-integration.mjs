@@ -101,7 +101,6 @@ const overlay = join(dir, 'test-overlay.yml');
 const extraObservers=[];
 if(args.withRealObserver){const file=join(dir,'executed-real-observer.mjs');await writeFile(file,observerSource);extraObservers.push({id:'persona-real-observer',name:pathToFileURL(file).href,config:observerConfig({provider:'persona-delegation-fixture',model:'fixture-v1'},dir)});}
 await writeFile(overlay, JSON.stringify([
-  { id: 'tools', config: { mode: 'native' } },
   { id: 'persona-memory-coordinator', config: { provider: 'persona-delegation-fixture', model: 'fixture-v1', operatorControl: true } },
   { insert: [{ id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'persona-memory' } },
     { id: 'persona-delegation-fixture-probe', name: pathToFileURL(join(dir, 'executed-fixture.mjs')).href, config: { artifacts: dir, workspace } }, ...extraObservers] },

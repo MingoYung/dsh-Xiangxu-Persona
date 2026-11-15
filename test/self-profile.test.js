@@ -8,12 +8,13 @@ import { SELF_PROFILE_PATH, SELF_PROFILE_LIMITS, validateSelfProfile, selfProfil
 import { createBackup, restoreBackup, validateMemoryRoot } from '../core/maintenance.js';
 
 async function fixture(t, { config = {}, fault } = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'xiangxu-self-'));
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'xiangxu-self-'));
+  const root = path.join(workspace, 'memory');
   const clock = { value: 1000 };
   let repository = new MemoryRepository({ root, config, fault, clock: () => clock.value });
   await repository.open();
-  t.after(async () => { await repository.close(); await fs.rm(root, { recursive: true, force: true }); });
-  return { root, clock, get repository() { return repository; },
+  t.after(async () => { await repository.close(); await fs.rm(workspace, { recursive: true, force: true }); });
+  return { root, clock, destination: path.join(workspace, 'backup'), get repository() { return repository; },
     async reopen() { await repository.close(); repository = new MemoryRepository({ root, clock: () => clock.value }); await repository.open(); return repository; } };
 }
 const chat = (id, text, personId = null) => ({ sourceSessionId: 'source', sourceEventId: id, personId,
@@ -190,8 +191,7 @@ test('memory availability keeps source receipts separate from store emptiness an
 });
 
 test('offline backup validates optional self-profile schema and restores complete current and initial information', async t => {
-  const f = await fixture(t), destination = f.root + '-backup';
-  t.after(() => fs.rm(destination, { recursive: true, force: true }));
+  const f = await fixture(t), { destination } = f;
   await f.repository.updateSelfProfile({ mode: 'together', onboardingAcknowledged: true, initial: { name: '小续', ageDescription: '成年形象' } }, { actor: 'user' });
   await f.repository.updateSelfProfile({ current: { name: '相续', gender: '暂未确定' } }, { actor: 'persona' });
   const before = await f.repository.getSelfProfile(); await f.repository.close();
@@ -201,23 +201,20 @@ test('offline backup validates optional self-profile schema and restores complet
   await f.repository.open();
   await f.repository.updateSelfProfile({ current: { name: '新值' } }, { actor: 'persona' });
   await f.repository.close();
-  const restored = await restoreBackup({ root: f.root, source: destination });
-  t.after(() => restored.rollback && fs.rm(restored.rollback, { recursive: true, force: true }));
+  await restoreBackup({ root: f.root, source: destination });
   assert.deepEqual(JSON.parse((await bytes(f)).toString('utf8')), before);
   await f.repository.open(); assert.deepEqual(await f.repository.getSelfProfile(), before);
 });
 
 test('restore carries newer source withdrawals into a legacy profile before exposing the restored directory', async t => {
-  const f = await fixture(t), destination = f.root + '-backup';
-  t.after(() => fs.rm(destination, { recursive: true, force: true }));
+  const f = await fixture(t), { destination } = f;
   const original = await f.repository.ingest(chat('forget-after-backup', '这份旧身份想法后来撤销。'));
   await f.repository.updateSelfProfile({ initial: { name: '旧初始名' } }, { actor: 'user', sourceRefs: [ref('forget-after-backup')] });
   await f.repository.updateSelfProfile({ current: { name: '旧当前名' } }, { actor: 'persona', sourceRecordIds: [original.record.id] });
   await f.repository.updateSelfProfile({ current: { selfDescription: '独立保留的信息' } }, { actor: 'persona' });
   await f.repository.close(); await createBackup({ root: f.root, destination });
   await f.repository.open(); await f.repository.forget({ ids: [original.record.id], scope: 'unknown' }); await f.repository.close();
-  const restored = await restoreBackup({ root: f.root, source: destination });
-  t.after(() => restored.rollback && fs.rm(restored.rollback, { recursive: true, force: true }));
+  await restoreBackup({ root: f.root, source: destination });
   // Read before opening MemoryRepository: the restored public file is already cleaned.
   const offline = JSON.parse((await bytes(f)).toString('utf8'));
   assert.equal(offline.initial.name, ''); assert.equal(offline.current.name, ''); assert.equal(offline.current.selfDescription, '独立保留的信息');
@@ -227,8 +224,7 @@ test('restore carries newer source withdrawals into a legacy profile before expo
 });
 
 test('maintenance still rejects a future self-profile schema and does not replace original bytes', async t => {
-  const f = await fixture(t), destination = f.root + '-backup';
-  t.after(() => fs.rm(destination, { recursive: true, force: true }));
+  const f = await fixture(t), { destination } = f;
   await f.repository.updateSelfProfile({ current: { name: '相续' } }, { actor: 'persona' });
   await f.repository.close();
   const invalid = Buffer.from('{"schemaVersion":"xiangxu-self/999","version":1}');
