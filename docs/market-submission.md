@@ -2,6 +2,10 @@
 
 插件通过 [收录 PR #10004](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/10004) 合并入 DSH Market 目录，时间为北京时间 2026-10-29 01:23:08。[目录条目](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/blob/main/data/plugins/MingoYung__dsh-Xiangxu-Persona.yml) 指向 [MingoYung/dsh-Xiangxu-Persona](https://github.com/MingoYung/dsh-Xiangxu-Persona) 仓库，版本以插件 manifest 为准，客户端按市场更新机制刷新。
 
+## 0.14.2
+
+DSH NEXT 2.0.24-next 使用 Harness SDK 0.2.2-rc.5。相续沿用 0.14.1 的运行实现，已在新版隔离宿主复验生命周期、角色挂载、委派、整理、QQ 模拟桥和设置页。新版拒答流程通过实际宿主模型服务验证，失败及实际用量按既有机制记录。结果见[兼容说明](dsh-2.0.24-compatibility.md)。真实平台往返与自然聊天验收继续按各自回执记录。
+
 ## 0.14.1
 
 - DSH NEXT 2.0.23-next 使用 Harness SDK 0.2.2-rc.3。此版兼容新旧原生委派参数，并保留独立工作会话和已有结果回收机制。新版隔离宿主的固定响应验证覆盖生命周期 29 项、角色挂载 40 项、委派 35 项和整理 59 项。

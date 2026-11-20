@@ -1,6 +1,6 @@
 # dsh-Xiangxu-Persona · 相续人格
 
-**0.14.1** 适配 DSH NEXT 2.0.23-next 的原生任务委派，将只读 3D 关联图嵌入记忆页，并改进记忆预览、分页和原件定位。此版也补齐经过核实的历史来源回补、Windows 备份发布和隔离测试入口。QQ／微信真实收发和自然聊天另做实机验收。见[更新内容与验证范围](docs/market-submission.md#0141)。
+**0.14.2** 已完成 DSH NEXT 2.0.24-next 兼容复验，覆盖内嵌记忆图、分页、原件定位、独立任务委派及整理恢复。运行实现沿用 0.14.1 的已验适配。QQ／微信真实收发和自然聊天继续按实机结果验收。见[兼容说明](docs/dsh-2.0.24-compatibility.md)与[更新记录](docs/market-submission.md#0142)。
 
 当前可靠性维护补齐来信呈现与真实回复的确认链、成长后的预算预检、可选相对时间表达和旧任务公开报告投影。醒来收到汇总、后来出现一条回复或相关任务完成，都不自动证明某条旧来信已经回答；事实供相续自主判断。预算不足保留资料与整理进度，建议需明确应用，不自动扩容或续跑。Windows宿主的PowerShell启动问题由[窄兼容入口](docs/windows-powershell-compat.md)处理，无需重装PowerShell 7或修改全局环境。操作见[使用说明](docs/user-guide.md)，字段以[权威契约](docs/plan/persona/persona-schema.md)为准；本批未新增真实模型或正式社交验收。
 
